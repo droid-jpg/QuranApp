@@ -1,0 +1,15 @@
+# macOS / Xcode
+.DS_Store
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.swiftpm/
+# Node / env
+node_modules/
+.env
+.env.*
+!.env.example
+.vercel/
+# Local tool state
+.claude/
