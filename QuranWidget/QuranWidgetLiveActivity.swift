@@ -18,7 +18,7 @@ struct PrayerCountdownLiveActivity: Widget {
                         .font(.headline).foregroundStyle(.teal)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(context.state.prayerTime, style: .timer)
+                    Text(timerInterval: context.state.startTime...context.state.prayerTime, countsDown: true)
                         .font(.title3.monospacedDigit()).foregroundStyle(.teal)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
@@ -34,7 +34,7 @@ struct PrayerCountdownLiveActivity: Widget {
                 Image(systemName: prayerSymbol(context.state.prayerName))
                     .foregroundStyle(.teal)
             } compactTrailing: {
-                Text(context.state.prayerTime, style: .timer)
+                Text(timerInterval: context.state.startTime...context.state.prayerTime, countsDown: true)
                     .foregroundStyle(.teal).monospacedDigit()
             } minimal: {
                 Image(systemName: prayerSymbol(context.state.prayerName))
@@ -73,7 +73,7 @@ private struct PrayerLiveActivityBanner: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(state.prayerTime, style: .timer)
+                Text(timerInterval: state.startTime...state.prayerTime, countsDown: true)
                     .font(.title2.bold().monospacedDigit()).foregroundStyle(.teal)
                 Text("remaining")
                     .font(.caption2).foregroundStyle(.secondary)
