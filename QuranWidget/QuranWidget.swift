@@ -3,9 +3,9 @@ import SwiftUI
 
 private let appGroup = "group.sami.Quran-App"
 
-// Display order for all 7 daily events.
-// Midnight sits after Isha but can fall after midnight clock-wise, so we check
-// "same day" first then "tomorrow" to handle wrap-around correctly.
+// The 7 daily events the widget can surface as "next". Order only breaks ties
+// between events sharing a minute (effectively never); the actual next event is
+// chosen by soonest next-occurrence in `nextEvent`, which handles wrap-around.
 private let allEventOrder = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha", "Midnight"]
 
 // MARK: - Entry
@@ -74,7 +74,12 @@ struct QuranWidgetProvider: TimelineProvider {
         return dict.values.filter { $0 == "memorized" }.count
     }
 
-    /// Returns (eventName, displayTime, exactDate) for the next upcoming event from all 7.
+    /// Returns (eventName, displayTime, exactDate) for the next upcoming event from
+    /// all 7. Each event's next occurrence is its time today if that's still ahead,
+    /// otherwise the same time tomorrow; the soonest wins. Computing per-event next
+    /// occurrences (rather than scanning today's clock in fixed order) is what lets
+    /// Sunrise and an Islamic Midnight that lands after 00:00 surface correctly —
+    /// the latter reads as "past" today in the evening, so it must roll to tomorrow.
     private func nextEvent(ud: UserDefaults?) -> (String, String, Date) {
         guard
             let data = ud?.data(forKey: "prayerTimesDict"),
@@ -86,28 +91,25 @@ struct QuranWidgetProvider: TimelineProvider {
         let now     = Date()
         let cal     = Calendar.current
 
-        let todayComponents = cal.dateComponents([.year, .month, .day], from: now)
-
+        var best: (name: String, date: Date)?
         for name in allEventOrder {
-            guard let str = dict[name], let parsed = hhmm.date(from: str) else { continue }
-            var c = cal.dateComponents([.hour, .minute], from: parsed)
-            c.year  = todayComponents.year
-            c.month = todayComponents.month
-            c.day   = todayComponents.day
-            if let candidate = cal.date(from: c), candidate > now {
-                return (name, display.string(from: candidate), candidate)
+            guard
+                let str = dict[name], !str.isEmpty,
+                let parsed = hhmm.date(from: str)
+            else { continue }
+            let c = cal.dateComponents([.hour, .minute], from: parsed)
+            guard let today = cal.date(bySettingHour: c.hour ?? 0, minute: c.minute ?? 0,
+                                       second: 0, of: now) else { continue }
+            let occurrence = today > now
+                ? today
+                : (cal.date(byAdding: .day, value: 1, to: today) ?? today)
+            if best == nil || occurrence < best!.date {
+                best = (name, occurrence)
             }
         }
 
-        // All events passed today — return tomorrow's Fajr.
-        if let fajrStr = dict["Fajr"], let parsed = hhmm.date(from: fajrStr) {
-            var c = cal.dateComponents([.hour, .minute], from: parsed)
-            let tomorrow = cal.date(byAdding: .day, value: 1, to: now) ?? now
-            let tc = cal.dateComponents([.year, .month, .day], from: tomorrow)
-            c.year = tc.year; c.month = tc.month; c.day = tc.day
-            if let d = cal.date(from: c) {
-                return ("Fajr", display.string(from: d), d)
-            }
+        if let best {
+            return (best.name, display.string(from: best.date), best.date)
         }
         return ("Fajr", "—", Date())
     }
