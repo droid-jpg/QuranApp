@@ -1,19 +1,14 @@
 import SwiftUI
 
-struct MemorizationView: View {
+/// Memorization overview presented as a sheet from the Quran tab:
+/// juz-scoped progress, stats, and the 114-surah heat-map grid.
+struct MemorizationOverviewSheet: View {
     @EnvironmentObject private var store: MemorizationStore
+    @EnvironmentObject private var srStore: MemorizationSRStore
     @StateObject private var listVM = SurahListViewModel()
+    @Environment(\.dismiss) private var dismiss
 
-    @State private var filter: FilterMode = .all
-    @State private var isGrid = false
     @State private var selectedJuz: Int? = nil   // nil = all juz
-
-    enum FilterMode: String, CaseIterable {
-        case all = "All"
-        case inProgress = "In Progress"
-        case memorized = "Memorized"
-        case review = "Review"
-    }
 
     // Surahs visible in the current juz scope
     private var juzSurahs: [Surah] {
@@ -22,76 +17,44 @@ struct MemorizationView: View {
         return listVM.surahs.filter { nums.contains($0.number) }
     }
 
-    // juzSurahs filtered further by status filter (list mode)
-    private var displayed: [Surah] {
-        switch filter {
-        case .all:        return juzSurahs
-        case .inProgress: return juzSurahs.filter { store.status(for: $0.number) == .inProgress }
-        case .memorized:  return juzSurahs.filter { store.status(for: $0.number) == .memorized }
-        case .review:     return juzSurahs.filter { store.isReviewed($0.number) }
+    /// Effective per-surah status, blending the manual mark with review progress.
+    private var effectiveStatuses: [Int: MemorizationStatus] {
+        let prog = srStore.surahProgress()
+        var out: [Int: MemorizationStatus] = [:]
+        for s in listVM.surahs {
+            let p = prog[s.number] ?? SurahSRProgress()
+            out[s.number] = store.effectiveStatus(
+                for: s.number, enrolled: p.enrolled, mature: p.mature, totalAyahs: s.numberOfAyahs
+            )
         }
-    }
-
-    private var scopedInProgressNumbers: [Int] {
-        juzSurahs.filter { store.status(for: $0.number) == .inProgress }.map(\.number)
+        return out
     }
 
     var body: some View {
+        let statuses = effectiveStatuses
         NavigationStack {
             VStack(spacing: 0) {
                 MemorizationProgressBar(
                     surahs: juzSurahs,
-                    store: store,
+                    statuses: statuses,
                     selectedJuz: selectedJuz
                 )
 
-                MemorizationStatsBar(surahs: juzSurahs, store: store)
+                MemorizationStatsBar(surahs: juzSurahs, statuses: statuses)
 
                 JuzPicker(selectedJuz: $selectedJuz)
 
-                if !isGrid && !scopedInProgressNumbers.isEmpty {
-                    InProgressScroller(
-                        numbers: scopedInProgressNumbers,
-                        surahs: listVM.surahs
-                    )
-                }
-
-                if !isGrid {
-                    Picker("Filter", selection: $filter) {
-                        ForEach(FilterMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    Divider()
-                }
-
                 if listVM.isLoading {
                     ProgressView("Loading…").frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if isGrid {
-                    MemorizationGrid(surahs: juzSurahs, store: store)
                 } else {
-                    List(displayed) { surah in
-                        MemorizationRow(
-                            surah: surah,
-                            status: store.status(for: surah.number),
-                            isReviewed: store.isReviewed(surah.number),
-                            onCycle: { store.cycle(for: surah.number) },
-                            onToggleReview: { store.toggleReview(surah.number) }
-                        )
-                    }
-                    .listStyle(.plain)
+                    MemorizationGrid(surahs: juzSurahs, statuses: statuses)
                 }
             }
             .navigationTitle(selectedJuz.map { "Juz \($0)" } ?? "Memorization")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        withAnimation(.spring(duration: 0.3)) { isGrid.toggle() }
-                    } label: {
-                        Image(systemName: isGrid ? "list.bullet" : "grid.circle")
-                    }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
                 }
             }
             .task { await listVM.load() }
@@ -123,31 +86,14 @@ struct JuzPicker: View {
     }
 }
 
-struct JuzChip: View {
-    let label: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? .white : .primary)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(isSelected ? Color.teal : Color(.tertiarySystemBackground)))
-        }
-        .buttonStyle(.plain)
-        .animation(.easeInOut(duration: 0.15), value: isSelected)
-    }
-}
-
 // MARK: - Progress bar
 
 struct MemorizationProgressBar: View {
     let surahs: [Surah]
-    @ObservedObject var store: MemorizationStore
+    let statuses: [Int: MemorizationStatus]
     let selectedJuz: Int?
+
+    private func status(_ n: Int) -> MemorizationStatus { statuses[n] ?? .notStarted }
 
     private struct Progress {
         let memorizedFraction: Double
@@ -164,8 +110,8 @@ struct MemorizationProgressBar: View {
             for s in surahs {
                 let n = JuzData.ayahsInJuz(surahNumber: s.number, surahTotalAyahs: s.numberOfAyahs, juz: juz)
                 totalAyahs += n
-                if store.status(for: s.number) == .memorized  { memorizedAyahs  += n }
-                if store.status(for: s.number) == .inProgress { inProgressAyahs += n }
+                if status(s.number) == .memorized  { memorizedAyahs  += n }
+                if status(s.number) == .inProgress { inProgressAyahs += n }
             }
             let t = totalAyahs > 0 ? Double(totalAyahs) : 1
             let pct = Int(Double(memorizedAyahs) / t * 100)
@@ -177,8 +123,8 @@ struct MemorizationProgressBar: View {
             )
         } else {
             // Surah-count-based overall progress
-            let mem = surahs.filter { store.status(for: $0.number) == .memorized  }.count
-            let inp = surahs.filter { store.status(for: $0.number) == .inProgress }.count
+            let mem = surahs.filter { status($0.number) == .memorized  }.count
+            let inp = surahs.filter { status($0.number) == .inProgress }.count
             let total = Double(surahs.count > 0 ? surahs.count : 114)
             let pct = Int(Double(mem) / total * 100)
             return Progress(
@@ -218,11 +164,11 @@ struct MemorizationProgressBar: View {
 
 struct MemorizationStatsBar: View {
     let surahs: [Surah]
-    @ObservedObject var store: MemorizationStore
+    let statuses: [Int: MemorizationStatus]
 
-    private var memorizedCount: Int  { surahs.filter { store.status(for: $0.number) == .memorized  }.count }
-    private var inProgressCount: Int { surahs.filter { store.status(for: $0.number) == .inProgress }.count }
-    private var reviewedCount: Int   { surahs.filter { store.isReviewed($0.number) }.count }
+    private func status(_ n: Int) -> MemorizationStatus { statuses[n] ?? .notStarted }
+    private var memorizedCount: Int  { surahs.filter { status($0.number) == .memorized  }.count }
+    private var inProgressCount: Int { surahs.filter { status($0.number) == .inProgress }.count }
     private var remainingCount: Int  { surahs.count - memorizedCount - inProgressCount }
 
     var body: some View {
@@ -230,8 +176,6 @@ struct MemorizationStatsBar: View {
             StatPill(value: memorizedCount,  label: "Memorized",  color: .green)
             Divider().frame(height: 36)
             StatPill(value: inProgressCount, label: "In Progress", color: .orange)
-            Divider().frame(height: 36)
-            StatPill(value: reviewedCount,   label: "Review",      color: .yellow)
             Divider().frame(height: 36)
             StatPill(value: remainingCount,  label: "Remaining",   color: .secondary)
         }
@@ -250,6 +194,8 @@ struct StatPill: View {
             Text("\(value)")
                 .font(.title2.bold())
                 .foregroundStyle(color)
+                .contentTransition(.numericText())
+                .animation(AppAnim.spring, value: value)
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -258,126 +204,127 @@ struct StatPill: View {
     }
 }
 
-// MARK: - In-progress cards
-
-struct InProgressScroller: View {
-    let numbers: [Int]
-    let surahs: [Surah]
-
-    private func surah(for n: Int) -> Surah? { surahs.first { $0.number == n } }
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(numbers, id: \.self) { n in
-                    if let s = surah(for: n) {
-                        NavigationLink(destination: SurahDetailView(surah: s)) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "play.circle.fill")
-                                    .font(.title3)
-                                    .foregroundStyle(.orange)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(s.englishName)
-                                        .font(.subheadline.bold())
-                                        .foregroundStyle(.primary)
-                                    Text("In Progress · \(s.numberOfAyahs) ayahs")
-                                        .font(.caption2)
-                                        .foregroundStyle(.orange)
-                                }
-                                Spacer(minLength: 8)
-                                Text(s.name)
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(.primary)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .frame(width: 240)
-                            .background(Color.orange.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-        }
-        .background(Color(.secondarySystemBackground))
-    }
-}
-
 // MARK: - Grid
 
 struct MemorizationGrid: View {
     let surahs: [Surah]
-    @ObservedObject var store: MemorizationStore
+    let statuses: [Int: MemorizationStatus]
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 10)
+    /// Discrete zoom stops (column counts). Fewer columns → larger cells that have
+    /// room to show the surah name alongside its number.
+    private static let stops = [10, 8, 6, 4, 3]
+    @State private var columnCount = 10
+
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 6), count: columnCount)
+    }
+    private var showNames: Bool { columnCount <= 6 }
+
+    private func zoom(_ magnification: Double) {
+        guard let i = Self.stops.firstIndex(of: columnCount) else { return }
+        let ni: Int
+        if magnification > 1.1       { ni = min(Self.stops.count - 1, i + 1) }  // pinch out → fewer cols
+        else if magnification < 0.9  { ni = max(0, i - 1) }                     // pinch in → more cols
+        else { return }
+        guard ni != i else { return }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            columnCount = Self.stops[ni]
+        }
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 14) {
-                    GridLegend(color: .green,                                label: "Memorized")
-                    GridLegend(color: .orange,                               label: "In Progress")
-                    GridLegend(color: Color(.tertiarySystemFill), border: .yellow, label: "Review")
-                    GridLegend(color: Color(.tertiarySystemFill),            label: "Not started")
+                    GridLegend(color: .green,                     label: "Memorized")
+                    GridLegend(color: .orange,                    label: "In Progress")
+                    GridLegend(color: Color(.tertiarySystemFill), label: "Not started")
                 }
                 .padding(.horizontal)
                 .padding(.top, 10)
 
-                LazyVGrid(columns: columns, spacing: 4) {
-                    ForEach(surahs) { surah in
-                        NavigationLink(destination: SurahDetailView(surah: surah)) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right.magnifyingglass")
+                    Text("Pinch to zoom")
+                }
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal)
+
+                LazyVGrid(columns: columns, spacing: 6) {
+                    ForEach(surahs.indices, id: \.self) { idx in
+                        let surah = surahs[idx]
+                        NavigationLink(destination: SurahPageView(surahs: surahs, startIndex: idx)) {
                             GridCell(
                                 number: surah.number,
-                                status: store.status(for: surah.number),
-                                isReviewed: store.isReviewed(surah.number)
+                                name: surah.englishName,
+                                showName: showNames,
+                                status: statuses[surah.number] ?? .notStarted
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(CardButtonStyle(scale: 0.88))
+                        .hapticTap()
                     }
                 }
                 .padding(.horizontal, 8)
                 .padding(.bottom, 16)
+                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: columnCount)
             }
         }
+        .gesture(
+            MagnifyGesture().onEnded { zoom($0.magnification) }
+        )
     }
 }
 
 struct GridCell: View {
     let number: Int
+    var name: String? = nil
+    var showName: Bool = false
     let status: MemorizationStatus
-    let isReviewed: Bool
 
     private var fill: Color {
         switch status {
-        case .notStarted: return Color(.tertiarySystemFill)
-        case .inProgress: return .orange.opacity(0.75)
-        case .memorized:  return .green.opacity(0.75)
+        case .notStarted: return Color(.systemFill)
+        case .inProgress: return .orange
+        case .memorized:  return .green
         }
     }
 
+    private var textColor: Color {
+        switch status {
+        case .notStarted: return .secondary
+        case .inProgress, .memorized: return .white
+        }
+    }
+
+    private var corner: CGFloat { showName ? 8 : 5 }
+
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: corner)
                 .fill(fill)
-                .overlay(
-                    Group {
-                        if isReviewed {
-                            RoundedRectangle(cornerRadius: 4).stroke(Color.yellow, lineWidth: 2)
-                        }
-                    }
-                )
-            Text("\(number)")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(status == .notStarted ? Color.secondary : .white)
+                .animation(AppAnim.spring, value: status)
+            if showName, let name {
+                VStack(spacing: 1) {
+                    Text("\(number)")
+                        .font(.system(size: 12, weight: .bold))
+                    Text(name)
+                        .font(.system(size: 10, weight: .medium))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .padding(.horizontal, 3)
+                }
+                .foregroundStyle(textColor)
+                .animation(AppAnim.smooth, value: status)
+            } else {
+                Text("\(number)")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(textColor)
+                    .animation(AppAnim.smooth, value: status)
+            }
         }
-        .frame(height: 32)
+        .frame(height: showName ? 50 : 34)
     }
 }
 
@@ -403,63 +350,3 @@ struct GridLegend: View {
     }
 }
 
-// MARK: - Memorization row
-
-struct MemorizationRow: View {
-    let surah: Surah
-    let status: MemorizationStatus
-    let isReviewed: Bool
-    let onCycle: () -> Void
-    let onToggleReview: () -> Void
-
-    var body: some View {
-        NavigationLink(destination: SurahDetailView(surah: surah)) {
-            HStack(spacing: 14) {
-                Button(action: onCycle) {
-                    Image(systemName: status.icon)
-                        .font(.system(size: 22))
-                        .foregroundStyle(status.color)
-                        .frame(width: 30)
-                        .contentTransition(.symbolEffect(.replace))
-                }
-                .buttonStyle(.plain)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(surah.englishName)
-                            .font(.system(.body, weight: .medium))
-                        if isReviewed {
-                            Image(systemName: "bookmark.fill")
-                                .font(.caption2)
-                                .foregroundStyle(.yellow)
-                        }
-                    }
-                    Text(surah.englishNameTranslation)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Text(surah.name)
-                    .font(.system(size: 18))
-            }
-            .padding(.vertical, 2)
-        }
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button { withAnimation { onCycle() } } label: {
-                Label(status.next.label, systemImage: status.next.icon)
-            }
-            .tint(status.next.color)
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button { withAnimation { onToggleReview() } } label: {
-                Label(
-                    isReviewed ? "Remove Review" : "Mark Review",
-                    systemImage: isReviewed ? "bookmark.slash" : "bookmark"
-                )
-            }
-            .tint(.yellow)
-        }
-    }
-}

@@ -8,6 +8,7 @@ struct DailyVerse: Codable {
     let arabic: String
     let translation: String
     let fetchedDate: String   // "yyyy-MM-dd"
+    var translationId: String? = nil   // edition the cached translation came from
 }
 
 @MainActor
@@ -27,10 +28,12 @@ class DailyVerseService: ObservableObject {
 
     func loadIfNeeded() async {
         let today = todayString()
-        // Return cached verse if it's from today
+        let currentTranslation = Translation.selected.id
+        // Return cached verse if it's from today AND uses the current translation.
         if let data = UserDefaults.standard.data(forKey: "dailyVerse"),
            let cached = try? JSONDecoder().decode(DailyVerse.self, from: data),
-           cached.fetchedDate == today {
+           cached.fetchedDate == today,
+           cached.translationId == currentTranslation {
             verse = cached
             return
         }
@@ -41,11 +44,12 @@ class DailyVerseService: ObservableObject {
         isLoading = true
         let idx = dayOfYear() % Self.schedule.count
         let (surah, ayah) = Self.schedule[idx]
-        let urlStr = "https://api.alquran.cloud/v1/ayah/\(surah):\(ayah)/editions/quran-simple,en.asad"
+        let translationId = Translation.selected.id
+        let urlStr = "https://api.alquran.cloud/v1/ayah/\(surah):\(ayah)/editions/quran-simple,\(translationId)"
         guard let url = URL(string: urlStr) else { isLoading = false; return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            if let parsed = parseVerse(data: data, surah: surah, ayah: ayah, date: date) {
+            if let parsed = parseVerse(data: data, surah: surah, ayah: ayah, date: date, translationId: translationId) {
                 verse = parsed
                 if let encoded = try? JSONEncoder().encode(parsed) {
                     UserDefaults.standard.set(encoded, forKey: "dailyVerse")
@@ -55,19 +59,21 @@ class DailyVerseService: ObservableObject {
         isLoading = false
     }
 
-    private func parseVerse(data: Data, surah: Int, ayah: Int, date: String) -> DailyVerse? {
+    private func parseVerse(data: Data, surah: Int, ayah: Int, date: String, translationId: String) -> DailyVerse? {
         guard
             let root      = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let dataArr   = root["data"] as? [[String: Any]],
             let arabic    = dataArr.first(where: { ($0["edition"] as? [String: Any])?["identifier"] as? String == "quran-simple" }),
-            let english   = dataArr.first(where: { ($0["edition"] as? [String: Any])?["identifier"] as? String == "en.asad" }),
             let arabicText = arabic["text"] as? String,
-            let engText    = english["text"] as? String,
             let surahInfo  = arabic["surah"] as? [String: Any],
             let surahName  = surahInfo["englishName"] as? String
         else { return nil }
+        // Translation is best-effort: if the chosen edition is missing, show Arabic alone.
+        let translated = dataArr.first(where: { ($0["edition"] as? [String: Any])?["identifier"] as? String == translationId })
+        let transText  = translated?["text"] as? String ?? ""
         return DailyVerse(surahNumber: surah, ayahNumber: ayah, surahName: surahName,
-                          arabic: arabicText, translation: engText, fetchedDate: date)
+                          arabic: arabicText, translation: transText, fetchedDate: date,
+                          translationId: translationId)
     }
 
     private func todayString() -> String {

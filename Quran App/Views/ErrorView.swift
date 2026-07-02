@@ -17,7 +17,7 @@ struct ErrorView: View {
                 .multilineTextAlignment(.center)
             Button("Try Again", action: retry)
                 .buttonStyle(.bordered)
-                .tint(.teal)
+                .tint(.brand)
         }
         .padding()
         .frame(maxWidth: .infinity, minHeight: 200)

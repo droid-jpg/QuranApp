@@ -21,7 +21,7 @@ struct MushafView: View {
             // Verse end marker with number
             var marker = AttributedString("﴿\(arabicNumber(ayah.numberInSurah))﴾ ")
             marker.font = .system(size: fontSize * 0.75)
-            marker.foregroundColor = .teal.opacity(0.8)
+            marker.foregroundColor = .brand.opacity(0.8)
             result += marker
         }
         return result
@@ -50,7 +50,7 @@ struct MushafView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(20)
-                    .background(Color.teal.opacity(0.06))
+                    .background(Color.brand.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .padding(.horizontal)
 
@@ -76,7 +76,7 @@ struct MushafView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 14) {
                         Button { fontSize = max(18, fontSize - 2) } label: {
                             Image(systemName: "textformat.size.smaller")

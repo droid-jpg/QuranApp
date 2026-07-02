@@ -2,9 +2,11 @@ import SwiftUI
 
 struct MoreView: View {
     @EnvironmentObject private var prayerService: PrayerTimesService
+    @State private var hasAppeared = false
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 // MARK: Prayer Times
                 Section {
@@ -12,10 +14,18 @@ struct MoreView: View {
                         .listRowInsets(EdgeInsets())
                         .listRowSeparator(.hidden)
                 } header: {
-                    Label("Prayer Times", systemImage: "clock.fill")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.primary)
-                        .textCase(nil)
+                    SectionHeader(title: "Prayer Times", systemImage: "clock.fill")
+                }
+
+                // MARK: Memorize
+                Section {
+                    MoreRow(title: "Memorization",
+                            subtitle: "Spaced-repetition review, goals, and progress",
+                            symbol: "graduationcap.fill",
+                            color: .brand,
+                            route: .memorization)
+                } header: {
+                    SectionHeader(title: "Memorize", systemImage: "brain.head.profile")
                 }
 
                 // MARK: Tools
@@ -23,39 +33,39 @@ struct MoreView: View {
                     MoreRow(title: "Qibla Compass",
                             subtitle: "Find the direction of Mecca",
                             symbol: "location.north.line.fill",
-                            color: .teal,
-                            destination: QiblaView())
+                            color: .green,
+                            route: .qibla)
 
                     MoreRow(title: "Dhikr Counter",
                             subtitle: "Track your remembrance",
                             symbol: "hand.raised.fingers.spread.fill",
-                            color: .teal,
-                            destination: DhikrView())
+                            color: .purple,
+                            route: .dhikr)
                 } header: {
-                    Label("Tools", systemImage: "wrench.and.screwdriver.fill")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.primary)
-                        .textCase(nil)
+                    SectionHeader(title: "Tools", systemImage: "wrench.and.screwdriver.fill")
                 }
 
                 // MARK: Learn
                 Section {
+                    MoreRow(title: "Bookmarks",
+                            subtitle: "Saved ayahs for quick access",
+                            symbol: "bookmark.fill",
+                            color: .pink,
+                            route: .bookmarks)
+
                     MoreRow(title: "99 Names of Allah",
                             subtitle: "Memorize and review the Beautiful Names",
                             symbol: "text.book.closed.fill",
                             color: .indigo,
-                            destination: NamesOfAllahView())
+                            route: .names)
 
                     MoreRow(title: "Islamic Calendar",
                             subtitle: "Holidays, fasting days, and special nights",
                             symbol: "moon.stars.fill",
                             color: .orange,
-                            destination: IslamicCalendarView())
+                            route: .calendar)
                 } header: {
-                    Label("Learn", systemImage: "graduationcap.fill")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.primary)
-                        .textCase(nil)
+                    SectionHeader(title: "Learn", systemImage: "graduationcap.fill")
                 }
 
                 // MARK: App
@@ -63,38 +73,72 @@ struct MoreView: View {
                     MoreRow(title: "Settings",
                             subtitle: "Theme, reciter, notifications",
                             symbol: "gear",
-                            color: .secondary,
-                            destination: SettingsView())
+                            color: .gray,
+                            route: .settings)
                 } header: {
-                    Label("App", systemImage: "apps.iphone")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.primary)
-                        .textCase(nil)
+                    SectionHeader(title: "App", systemImage: "apps.iphone")
                 }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("More")
+            .navigationDestination(for: MoreRoute.self) { $0.destination }
+            .opacity(hasAppeared ? 1 : 0)
+            .offset(y: hasAppeared ? 0 : 12)
+            .onAppear {
+                guard !hasAppeared else { return }
+                withAnimation(AppAnim.spring.delay(0.08)) { hasAppeared = true }
+            }
+        }
+        // Light tap on push only (not when popping back). Replaces a per-row
+        // gesture, which on List rows fired the haptic without navigating.
+        .sensoryFeedback(trigger: path) { old, new in
+            new.count > old.count ? .impact(weight: .light) : nil
+        }
+    }
+}
+
+// MARK: - Routes
+
+private enum MoreRoute: Hashable {
+    case memorization, qibla, dhikr, bookmarks, names, calendar, settings
+
+    @ViewBuilder var destination: some View {
+        switch self {
+        case .memorization: MemorizationHubView()
+        case .qibla:        QiblaView()
+        case .dhikr:        DhikrView()
+        case .bookmarks:    BookmarksView()
+        case .names:        NamesOfAllahView()
+        case .calendar:     IslamicCalendarView()
+        case .settings:     SettingsView()
         }
     }
 }
 
 // MARK: - Reusable row with coloured square icon
 
-private struct MoreRow<Destination: View>: View {
+private struct MoreRow: View {
     let title: String
     let subtitle: String
     let symbol: String
     let color: Color
-    let destination: Destination
+    let route: MoreRoute
 
     var body: some View {
-        NavigationLink(destination: destination) {
+        NavigationLink(value: route) {
             HStack(spacing: 14) {
+                // Settings-app style tile: gradient fill, white glyph.
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(color == .secondary ? Color(.tertiarySystemBackground) : color.opacity(0.15))
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [color.opacity(0.95), color.opacity(0.70)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                     Image(systemName: symbol)
-                        .foregroundStyle(color)
+                        .foregroundStyle(.white)
                         .font(.system(size: 16, weight: .semibold))
                 }
                 .frame(width: 36, height: 36)

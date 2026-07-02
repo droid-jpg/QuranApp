@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import UIKit
 
 class DhikrStore: ObservableObject {
     // MARK: - Presets
@@ -47,16 +46,16 @@ class DhikrStore: ObservableObject {
 
         if count >= goal {
             goalReached = true
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            Haptics.success()
         } else {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Haptics.impact()
         }
     }
 
     func reset() {
         count = 0
         goalReached = false
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        Haptics.tap()
     }
 
     func select(_ preset: Preset) {

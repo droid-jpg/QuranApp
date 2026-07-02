@@ -198,8 +198,8 @@ struct WordChip: View {
     private var bg: Color {
         switch state {
         case .normal:               return Color(.tertiarySystemBackground)
-        case .start, .end, .single: return .teal
-        case .inRange:              return .teal.opacity(0.2)
+        case .start, .end, .single: return .brand
+        case .inRange:              return .brand.opacity(0.2)
         }
     }
 
@@ -212,8 +212,8 @@ struct WordChip: View {
 
     private var border: Color {
         switch state {
-        case .start, .end, .single: return .teal
-        case .inRange:              return .teal.opacity(0.5)
+        case .start, .end, .single: return .brand
+        case .inRange:              return .brand.opacity(0.5)
         case .normal:               return .clear
         }
     }

@@ -13,8 +13,14 @@ class SurahDetailViewModel: ObservableObject {
     @Published var isLoadingWordTimings = false
     @Published var wordTimingsError: String? = nil
 
+    // Word-by-word details (meaning/transliteration/audio) and ayah commentary.
+    @Published var wordDetailsByAyah: [Int: [WordDetail]] = [:]
+    @Published var tafsirByAyah: [Int: String] = [:]
+
     let surah: Surah
     private var surahTimingData: SurahTimingData?
+    private var didLoadWordDetails = false
+    private var didLoadTafsir = false
 
     init(surah: Surah) {
         self.surah = surah
@@ -54,6 +60,35 @@ class SurahDetailViewModel: ObservableObject {
 
     // Exposed for SurahDetailView when wiring the word-loop callback
     func chapterAudioUrl() -> URL? { surahTimingData?.chapterAudioUrl }
+
+    // MARK: - Word-by-word details & tafsir
+
+    /// Per-word meaning/transliteration/audio for tappable words. Best-effort:
+    /// a failure leaves the map empty so the reader still renders Arabic, and the
+    /// guard allows a retry on the next call only if the previous attempt failed.
+    func loadWordDetails() async {
+        guard !didLoadWordDetails else { return }
+        do {
+            let details = try await WordDetailService.shared.wordDetails(surah: surah.number)
+            wordDetailsByAyah = details
+            didLoadWordDetails = true
+        } catch {
+            // Leave didLoadWordDetails false so a later view appearance can retry.
+        }
+    }
+
+    /// Ayah-level commentary, keyed by ayah number. Only ayahs with non-empty
+    /// commentary appear, so the reader shows the affordance solely on those.
+    func loadTafsir() async {
+        guard !didLoadTafsir else { return }
+        do {
+            let map = try await TafsirService.shared.tafsir(surah: surah.number)
+            tafsirByAyah = map
+            didLoadTafsir = true
+        } catch {
+            // Best-effort; retry allowed on a later appearance.
+        }
+    }
 
     // MARK: - Resume tracking
 

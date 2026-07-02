@@ -11,17 +11,24 @@ private var sharedDefaults: UserDefaults {
 
 class MemorizationStore: ObservableObject {
     @Published private(set) var statuses: [Int: MemorizationStatus] = [:]
-    @Published private(set) var reviewedNumbers: Set<Int> = []
 
     private let statusKey = "quran_memorization_v1"
-    private let reviewKey = "quran_review_v1"
 
     init() {
         load()
-        loadReview()
+        NotificationCenter.default.addObserver(
+            forName: CloudSync.didPull, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.load()
+        }
     }
 
     // MARK: - Status
+
+    /// The status the user explicitly set, ignoring review progress.
+    func manualStatus(for surahNumber: Int) -> MemorizationStatus {
+        statuses[surahNumber] ?? .notStarted
+    }
 
     func status(for surahNumber: Int) -> MemorizationStatus {
         statuses[surahNumber] ?? .notStarted
@@ -29,10 +36,21 @@ class MemorizationStore: ObservableObject {
 
     var memorizedCount: Int  { statuses.values.filter { $0 == .memorized  }.count }
     var inProgressCount: Int { statuses.values.filter { $0 == .inProgress }.count }
-    var reviewedCount: Int   { reviewedNumbers.count }
 
     var inProgressNumbers: [Int] {
         statuses.filter { $0.value == .inProgress }.keys.sorted()
+    }
+
+    /// Surahs the user explicitly marked Memorized, sorted.
+    var memorizedNumbers: [Int] {
+        statuses.filter { $0.value == .memorized }.keys.sorted()
+    }
+
+    /// Every surah carrying a manual mark (memorized or in progress), sorted.
+    /// Used by the memorization hub to surface hand-marked surahs alongside the
+    /// ayahs enrolled in spaced repetition.
+    var markedNumbers: [Int] {
+        statuses.filter { $0.value != .notStarted }.keys.sorted()
     }
 
     func set(_ status: MemorizationStatus, for surahNumber: Int) {
@@ -48,19 +66,17 @@ class MemorizationStore: ObservableObject {
         set(status(for: surahNumber).next, for: surahNumber)
     }
 
-    // MARK: - Review
+    // MARK: - Hybrid status (manual override + review-derived)
 
-    func isReviewed(_ surahNumber: Int) -> Bool {
-        reviewedNumbers.contains(surahNumber)
-    }
-
-    func toggleReview(_ surahNumber: Int) {
-        if reviewedNumbers.contains(surahNumber) {
-            reviewedNumbers.remove(surahNumber)
-        } else {
-            reviewedNumbers.insert(surahNumber)
-        }
-        saveReview()
+    /// Combines the user's manual mark with spaced-repetition progress. A manual
+    /// "Memorized" always wins; otherwise the surah counts as memorized once every
+    /// ayah is enrolled and mature, and in-progress once any ayah is enrolled (or
+    /// the user manually flagged it). Counts come from `MemorizationSRStore`.
+    func effectiveStatus(for surahNumber: Int, enrolled: Int, mature: Int, totalAyahs: Int) -> MemorizationStatus {
+        if statuses[surahNumber] == .memorized { return .memorized }
+        if totalAyahs > 0, enrolled >= totalAyahs, mature >= totalAyahs { return .memorized }
+        if enrolled > 0 || statuses[surahNumber] == .inProgress { return .inProgress }
+        return .notStarted
     }
 
     // MARK: - Persistence (App Group shared container — survives app updates,
@@ -83,21 +99,6 @@ class MemorizationStore: ObservableObject {
             guard let n = Int(k) else { return nil }
             return (n, v)
         })
-    }
-
-    private func saveReview() {
-        let arr = Array(reviewedNumbers)
-        if let data = try? JSONEncoder().encode(arr) {
-            sharedDefaults.set(data, forKey: reviewKey)
-        }
-    }
-
-    private func loadReview() {
-        guard
-            let data = sharedDefaults.data(forKey: reviewKey),
-            let arr  = try? JSONDecoder().decode([Int].self, from: data)
-        else { return }
-        reviewedNumbers = Set(arr)
     }
 }
 
