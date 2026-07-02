@@ -6,39 +6,37 @@ struct DhikrView: View {
     @State private var draftGoal: String = ""
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color(.systemGroupedBackground).ignoresSafeArea()
+        ZStack {
+            Color(.systemGroupedBackground).ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    // Preset scroll
-                    presetPicker
-                        .padding(.top, 8)
+            VStack(spacing: 0) {
+                // Preset scroll
+                presetPicker
+                    .padding(.top, 8)
 
-                    Spacer()
+                Spacer()
 
-                    // Central counter button
-                    counterButton
+                // Central counter button
+                counterButton
 
-                    Spacer()
+                Spacer()
 
-                    // Bottom bar: goal / reset
-                    bottomBar
+                // Bottom bar: goal / reset
+                bottomBar
+            }
+        }
+        .navigationTitle("Dhikr")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showGoalEditor = true } label: {
+                    Label("Set Goal", systemImage: "target")
                 }
             }
-            .navigationTitle("Dhikr")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showGoalEditor = true } label: {
-                        Label("Set Goal", systemImage: "target")
-                    }
-                }
-            }
-            .sheet(isPresented: $showGoalEditor) {
-                GoalEditorSheet(goal: $store.customGoal) {
-                    store.reset()
-                }
+        }
+        .sheet(isPresented: $showGoalEditor) {
+            GoalEditorSheet(goal: $store.customGoal) {
+                store.reset()
             }
         }
     }
@@ -58,7 +56,7 @@ struct DhikrView: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
                             .background(
-                                active ? Color.teal : Color(.secondarySystemGroupedBackground),
+                                active ? Color.brand : Color(.secondarySystemGroupedBackground),
                                 in: Capsule()
                             )
                             .foregroundStyle(active ? .white : .primary)
@@ -85,13 +83,13 @@ struct DhikrView: View {
 
             // Progress ring
             Circle()
-                .stroke(Color.teal.opacity(0.15), lineWidth: 14)
+                .stroke(Color.brand.opacity(0.15), lineWidth: 14)
                 .frame(width: 240, height: 240)
 
             Circle()
                 .trim(from: 0, to: store.progress)
                 .stroke(
-                    store.goalReached ? Color.green : Color.teal,
+                    store.goalReached ? Color.green : Color.brand,
                     style: StrokeStyle(lineWidth: 14, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
@@ -164,7 +162,7 @@ struct DhikrView: View {
             Button(action: store.reset) {
                 Label("Reset", systemImage: "arrow.counterclockwise")
                     .font(.subheadline)
-                    .foregroundStyle(.teal)
+                    .foregroundStyle(.brand)
             }
             .buttonStyle(.plain)
         }
@@ -198,7 +196,7 @@ struct GoalEditorSheet: View {
                                 .font(.subheadline)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
-                                .background(draftGoal == n ? Color.teal : Color(.tertiarySystemGroupedBackground), in: Capsule())
+                                .background(draftGoal == n ? Color.brand : Color(.tertiarySystemGroupedBackground), in: Capsule())
                                 .foregroundStyle(draftGoal == n ? .white : .primary)
                                 .buttonStyle(.plain)
                             }

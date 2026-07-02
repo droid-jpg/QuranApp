@@ -75,6 +75,39 @@ class NotificationService {
         }
     }
 
+    // MARK: - Daily memorization reminder
+
+    /// A single daily nudge to keep the hifz habit going, at a user-chosen time and
+    /// independent of prayer times. The body is personalized from the current
+    /// memorization target (re-read each time this is called), so scheduling it at
+    /// launch keeps it current.
+    func scheduleMemorizationReminder() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ["memorization_daily"])
+
+        let ud = UserDefaults.standard
+        guard ud.bool(forKey: "memoReminderEnabled") else { return }
+
+        let hour   = ud.object(forKey: "memoReminderHour")   as? Int ?? 19
+        let minute = ud.object(forKey: "memoReminderMinute") as? Int ?? 0
+        var comps = DateComponents(); comps.hour = hour; comps.minute = minute
+
+        let content = UNMutableNotificationContent()
+        content.title = "Time to memorize"
+        if let data = UserDefaults(suiteName: sharedAppGroup)?.data(forKey: "quran_hifz_target_v1"),
+           let t = try? JSONDecoder().decode(MemorizationTarget.self, from: data) {
+            content.body = t.isComplete
+                ? "Review \(t.surahName) with meaning flashcards to lock it in."
+                : "Continue \(t.surahName) — ayah \(t.workingAyah). Keep your streak going."
+        } else {
+            content.body = "Pick an ayah and start memorizing. Small daily reps add up."
+        }
+        content.sound = .default
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
+        center.add(UNNotificationRequest(identifier: "memorization_daily", content: content, trigger: trigger))
+    }
+
     private func addDaily(id: String, title: String, body: String, comps: DateComponents) {
         let content = UNMutableNotificationContent()
         content.title = title

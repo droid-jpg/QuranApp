@@ -1,6 +1,6 @@
 import Foundation
 
-struct Ayah: Identifiable {
+struct Ayah: Identifiable, Codable {
     let numberInSurah: Int
     let globalNumber: Int
     let arabic: String

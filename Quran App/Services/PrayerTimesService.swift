@@ -8,10 +8,29 @@ class PrayerTimesService: NSObject, ObservableObject {
     @Published var prayerTimes: PrayerTimes?
     @Published var fetchStatus: FetchStatus = .notDetermined
     @Published var locationError: String?
+    @Published var dailyTimings: [Int: PrayerTimes] = [:]
 
     enum FetchStatus { case notDetermined, denied, fetching, ready }
 
     private let manager = CLLocationManager()
+    private var lastLat: Double = 0
+    private var lastLon: Double = 0
+
+    /// Aladhan query params from the user's chosen calculation method + Asr school.
+    private var calcParams: String {
+        "&method=\(PrayerCalcMethod.selectedMethodId)&school=\(PrayerCalcMethod.selectedSchool)"
+    }
+
+    /// Re-fetch today's (and clear cached other-day) times after the calculation
+    /// method or Asr school changes, reusing the last known location.
+    func refetchForSettingsChange() {
+        dailyTimings.removeAll()
+        if lastLat != 0 || lastLon != 0 {
+            Task { await fetchTimes(lat: lastLat, lon: lastLon) }
+        } else {
+            requestAndFetch()
+        }
+    }
 
     override init() {
         super.init()
@@ -38,7 +57,9 @@ class PrayerTimesService: NSObject, ObservableObject {
     }
 
     private func fetchTimes(lat: Double, lon: Double) async {
-        let urlStr = "https://api.aladhan.com/v1/timings?latitude=\(lat)&longitude=\(lon)&method=2"
+        self.lastLat = lat
+        self.lastLon = lon
+        let urlStr = "https://api.aladhan.com/v1/timings?latitude=\(lat)&longitude=\(lon)\(calcParams)"
         guard let url = URL(string: urlStr) else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
@@ -101,6 +122,52 @@ class PrayerTimesService: NSObject, ObservableObject {
             bySettingHour: parts[0], minute: parts[1], second: 0, of: Date()
         ) ?? Date()
     }
+
+    /// Fetch prayer times for a specific date offset from today. Cached in `dailyTimings`.
+    func fetchTimings(dayOffset: Int) async -> PrayerTimes? {
+        guard lastLat != 0 || lastLon != 0 else { return nil }
+        if let cached = dailyTimings[dayOffset] { return cached }
+        let cal = Calendar.current
+        guard let targetDate = cal.date(byAdding: .day, value: dayOffset, to: Date()) else { return nil }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "dd-MM-yyyy"
+        let dateStr = fmt.string(from: targetDate)
+        let urlStr = "https://api.aladhan.com/v1/timings/\(dateStr)?latitude=\(lastLat)&longitude=\(lastLon)\(calcParams)"
+        guard let url = URL(string: urlStr) else { return nil }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard
+                let root    = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let dataObj = root["data"] as? [String: Any],
+                let timings = dataObj["timings"] as? [String: String]
+            else { return nil }
+            let fajr    = parseTimeOnDate(timings["Fajr"]    ?? "00:00", date: targetDate)
+            let maghrib = parseTimeOnDate(timings["Maghrib"] ?? "00:00", date: targetDate)
+            let nextFajr = fajr.addingTimeInterval(86400)
+            let islamicMidnight = maghrib.addingTimeInterval(nextFajr.timeIntervalSince(maghrib) / 2)
+            let times = PrayerTimes(
+                fajr:            fajr,
+                sunrise:         parseTimeOnDate(timings["Sunrise"] ?? "00:00", date: targetDate),
+                dhuhr:           parseTimeOnDate(timings["Dhuhr"]   ?? "00:00", date: targetDate),
+                asr:             parseTimeOnDate(timings["Asr"]     ?? "00:00", date: targetDate),
+                maghrib:         maghrib,
+                isha:            parseTimeOnDate(timings["Isha"]    ?? "00:00", date: targetDate),
+                islamicMidnight: islamicMidnight
+            )
+            dailyTimings[dayOffset] = times
+            return times
+        } catch {
+            return nil
+        }
+    }
+
+    private func parseTimeOnDate(_ str: String, date: Date) -> Date {
+        let parts = str.split(separator: ":").compactMap { Int($0) }
+        guard parts.count >= 2 else { return date }
+        return Calendar.current.date(
+            bySettingHour: parts[0], minute: parts[1], second: 0, of: date
+        ) ?? date
+    }
 }
 
 extension PrayerTimesService: CLLocationManagerDelegate {
@@ -155,11 +222,26 @@ struct PrayerTimes {
         ]
     }
 
-    /// Only the five canonical prayers count as "next prayer" for highlighting.
-    var nextPrayer: String {
-        let now = Date()
-        let prayers = [("Fajr", fajr), ("Dhuhr", dhuhr), ("Asr", asr), ("Maghrib", maghrib), ("Isha", isha)]
-        for (name, date) in prayers where date > now { return name }
-        return "Fajr"
+    private var canonical: [(name: String, time: Date)] {
+        [("Fajr", fajr), ("Dhuhr", dhuhr), ("Asr", asr), ("Maghrib", maghrib), ("Isha", isha)]
+    }
+
+    /// The prayer currently being observed — the most recent canonical prayer whose
+    /// time has passed. Fajr's window ends at sunrise and Isha's at Islamic midnight,
+    /// after which nothing is "current" until the next prayer. Returns nil when no
+    /// prayer is active.
+    func currentPrayer(at now: Date) -> String? {
+        var current: String?
+        for (name, time) in canonical where time <= now { current = name }
+        if current == "Fajr" && now >= sunrise { return nil }
+        if current == "Isha" && now >= islamicMidnight { return nil }
+        return current
+    }
+
+    /// The next upcoming canonical prayer and the Date of its next occurrence.
+    /// Once all of today's prayers have passed, rolls over to tomorrow's Fajr.
+    func upcomingPrayer(at now: Date) -> (name: String, date: Date) {
+        for (name, time) in canonical where time > now { return (name, time) }
+        return ("Fajr", fajr.addingTimeInterval(86400))
     }
 }

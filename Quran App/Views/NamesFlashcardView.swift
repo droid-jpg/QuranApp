@@ -26,7 +26,7 @@ struct NamesFlashcardView: View {
                 .padding(.vertical, 12)
 
                 ProgressView(value: Double(currentIndex + 1), total: Double(names.count))
-                    .tint(.teal)
+                    .tint(.brand)
                     .padding(.horizontal, 20)
 
                 Spacer()
@@ -55,7 +55,7 @@ struct NamesFlashcardView: View {
                     Button { advance(by: -1) } label: {
                         Image(systemName: "arrow.left.circle.fill")
                             .font(.system(size: 44))
-                            .foregroundStyle(currentIndex > 0 ? .teal : Color(.tertiaryLabel))
+                            .foregroundStyle(currentIndex > 0 ? .brand : Color(.tertiaryLabel))
                     }
                     .disabled(currentIndex == 0)
 
@@ -65,7 +65,7 @@ struct NamesFlashcardView: View {
                     Button { advance(by: 1) } label: {
                         Image(systemName: "arrow.right.circle.fill")
                             .font(.system(size: 44))
-                            .foregroundStyle(currentIndex < names.count - 1 ? .teal : Color(.tertiaryLabel))
+                            .foregroundStyle(currentIndex < names.count - 1 ? .brand : Color(.tertiaryLabel))
                     }
                     .disabled(currentIndex == names.count - 1)
                 }
@@ -110,7 +110,7 @@ struct NamesFlashcardView: View {
                 VStack(spacing: 16) {
                     Text(name.transliteration)
                         .font(.title.bold())
-                        .foregroundStyle(.teal)
+                        .foregroundStyle(.brand)
                     Text(name.meaning)
                         .font(.title3)
                         .multilineTextAlignment(.center)
@@ -123,8 +123,8 @@ struct NamesFlashcardView: View {
                 .padding(32)
                 .background(
                     RoundedRectangle(cornerRadius: 24)
-                        .fill(Color.teal.opacity(0.08))
-                        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.teal.opacity(0.3), lineWidth: 1))
+                        .fill(Color.brand.opacity(0.08))
+                        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.brand.opacity(0.3), lineWidth: 1))
                         .shadow(color: .black.opacity(0.1), radius: 12, y: 4)
                 )
                 .padding(.horizontal, 24)
@@ -166,22 +166,19 @@ private struct StatusCycleButton: View {
     private func statusLabel(_ s: NamesStore.NameStatus) -> String {
         switch s {
         case .notStarted: return "Not Started"
-        case .learning:   return "Learning"
         case .memorized:  return "Memorized"
         }
     }
     private func statusIcon(_ s: NamesStore.NameStatus) -> String {
         switch s {
         case .notStarted: return "circle"
-        case .learning:   return "circle.dotted.and.circle"
         case .memorized:  return "checkmark.circle.fill"
         }
     }
     private func statusColor(_ s: NamesStore.NameStatus) -> Color {
         switch s {
         case .notStarted: return .secondary
-        case .learning:   return .orange
-        case .memorized:  return .teal
+        case .memorized:  return .brand
         }
     }
 }
@@ -204,33 +201,51 @@ struct AudioSpeakButton: View {
         } label: {
             Image(systemName: isSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2")
                 .font(.system(size: 28))
-                .foregroundStyle(isSpeaking ? .teal : Color(.secondaryLabel))
+                .foregroundStyle(isSpeaking ? .brand : Color(.secondaryLabel))
                 .symbolEffect(.bounce, value: isSpeaking)
         }
         .buttonStyle(.plain)
     }
 
     private func speak() {
+        // Ensure speech plays through the speaker even during silence mode
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.duckOthers])
+        try? AVAudioSession.sharedInstance().setActive(true)
+
         let u = AVSpeechUtterance(string: text)
         u.voice = bestArabicVoice()
-        u.rate = 0.38
+        u.rate = 0.44          // Natural cadence — 0.38 sounds robotic, 0.5 is AVSpeechUtteranceDefaultSpeechRate
         u.pitchMultiplier = 1.0
         u.volume = 1.0
-        u.postUtteranceDelay = 0.3
+        u.postUtteranceDelay = 0.2
         synth.speak(u)
         isSpeaking = true
-        // Estimate completion: ~0.4s per character at this rate
-        let duration = max(2.0, Double(text.count) * 0.4)
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { isSpeaking = false }
+        // Estimate duration from character count at the chosen rate
+        let duration = max(1.2, Double(text.count) * 0.28)
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+            if !self.synth.isSpeaking { self.isSpeaking = false }
+        }
     }
 
     private func bestArabicVoice() -> AVSpeechSynthesisVoice? {
-        // Prefer enhanced/premium quality voices for natural sound
+        // 1. Try Apple's modern Eloquence / neural voice identifiers first.
+        //    These are the high-quality voices shipped with iOS 16+ and 17+.
+        let preferredIdentifiers: [String] = [
+            "com.apple.eloquence.ar-SA.Majed",       // iOS 16+ Eloquence (neural)
+            "com.apple.voice.enhanced.ar-SA.Majed",  // Enhanced quality
+            "com.apple.ttsbundle.Majed-premium",      // Premium bundle
+            "com.apple.ttsbundle.Majed-enhanced",     // Enhanced bundle
+        ]
+        for id in preferredIdentifiers {
+            if let voice = AVSpeechSynthesisVoice(identifier: id) { return voice }
+        }
+
+        // 2. Fall back: pick the highest-quality Arabic voice available on device.
         let arVoices = AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix("ar") }
-        // Sort by quality descending (premium=3, enhanced=2, compact=1)
-        let best = arVoices.max(by: { $0.quality.rawValue < $1.quality.rawValue })
-        return best ?? AVSpeechSynthesisVoice(language: "ar-SA")
+            .sorted { $0.quality.rawValue > $1.quality.rawValue }
+
+        return arVoices.first ?? AVSpeechSynthesisVoice(language: "ar-SA")
     }
 }
 

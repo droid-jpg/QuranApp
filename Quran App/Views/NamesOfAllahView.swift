@@ -18,45 +18,41 @@ struct NamesOfAllahView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Progress header
-                NamesProgressHeader(store: store)
+        VStack(spacing: 0) {
+            // Progress header
+            NamesProgressHeader(store: store)
 
-                // Filter chips
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        FilterChip(label: "All",       isSelected: filterStatus == nil)   { filterStatus = nil }
-                        FilterChip(label: "Learning",  isSelected: filterStatus == .learning,
-                                   color: .orange) { filterStatus = filterStatus == .learning ? nil : .learning }
-                        FilterChip(label: "Memorized", isSelected: filterStatus == .memorized,
-                                   color: .teal)   { filterStatus = filterStatus == .memorized ? nil : .memorized }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+            // Filter chips
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    FilterChip(label: "All",       isSelected: filterStatus == nil)   { filterStatus = nil }
+                    FilterChip(label: "Memorized", isSelected: filterStatus == .memorized,
+                               color: .brand)   { filterStatus = filterStatus == .memorized ? nil : .memorized }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
 
-                List(filtered) { name in
-                    NameRow(name: name, status: store.status(for: name.id))
-                        .onTapGesture { store.cycle(for: name.id) }
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
+            List(filtered) { name in
+                NameRow(name: name, status: store.status(for: name.id))
+                    .onTapGesture { store.cycle(for: name.id) }
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
+            .listStyle(.plain)
+        }
+        .navigationTitle("99 Names of Allah")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: "Search name or meaning…")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showFlashcards = true } label: {
+                    Label("Flashcards", systemImage: "rectangle.on.rectangle.angled")
                 }
-                .listStyle(.plain)
             }
-            .navigationTitle("99 Names of Allah")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Search name or meaning…")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showFlashcards = true } label: {
-                        Label("Flashcards", systemImage: "rectangle.on.rectangle.angled")
-                    }
-                }
-            }
-            .sheet(isPresented: $showFlashcards) {
-                NamesFlashcardView().environmentObject(store)
-            }
+        }
+        .sheet(isPresented: $showFlashcards) {
+            NamesFlashcardView().environmentObject(store)
         }
     }
 }
@@ -68,12 +64,9 @@ private struct NamesProgressHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            StatBlock(value: store.memorizedCount, label: "Memorized", color: .teal)
+            StatBlock(value: store.memorizedCount, label: "Memorized", color: .brand)
             Divider().frame(height: 36)
-            StatBlock(value: store.learningCount,  label: "Learning",  color: .orange)
-            Divider().frame(height: 36)
-            StatBlock(value: 99 - store.memorizedCount - store.learningCount,
-                      label: "Remaining", color: .secondary)
+            StatBlock(value: 99 - store.memorizedCount, label: "Remaining", color: .secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
@@ -104,7 +97,7 @@ private struct StatBlock: View {
 private struct FilterChip: View {
     let label: String
     let isSelected: Bool
-    var color: Color = .teal
+    var color: Color = .brand
     let action: () -> Void
 
     var body: some View {
@@ -178,22 +171,22 @@ private struct NameRow: View {
 
     private var statusColor: Color {
         switch status {
-        case .notStarted: return .teal
-        case .learning:   return .orange
-        case .memorized:  return .teal
+        case .notStarted: return .brand
+        case .memorized:  return .brand
         }
     }
 
     private var statusIcon: String {
         switch status {
         case .notStarted: return "circle"
-        case .learning:   return "circle.dotted.and.circle"
         case .memorized:  return "checkmark.circle.fill"
         }
     }
 }
 
 #Preview {
-    NamesOfAllahView()
-        .environmentObject(NamesStore())
+    NavigationStack {
+        NamesOfAllahView()
+    }
+    .environmentObject(NamesStore())
 }

@@ -5,37 +5,35 @@ struct QiblaView: View {
     @StateObject private var qibla = QiblaService()
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color(.systemGroupedBackground).ignoresSafeArea()
+        ZStack {
+            Color(.systemGroupedBackground).ignoresSafeArea()
 
-                VStack(spacing: 40) {
-                    // Status / distance card
-                    statusCard
+            VStack(spacing: 40) {
+                // Status / distance card
+                statusCard
 
-                    // Compass
-                    compassDial
+                // Compass
+                compassDial
 
-                    // Degree label
-                    if qibla.locationStatus == .ready {
-                        VStack(spacing: 4) {
-                            Text("\(Int(qibla.qiblaHeading))°")
-                                .font(.system(size: 48, weight: .thin, design: .rounded))
-                            Text("from North")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
+                // Degree label
+                if qibla.locationStatus == .ready {
+                    VStack(spacing: 4) {
+                        Text("\(Int(qibla.qiblaHeading))°")
+                            .font(.system(size: 48, weight: .thin, design: .rounded))
+                        Text("from North")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-
-                    Spacer()
                 }
-                .padding(.top, 32)
+
+                Spacer()
             }
-            .navigationTitle("Qibla")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear  { qibla.start() }
-            .onDisappear { qibla.stop() }
+            .padding(.top, 32)
         }
+        .navigationTitle("Qibla")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear  { qibla.start() }
+        .onDisappear { qibla.stop() }
     }
 
     // MARK: - Status card
@@ -46,7 +44,7 @@ struct QiblaView: View {
         case .notDetermined:
             InfoBanner(
                 icon: "location.circle",
-                color: .teal,
+                color: .brand,
                 message: "Allow location access to find your Qibla direction."
             )
         case .denied:
@@ -74,41 +72,48 @@ struct QiblaView: View {
             Circle()
                 .strokeBorder(
                     LinearGradient(
-                        colors: [Color.teal.opacity(0.6), Color.teal.opacity(0.15)],
+                        colors: [Color.brand.opacity(0.6), Color.brand.opacity(0.15)],
                         startPoint: .top, endPoint: .bottom
                     ),
                     lineWidth: 4
                 )
                 .frame(width: 280, height: 280)
 
-            // Cardinal direction labels — rotate opposite to needle so they stay fixed
-            ForEach([("N", 0.0), ("E", 90.0), ("S", 180.0), ("W", 270.0)], id: \.0) { label, angle in
-                Text(label)
-                    .font(.caption.bold())
-                    .foregroundStyle(label == "N" ? Color.red : Color(.secondaryLabel))
-                    .rotationEffect(.degrees(-qibla.deviceHeading))
-                    .offset(y: -120)
-                    .rotationEffect(.degrees(angle))
-            }
+            // Rotating rose: ticks + cardinal letters turn together so North always
+            // tracks true north. The whole rose spins by -displayHeading; letters
+            // counter-rotate by the same amount so their glyphs stay upright.
+            ZStack {
+                // Tick marks
+                ForEach(0..<36) { i in
+                    Rectangle()
+                        .fill(Color(.secondaryLabel).opacity(0.4))
+                        .frame(width: 1, height: i % 9 == 0 ? 12 : 6)
+                        .offset(y: -125)
+                        .rotationEffect(.degrees(Double(i) * 10))
+                }
 
-            // Tick marks (rotating with compass)
-            ForEach(0..<36) { i in
-                Rectangle()
-                    .fill(Color(.secondaryLabel).opacity(0.4))
-                    .frame(width: 1, height: i % 9 == 0 ? 12 : 6)
-                    .offset(y: -125)
-                    .rotationEffect(.degrees(Double(i) * 10 - qibla.deviceHeading))
+                // Cardinal direction labels — kept upright via counter-rotation
+                ForEach([("N", 0.0), ("E", 90.0), ("S", 180.0), ("W", 270.0)], id: \.0) { label, angle in
+                    Text(label)
+                        .font(.caption.bold())
+                        .foregroundStyle(label == "N" ? Color.red : Color(.secondaryLabel))
+                        .rotationEffect(.degrees(qibla.displayHeading - angle))
+                        .offset(y: -120)
+                        .rotationEffect(.degrees(angle))
+                }
             }
+            .rotationEffect(.degrees(-qibla.displayHeading))
+            .animation(.interpolatingSpring(stiffness: 70, damping: 14), value: qibla.displayHeading)
 
             // Qibla needle
             QiblaNeedle()
                 .rotationEffect(.degrees(qibla.qiblaAngle))
-                .animation(.interpolatingSpring(stiffness: 80, damping: 12), value: qibla.qiblaAngle)
+                .animation(.interpolatingSpring(stiffness: 70, damping: 14), value: qibla.qiblaAngle)
                 .opacity(qibla.locationStatus == .ready ? 1 : 0.25)
 
             // Centre dot
             Circle()
-                .fill(Color.teal)
+                .fill(Color.brand)
                 .frame(width: 12, height: 12)
         }
         .frame(width: 280, height: 280)

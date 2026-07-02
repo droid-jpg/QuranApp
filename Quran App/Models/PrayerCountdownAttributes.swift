@@ -7,6 +7,9 @@ import Foundation
 struct PrayerCountdownAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         var prayerName: String
+        /// When the activity was created — the lower bound of the countdown range
+        /// so the timer can clamp at 00:00 instead of counting up past the prayer.
+        var startTime: Date
         var prayerTime: Date
     }
     var prayerName: String

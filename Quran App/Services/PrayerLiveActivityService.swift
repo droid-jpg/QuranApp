@@ -7,6 +7,9 @@ import Foundation
 final class PrayerLiveActivityService {
     static let shared = PrayerLiveActivityService()
     private var pendingTimers: [Timer] = []
+    /// The prayer whose activity is currently live (or being started). Claimed
+    /// synchronously so rapid, repeated scheduleAll calls can't spawn duplicates.
+    private var activePrayerName: String?
     private init() {}
 
     func scheduleAll(for times: PrayerTimes) {
@@ -43,15 +46,40 @@ final class PrayerLiveActivityService {
     }
 
     private func start(name: String, time: Date) async {
-        await endAll()
+        // Already showing this prayer — don't fire a second banner.
+        guard activePrayerName != name else { return }
+        if Activity<PrayerCountdownAttributes>.activities.contains(where: {
+            $0.attributes.prayerName == name
+        }) {
+            activePrayerName = name
+            return
+        }
+        // Claim synchronously before any await so re-entrant calls bail out above.
+        activePrayerName = name
+        await endStaleActivities(keeping: name)
+
         let attrs   = PrayerCountdownAttributes(prayerName: name)
-        let state   = PrayerCountdownAttributes.ContentState(prayerName: name, prayerTime: time)
-        let content = ActivityContent(state: state, staleDate: time.addingTimeInterval(60))
+        let state   = PrayerCountdownAttributes.ContentState(
+            prayerName: name, startTime: Date(), prayerTime: time)
+        let content = ActivityContent(state: state, staleDate: time)
         do {
-            _ = try Activity<PrayerCountdownAttributes>.request(
+            let activity = try Activity<PrayerCountdownAttributes>.request(
                 attributes: attrs, content: content, pushType: nil)
+            // Hand dismissal to the system so it removes the activity at prayer
+            // time even if the app is suspended (an in-app Timer can't fire then).
+            // Text(timerInterval:) keeps counting down locally until removal, so
+            // the banner disappears at the prayer instead of lingering / counting up.
+            await activity.end(content, dismissalPolicy: .after(time))
         } catch {
+            activePrayerName = nil
             print("[LiveActivity] Failed to start: \(error)")
+        }
+    }
+
+    private func endStaleActivities(keeping name: String) async {
+        for activity in Activity<PrayerCountdownAttributes>.activities
+        where activity.attributes.prayerName != name {
+            await activity.end(nil, dismissalPolicy: .immediate)
         }
     }
 
@@ -59,6 +87,7 @@ final class PrayerLiveActivityService {
         for activity in Activity<PrayerCountdownAttributes>.activities {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
+        activePrayerName = nil
     }
 
     private func cancelTimers() {
