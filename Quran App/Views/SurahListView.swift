@@ -1,15 +1,29 @@
 import SwiftUI
-import Combine
 
 struct SurahListView: View {
     @StateObject private var viewModel = SurahListViewModel()
     @EnvironmentObject private var store: MemorizationStore
-    @EnvironmentObject private var prayerService: PrayerTimesService
-    @State private var showJuzBrowser   = false
-    @State private var showQuranSearch  = false
+    @EnvironmentObject private var audioService: AudioService
+    @ObservedObject private var downloadManager = DownloadManager.shared
+    @AppStorage("selectedReciterId") private var selectedReciterId = 7
+    @State private var showJuzBrowser  = false
+    @State private var filter: SurahFilter = .all
+    @State private var path = NavigationPath()
+
+    /// Search + status/download filter applied together.
+    private var displayedSurahs: [Surah] {
+        viewModel.filtered.filter { surah in
+            switch filter {
+            case .all:        return true
+            case .downloaded: return downloadManager.isDownloaded(surah.number)
+            case .memorized:  return store.status(for: surah.number) == .memorized
+            case .inProgress: return store.status(for: surah.number) == .inProgress
+            }
+        }
+    }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if viewModel.isLoading && viewModel.surahs.isEmpty {
                     ProgressView("Loading Surahs…")
@@ -18,45 +32,44 @@ struct SurahListView: View {
                     ErrorView(message: err) { Task { await viewModel.load() } }
                 } else {
                     List {
-                        // Verse of the Day
-                        Section {
-                            VerseOfDayCard()
-                                .listRowInsets(EdgeInsets())
-                                .listRowSeparator(.hidden)
-                        }
-
-                        // Prayer times strip
-                        if prayerService.fetchStatus == .ready {
-                            Section {
-                                PrayerTimesStrip(times: prayerService.prayerTimes)
-                                    .listRowInsets(EdgeInsets())
-                                    .listRowSeparator(.hidden)
-                            }
-                        }
-
-                        // In-progress cards — only when there are some
-                        if !store.inProgressNumbers.isEmpty {
-                            Section {
-                                InProgressCards(
-                                    numbers: store.inProgressNumbers,
-                                    surahs: viewModel.surahs
-                                )
-                                .listRowInsets(EdgeInsets())
-                                .listRowSeparator(.hidden)
-                            } header: {
-                                Text("Continue Memorizing")
-                                    .font(.subheadline.bold())
-                                    .textCase(nil)
-                                    .foregroundStyle(.primary)
-                            }
-                        }
-
                         // Full surah list
                         Section {
-                            ForEach(viewModel.filtered) { surah in
-                                NavigationLink(destination: SurahDetailView(surah: surah)) {
-                                    SurahRowView(surah: surah, status: store.status(for: surah.number))
+                            if displayedSurahs.isEmpty {
+                                FilterEmptyState(filter: filter)
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                            } else {
+                                ForEach(displayedSurahs) { surah in
+                                    let idx = viewModel.surahs.firstIndex(where: { $0.number == surah.number }) ?? 0
+                                    NavigationLink(value: idx) {
+                                        SurahRowView(
+                                            surah: surah,
+                                            status: store.status(for: surah.number)
+                                        )
+                                    }
+                                    .contextMenu {
+                                        SurahQuickActions(
+                                            surah: surah,
+                                            store: store,
+                                            downloadManager: downloadManager,
+                                            audioService: audioService
+                                        )
+                                    }
+                                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                        let next = store.status(for: surah.number).next
+                                        Button {
+                                            Haptics.impact()
+                                            withAnimation { store.cycle(for: surah.number) }
+                                        } label: {
+                                            Label(next.label, systemImage: next.icon)
+                                        }
+                                        .tint(next.color)
+                                    }
                                 }
+                            }
+                        } header: {
+                            if filter != .all {
+                                SectionHeader(title: filter.label, systemImage: filter.icon)
                             }
                         }
                     }
@@ -66,213 +79,49 @@ struct SurahListView: View {
             }
             .navigationTitle("The Holy Quran")
             .navigationBarTitleDisplayMode(.large)
-            .task { await viewModel.load() }
+            .navigationDestination(for: Int.self) { idx in
+                SurahPageView(surahs: viewModel.surahs, startIndex: idx)
+            }
+            .sensoryFeedback(.selection, trigger: filter)
+            // Light tap on push only. Replaces a per-row gesture that, on List
+            // rows, fired the haptic on the content but didn't navigate.
+            .sensoryFeedback(trigger: path) { old, new in
+                new.count > old.count ? .impact(weight: .light) : nil
+            }
+            .task {
+                await viewModel.load()
+                downloadManager.syncCurrentReciter()
+            }
+            .onChange(of: selectedReciterId) { _, _ in
+                downloadManager.syncCurrentReciter()
+            }
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
+                        Haptics.tap()
                         showJuzBrowser = true
                     } label: {
                         Image(systemName: "list.number")
                             .foregroundStyle(.primary)
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    StreakBadge()
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showQuranSearch = true
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Filter", selection: $filter) {
+                            ForEach(SurahFilter.allCases) { f in
+                                Label(f.label, systemImage: f.icon).tag(f)
+                            }
+                        }
                     } label: {
-                        Image(systemName: "magnifyingglass")
+                        Image(systemName: filter == .all
+                              ? "line.3.horizontal.decrease.circle"
+                              : "line.3.horizontal.decrease.circle.fill")
+                            .foregroundStyle(filter == .all ? Color.primary : Color.brand)
                     }
-                }
-            }
+                }            }
             .sheet(isPresented: $showJuzBrowser) {
                 JuzBrowserView(surahs: viewModel.surahs)
-            }
-            .sheet(isPresented: $showQuranSearch) {
-                QuranSearchView()
-            }
-        }
-    }
-}
-
-// MARK: - Prayer times strip
-
-struct PrayerTimesStrip: View {
-    let times: PrayerTimes?
-    @State private var now = Date()
-    private let ticker = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
-
-    private let prayers: [(String, String)] = [
-        ("Fajr",    "moon.stars.fill"),
-        ("Dhuhr",   "sun.max.fill"),
-        ("Asr",     "sun.horizon.fill"),
-        ("Maghrib", "sunset.fill"),
-        ("Isha",    "moon.fill"),
-    ]
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(prayers, id: \.0) { (name, icon) in
-                    if let time = prayerTime(named: name) {
-                        PrayerCell(
-                            name: name,
-                            icon: icon,
-                            time: time,
-                            isNext: isNext(name: name),
-                            now: now
-                        )
-                    }
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-        }
-        .background(Color(.secondarySystemBackground))
-        .onReceive(ticker) { now = $0 }
-    }
-
-    private func prayerTime(named name: String) -> Date? {
-        guard let times else { return nil }
-        switch name {
-        case "Fajr":    return times.fajr
-        case "Dhuhr":   return times.dhuhr
-        case "Asr":     return times.asr
-        case "Maghrib": return times.maghrib
-        case "Isha":    return times.isha
-        default:        return nil
-        }
-    }
-
-    private func isNext(name: String) -> Bool {
-        guard let times else { return false }
-        return times.nextPrayer == name
-    }
-}
-
-private struct PrayerCell: View {
-    let name: String
-    let icon: String
-    let time: Date
-    let isNext: Bool
-    let now: Date
-
-    private static let fmt: DateFormatter = {
-        let f = DateFormatter(); f.timeStyle = .short; return f
-    }()
-
-    var body: some View {
-        VStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: isNext ? .semibold : .regular))
-                .foregroundStyle(isNext ? .teal : .secondary)
-
-            Text(name)
-                .font(.system(size: 11, weight: isNext ? .semibold : .regular))
-                .foregroundStyle(isNext ? .teal : .secondary)
-
-            Text(Self.fmt.string(from: time))
-                .font(.system(size: 12, weight: isNext ? .bold : .regular).monospacedDigit())
-                .foregroundStyle(isNext ? .primary : .secondary)
-
-            if isNext {
-                Text(countdown(to: time))
-                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(.teal)
-            }
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isNext ? Color.teal.opacity(0.08) : Color.clear)
-        )
-        .animation(.easeInOut(duration: 0.3), value: isNext)
-    }
-
-    private func countdown(to date: Date) -> String {
-        let secs = max(0, date.timeIntervalSince(now))
-        let h = Int(secs) / 3600
-        let m = (Int(secs) % 3600) / 60
-        if h > 0 { return "\(h)h \(m)m" }
-        if m > 0 { return "\(m)m" }
-        return "now"
-    }
-}
-
-// MARK: - In-progress cards
-
-struct InProgressCards: View {
-    let numbers: [Int]
-    let surahs: [Surah]
-
-    private func surah(for n: Int) -> Surah? { surahs.first { $0.number == n } }
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach(numbers, id: \.self) { n in
-                    if let s = surah(for: n) {
-                        NavigationLink(destination: SurahDetailView(surah: s)) {
-                            InProgressCard(surah: s)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-        }
-    }
-}
-
-struct InProgressCard: View {
-    let surah: Surah
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: "circle.dotted.and.circle")
-                    .foregroundStyle(.orange)
-                    .font(.subheadline)
-                Spacer()
-                Text("\(surah.number)")
-                    .font(.caption2.bold())
-                    .foregroundStyle(.white)
-                    .frame(width: 22, height: 22)
-                    .background(Color.orange)
-                    .clipShape(Circle())
-            }
-
-            Spacer()
-
-            Text(surah.name)
-                .font(.system(size: 28, weight: .regular))
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .environment(\.layoutDirection, .rightToLeft)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(surah.englishName)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(.primary)
-                Text("\(surah.numberOfAyahs) ayahs · \(surah.englishNameTranslation)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .padding(14)
-        .frame(width: 190, height: 140)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.orange.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.orange.opacity(0.25), lineWidth: 1)
-                )
-        )
+            }        }
     }
 }
 
@@ -281,6 +130,7 @@ struct InProgressCard: View {
 struct SurahRowView: View {
     let surah: Surah
     let status: MemorizationStatus
+    @ObservedObject private var downloadManager = DownloadManager.shared
 
     var body: some View {
         HStack(spacing: 16) {
@@ -296,22 +146,143 @@ struct SurahRowView: View {
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: .trailing, spacing: 3) {
                 Text(surah.name)
                     .font(.system(size: 20))
                     .environment(\.layoutDirection, .rightToLeft)
-                if status != .notStarted {
-                    Image(systemName: status.icon)
-                        .font(.caption)
-                        .foregroundStyle(status.color)
-                } else {
-                    Text("\(surah.numberOfAyahs) ayahs")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+
+                HStack(spacing: 6) {
+                    if downloadManager.isDownloaded(surah.number) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.brand)
+                    }
+                    if status != .notStarted {
+                        Image(systemName: status.icon)
+                            .font(.caption)
+                            .foregroundStyle(status.color)
+                    } else {
+                        Text("\(surah.numberOfAyahs) ayahs")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
+    }
+}
+
+// MARK: - Filter
+
+enum SurahFilter: String, CaseIterable, Identifiable {
+    case all, downloaded, memorized, inProgress
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all:        "All Surahs"
+        case .downloaded: "Downloaded"
+        case .memorized:  "Memorized"
+        case .inProgress: "In Progress"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .all:        "square.stack.3d.up"
+        case .downloaded: "arrow.down.circle"
+        case .memorized:  "checkmark.circle.fill"
+        case .inProgress: "circle.dotted.and.circle"
+        }
+    }
+}
+
+struct FilterEmptyState: View {
+    let filter: SurahFilter
+
+    private var message: String {
+        switch filter {
+        case .downloaded: "No downloaded surahs yet. Tap and hold a surah to download it."
+        case .memorized:  "No memorized surahs yet."
+        case .inProgress: "Nothing in progress yet."
+        case .all:        "No surahs found."
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: filter.icon)
+                .font(.system(size: 34))
+                .foregroundStyle(.secondary)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+}
+
+// MARK: - Quick actions (long-press context menu)
+
+struct SurahQuickActions: View {
+    let surah: Surah
+    @ObservedObject var store: MemorizationStore
+    @ObservedObject var downloadManager: DownloadManager
+    let audioService: AudioService
+
+    private var reciterSubfolder: String { Reciter.selected.subfolder }
+
+    var body: some View {
+        // Memorization status (checkmark shows current selection)
+        Picker("Status", selection: Binding(
+            get: { store.status(for: surah.number) },
+            set: { Haptics.selection(); store.set($0, for: surah.number) }
+        )) {
+            Label("Not Started", systemImage: "circle").tag(MemorizationStatus.notStarted)
+            Label("In Progress", systemImage: "circle.dotted.and.circle").tag(MemorizationStatus.inProgress)
+            Label("Memorized", systemImage: "checkmark.circle.fill").tag(MemorizationStatus.memorized)
+        }
+
+        Divider()
+
+        Button {
+            Haptics.tap()
+            audioService.play(
+                surah: surah.number,
+                startAyah: 1,
+                loop: LoopSettings(),
+                totalAyahs: surah.numberOfAyahs,
+                surahName: surah.englishName
+            )
+        } label: {
+            Label("Play Audio", systemImage: "play.circle")
+        }
+
+        if downloadManager.isDownloaded(surah.number) {
+            Button(role: .destructive) {
+                Haptics.warning()
+                downloadManager.deleteSurah(surah.number, reciterSubfolder: reciterSubfolder)
+            } label: {
+                Label("Remove Download", systemImage: "trash")
+            }
+        } else if (downloadManager.progress[surah.number] ?? 0) > 0 {
+            Label("Downloading…", systemImage: "arrow.down.circle")
+        } else {
+            Button {
+                Haptics.tap()
+                downloadManager.downloadSurah(
+                    surah.number,
+                    ayahCount: surah.numberOfAyahs,
+                    reciterSubfolder: reciterSubfolder
+                )
+            } label: {
+                Label("Download Audio", systemImage: "arrow.down.circle")
+            }
+        }
     }
 }
 
@@ -320,12 +291,21 @@ struct NumberBadge: View {
 
     var body: some View {
         ZStack {
+            Image(systemName: "seal.fill")
+                .font(.system(size: 40))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.brand.opacity(0.16), Color.brand.opacity(0.07)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
             Image(systemName: "seal")
-                .font(.system(size: 38))
-                .foregroundStyle(.teal.opacity(0.18))
+                .font(.system(size: 40, weight: .thin))
+                .foregroundStyle(.brand.opacity(0.35))
             Text("\(number)")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.teal)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.brand)
         }
         .frame(width: 44, height: 44)
     }
@@ -334,6 +314,11 @@ struct NumberBadge: View {
 // MARK: - Verse of the Day
 
 struct VerseOfDayCard: View {
+    /// Home overlays its own Play button on the card's top-right corner. It can't
+    /// live *inside* the card, because the whole card is a NavigationLink there and
+    /// nested buttons swallow each other's taps — so the card just leaves room.
+    var reservesPlaySlot: Bool = false
+
     @ObservedObject private var service = DailyVerseService.shared
 
     var body: some View {
@@ -348,6 +333,7 @@ struct VerseOfDayCard: View {
                     Text("\(v.surahName) \(v.ayahNumber)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .padding(.trailing, reservesPlaySlot ? 72 : 0)
                 }
             }
             .padding(.horizontal, 16)
@@ -359,54 +345,33 @@ struct VerseOfDayCard: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
             } else if let v = service.verse {
-                VStack(alignment: .trailing, spacing: 10) {
+                VStack(alignment: .trailing, spacing: 12) {
                     Text(v.arabic)
-                        .font(.system(size: 22, weight: .regular))
+                        .font(.system(size: 24, weight: .regular))
                         .multilineTextAlignment(.trailing)
-                        .lineSpacing(8)
+                        .lineSpacing(10)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .environment(\.layoutDirection, .rightToLeft)
 
                     Text(v.translation)
                         .font(.subheadline)
+                        .fontDesign(.serif)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .lineLimit(4)
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 14)
+                .padding(.bottom, 16)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 0)
-                .fill(Color.orange.opacity(0.05))
-        )
+        .tintedCard(.orange)
         .overlay(alignment: .leading) {
-            Rectangle()
+            RoundedRectangle(cornerRadius: 3)
                 .fill(Color.orange.opacity(0.5))
                 .frame(width: 3)
+                .padding(.vertical, 12)
         }
     }
 }
 
-// MARK: - Streak badge
-
-private struct StreakBadge: View {
-    private let streak = StreakService.shared.currentStreak
-    var body: some View {
-        if streak > 1 {
-            HStack(spacing: 3) {
-                Text("🔥")
-                    .font(.subheadline)
-                Text("\(streak)")
-                    .font(.subheadline.bold())
-                    .foregroundStyle(.orange)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.orange.opacity(0.12))
-            .clipShape(Capsule())
-        }
-    }
-}
