@@ -71,18 +71,20 @@ struct JuzPicker: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 JuzChip(label: "All", isSelected: selectedJuz == nil) {
+                    Haptics.selection()
                     selectedJuz = nil
                 }
                 ForEach(1...30, id: \.self) { n in
                     JuzChip(label: "\(n)", isSelected: selectedJuz == n) {
+                        Haptics.selection()
                         selectedJuz = n
                     }
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
-        .background(Color(.secondarySystemBackground))
+        .overlay(alignment: .bottom) { Hairline() }
     }
 }
 
@@ -137,26 +139,25 @@ struct MemorizationProgressBar: View {
 
     var body: some View {
         let p = progress
-        VStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 11) {
             GeometryReader { geo in
                 HStack(spacing: 0) {
-                    Rectangle().fill(Color.green)
+                    Rectangle().fill(Color.brand)
                         .frame(width: geo.size.width * p.memorizedFraction)
                     Rectangle().fill(Color.orange)
                         .frame(width: geo.size.width * p.inProgressFraction)
-                    Rectangle().fill(Color(.tertiarySystemFill))
+                    Rectangle().fill(Color(.label).opacity(0.16))
                 }
             }
-            .frame(height: 6)
-            .clipShape(Capsule())
-            .padding(.horizontal)
+            .frame(height: 1.5)
 
             Text(p.label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(.appSerif(14, italic: true))
+                .foregroundStyle(Color(.label).opacity(0.5))
         }
-        .padding(.vertical, 8)
-        .background(Color(.secondarySystemBackground))
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 14)
     }
 }
 
@@ -172,35 +173,14 @@ struct MemorizationStatsBar: View {
     private var remainingCount: Int  { surahs.count - memorizedCount - inProgressCount }
 
     var body: some View {
-        HStack(spacing: 0) {
-            StatPill(value: memorizedCount,  label: "Memorized",  color: .green)
-            Divider().frame(height: 36)
-            StatPill(value: inProgressCount, label: "In Progress", color: .orange)
-            Divider().frame(height: 36)
-            StatPill(value: remainingCount,  label: "Remaining",   color: .secondary)
+        HStack(spacing: 18) {
+            StatDot(color: .brand,  value: memorizedCount,  label: "Memorized")
+            StatDot(color: .orange, value: inProgressCount, label: "In progress")
+            StatDot(color: Color(.label).opacity(0.25), value: remainingCount, label: "Remaining")
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 10)
-        .background(Color(.secondarySystemBackground))
-    }
-}
-
-struct StatPill: View {
-    let value: Int
-    let label: String
-    let color: Color
-
-    var body: some View {
-        VStack(spacing: 1) {
-            Text("\(value)")
-                .font(.title2.bold())
-                .foregroundStyle(color)
-                .contentTransition(.numericText())
-                .animation(AppAnim.spring, value: value)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
     }
 }
 
@@ -236,20 +216,14 @@ struct MemorizationGrid: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 14) {
-                    GridLegend(color: .green,                     label: "Memorized")
-                    GridLegend(color: .orange,                    label: "In Progress")
-                    GridLegend(color: Color(.tertiarySystemFill), label: "Not started")
+                    GridLegend(color: .brand,                        label: "Memorized")
+                    GridLegend(color: .orange,                       label: "In progress")
+                    GridLegend(color: Color(.label).opacity(0.12),   label: "Not started")
+                    Spacer(minLength: 0)
+                    MetaText("PINCH TO ZOOM", tint: Color(.label).opacity(0.3), size: 8.5)
                 }
-                .padding(.horizontal)
-                .padding(.top, 10)
-
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right.magnifyingglass")
-                    Text("Pinch to zoom")
-                }
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal)
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
 
                 LazyVGrid(columns: columns, spacing: 6) {
                     ForEach(surahs.indices, id: \.self) { idx in
@@ -285,24 +259,24 @@ struct GridCell: View {
 
     private var fill: Color {
         switch status {
-        case .notStarted: return Color(.systemFill)
+        case .notStarted: return Color(.label).opacity(0.08)
         case .inProgress: return .orange
-        case .memorized:  return .green
+        case .memorized:  return .brand
         }
     }
 
     private var textColor: Color {
         switch status {
-        case .notStarted: return .secondary
-        case .inProgress, .memorized: return .white
+        case .notStarted: return Color(.label).opacity(0.4)
+        // The accent is dark in light mode and luminous in dark, so the page
+        // background is the only fill colour that stays legible on top of it.
+        case .inProgress, .memorized: return Color(.systemBackground)
         }
     }
 
-    private var corner: CGFloat { showName ? 8 : 5 }
-
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: corner)
+            Rectangle()
                 .fill(fill)
                 .animation(AppAnim.spring, value: status)
             if showName, let name {
@@ -335,17 +309,18 @@ struct GridLegend: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 2)
+            Rectangle()
                 .fill(color)
                 .overlay(
                     Group {
-                        if let b = border { RoundedRectangle(cornerRadius: 2).stroke(b, lineWidth: 1.5) }
+                        if let b = border { Rectangle().stroke(b, lineWidth: 1.5) }
                     }
                 )
-                .frame(width: 12, height: 12)
-            Text(label)
-                .font(.system(size: 9))
-                .foregroundStyle(.secondary)
+                .frame(width: 9, height: 9)
+            Text(label.uppercased())
+                .font(.system(size: 8.5, weight: .semibold))
+                .kerning(0.8)
+                .foregroundStyle(Color(.label).opacity(0.45))
         }
     }
 }

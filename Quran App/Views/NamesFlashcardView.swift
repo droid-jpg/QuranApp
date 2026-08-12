@@ -17,7 +17,7 @@ struct NamesFlashcardView: View {
                 // Progress
                 HStack {
                     Text("\(currentIndex + 1) / \(names.count)")
-                        .font(.subheadline)
+                        .font(.appSerif(15))
                         .foregroundStyle(.secondary)
                     Spacer()
                     StatusCycleButton(name: names[currentIndex], store: store)
@@ -100,7 +100,7 @@ struct NamesFlashcardView: View {
                 .frame(maxWidth: .infinity, maxHeight: 280)
                 .padding(32)
                 .background(
-                    RoundedRectangle(cornerRadius: 24)
+                    Rectangle()
                         .fill(Color(.secondarySystemBackground))
                         .shadow(color: .black.opacity(0.1), radius: 12, y: 4)
                 )
@@ -112,7 +112,7 @@ struct NamesFlashcardView: View {
                         .font(.title.bold())
                         .foregroundStyle(.brand)
                     Text(name.meaning)
-                        .font(.title3)
+                        .font(.appSerif(19))
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.primary)
                     Text("#\(name.id)")
@@ -122,9 +122,9 @@ struct NamesFlashcardView: View {
                 .frame(maxWidth: .infinity, maxHeight: 280)
                 .padding(32)
                 .background(
-                    RoundedRectangle(cornerRadius: 24)
+                    Rectangle()
                         .fill(Color.brand.opacity(0.08))
-                        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.brand.opacity(0.3), lineWidth: 1))
+                        .overlay(Rectangle().stroke(Color.brand.opacity(0.3), lineWidth: 1))
                         .shadow(color: .black.opacity(0.1), radius: 12, y: 4)
                 )
                 .padding(.horizontal, 24)
@@ -158,7 +158,7 @@ private struct StatusCycleButton: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(statusColor(status).opacity(0.12))
-                .clipShape(Capsule())
+                .clipShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -187,6 +187,11 @@ private struct StatusCycleButton: View {
 
 struct AudioSpeakButton: View {
     let text: String
+    /// The flashcard wants a big tappable speaker; the 99-Names register wants a
+    /// glyph the size of its neighbours. Hard-coding 28pt made every list row
+    /// shout, so callers set it.
+    var size: CGFloat = 28
+
     @State private var isSpeaking = false
     @State private var synth = AVSpeechSynthesizer()
 
@@ -200,9 +205,10 @@ struct AudioSpeakButton: View {
             }
         } label: {
             Image(systemName: isSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2")
-                .font(.system(size: 28))
-                .foregroundStyle(isSpeaking ? .brand : Color(.secondaryLabel))
+                .font(.system(size: size))
+                .foregroundStyle(isSpeaking ? Color.brand : Color(.label).opacity(0.35))
                 .symbolEffect(.bounce, value: isSpeaking)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

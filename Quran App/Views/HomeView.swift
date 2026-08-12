@@ -1,6 +1,10 @@
 import SwiftUI
 import Combine
 
+/// The dashboard, rebuilt as a quiet editorial list. Everything that used to be
+/// a tinted card is now a ruled block: a hairline, a small-caps eyebrow, and the
+/// content set in the reading serif. The accent survives as a mark — the scrub
+/// line, the play circles, the working-ayah rule — and nothing else is filled.
 struct HomeView: View {
     @EnvironmentObject private var memorizationStore: MemorizationStore
     @EnvironmentObject private var srStore: MemorizationSRStore
@@ -11,6 +15,8 @@ struct HomeView: View {
     @ObservedObject private var dailyVerse = DailyVerseService.shared
     @ObservedObject private var listening = ListeningSessionStore.shared
     @AppStorage("selectedTranslationId") private var translationId = Translation.fallbackId
+    // Declared so the dashboard repaints the moment the reading face changes.
+    @AppStorage("readingFace") private var readingFace = ReadingFace.newYork.rawValue
     @State private var showReview = false
     @State private var activeDrill: PlayerDrill? = nil
 
@@ -18,7 +24,7 @@ struct HomeView: View {
 
     // MARK: - Listening actions
 
-    /// The resume hero's play button. When the saved session is already loaded in
+    /// The resume block's play button. When the saved session is already loaded in
     /// the player this is a plain play/pause; otherwise it restores the session —
     /// same ayah, same loop, same position inside the ayah.
     private func toggleResume(_ session: ListeningSession) {
@@ -56,7 +62,7 @@ struct HomeView: View {
         var items: [QuickStartRail.QuickStart] = []
 
         if let v = dailyVerse.verse, let total = ayahCount(of: v.surahNumber) {
-            items.append(.init(id: "votd", label: "Verse of the day",
+            items.append(.init(id: "votd", label: "Verse of day",
                                icon: "sun.horizon.fill", tint: .orange) {
                 Haptics.tap()
                 activeDrill = nil
@@ -93,16 +99,16 @@ struct HomeView: View {
     private var greeting: String {
         let h = Calendar.current.component(.hour, from: Date())
         switch h {
-        case 5..<12:  return "Good Morning"
-        case 12..<17: return "Good Afternoon"
-        case 17..<21: return "Good Evening"
-        default:       return "Good Night"
+        case 5..<12:  return "Good morning."
+        case 12..<17: return "Good afternoon."
+        case 17..<21: return "Good evening."
+        default:      return "Good night."
         }
     }
 
     /// A notable (non-recurring) Islamic event happening today or tomorrow, for the
-    /// home chip. Recurring fasts (Mon/Thu, White Days) are excluded so the chip
-    /// only surfaces genuine occasions. Holidays sort ahead of fasting days.
+    /// home line. Recurring fasts (Mon/Thu, White Days) are excluded so it only
+    /// surfaces genuine occasions.
     private var featuredEvent: (occ: EventOccurrence, isToday: Bool)? {
         let cal = Calendar.current
         let today = Date()
@@ -121,32 +127,43 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
 
-                    // ── Hero ──────────────────────────────────────────────
-                    HomeHeroHeader(greeting: greeting, streak: StreakService.shared.currentStreak)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 4)
-                        .padding(.bottom, featuredEvent == nil ? 24 : 14)
+                    // ── Masthead ──────────────────────────────────────────
+                    Masthead(streak: StreakService.shared.currentStreak)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 18)
                         .staggeredAppear(delay: 0.04)
 
-                    // ── Holiday chip (today / tomorrow) ───────────────────
+                    // ── Greeting ──────────────────────────────────────────
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(greeting)
+                            .font(.appSerif(27))
+                            .foregroundStyle(.primary)
+                        Eyebrow(HomeDates.today, size: 10)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 20)
+                    .padding(.bottom, 18)
+                    .staggeredAppear(delay: 0.06)
+
+                    // ── Holiday line (today / tomorrow) ───────────────────
                     if let ev = featuredEvent {
-                        HolidayChip(occurrence: ev.occ, isToday: ev.isToday)
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 24)
+                        HolidayLine(occurrence: ev.occ, isToday: ev.isToday)
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 18)
                             .staggeredAppear(delay: 0.07)
                     }
 
-                    // ── Resume listening (the 1b hero) ────────────────────
+                    // ── Now playing / resume ──────────────────────────────
                     // Top slot, because "hear Qur'an" is the shortest path into
                     // the app and it used to cost a tab switch and 114 rows.
                     if let session = listening.session {
-                        ResumeListeningCard(
+                        ResumeListeningSection(
                             session: session,
                             surahs: listVM.surahs,
                             audioService: audioService,
                             onToggle: { toggleResume(session) }
                         )
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 24)
                         .padding(.bottom, 14)
                         .staggeredAppear(delay: 0.075)
                     }
@@ -154,127 +171,97 @@ struct HomeView: View {
                     // ── One-tap starts ────────────────────────────────────
                     if !quickStarts.isEmpty {
                         QuickStartRail(items: quickStarts)
-                            .padding(.bottom, 22)
+                            .padding(.bottom, 18)
                             .staggeredAppear(delay: 0.09)
                     }
 
-                    // ── Continue memorizing (current target) ──────────────
+                    // ── Memorizing (current target) ───────────────────────
                     if let t = targetStore.target,
                        let idx = listVM.surahs.firstIndex(where: { $0.number == t.surah }) {
-                        ContinueMemorizingCard(
+                        MemorizingSection(
                             target: t,
                             surahs: listVM.surahs,
                             startIndex: idx,
                             activeDrill: activeDrill,
                             onDrill: { runDrill($0, target: t) }
                         )
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 18)
                         .staggeredAppear(delay: 0.11)
                     }
 
                     // ── Next prayer ───────────────────────────────────────
                     if prayerService.fetchStatus == .ready {
-                        NextPrayerCard(times: prayerService.prayerTimes)
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 24)
-                            .staggeredAppear(delay: 0.10)
+                        NextPrayerSection(times: prayerService.prayerTimes)
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 18)
+                            .staggeredAppear(delay: 0.13)
                     }
 
-                    // ── Verse of the Day (card carries its own title) ─────
-                    if let verse = dailyVerse.verse,
-                       let idx = listVM.surahs.firstIndex(where: { $0.number == verse.surahNumber }) {
-                        NavigationLink {
-                            SurahPageView(surahs: listVM.surahs, startIndex: idx, initialAyah: verse.ayahNumber)
-                        } label: {
-                            VerseOfDayCard(reservesPlaySlot: true)
-                        }
-                        .buttonStyle(CardButtonStyle())
-                        .hapticTap()
-                        // Sibling of the link, not a child: every card that has
-                        // audio now has a play, and nested buttons don't work.
-                        .overlay(alignment: .topTrailing) {
-                            if let total = ayahCount(of: verse.surahNumber) {
-                                Button {
-                                    Haptics.tap()
-                                    activeDrill = nil
-                                    audioService.play(
-                                        surah: verse.surahNumber, startAyah: verse.ayahNumber,
-                                        loop: .listen(ayah: verse.ayahNumber, repeatCount: 1),
-                                        totalAyahs: total, surahName: verse.surahName
-                                    )
-                                } label: {
-                                    HStack(spacing: 5) {
-                                        Image(systemName: "play.fill")
-                                            .font(.system(size: 10, weight: .bold))
-                                        Text("Play")
-                                            .font(.system(size: 11, weight: .bold))
-                                    }
-                                    .foregroundStyle(.orange)
-                                    .padding(.horizontal, 10).padding(.vertical, 5)
-                                    .background(Color.orange.opacity(0.14), in: Capsule())
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.top, 11)
-                                .padding(.trailing, 14)
-                                .accessibilityLabel("Play verse of the day")
+                    // ── Verse of the day ──────────────────────────────────
+                    // Hidden entirely when the verse hasn't arrived — a lone
+                    // eyebrow over nothing reads as a broken section.
+                    if dailyVerse.verse != nil || dailyVerse.isLoading {
+                        VerseOfDaySection(
+                            surahs: listVM.surahs,
+                            onPlay: { verse in
+                                guard let total = ayahCount(of: verse.surahNumber) else { return }
+                                Haptics.tap()
+                                activeDrill = nil
+                                audioService.play(
+                                    surah: verse.surahNumber, startAyah: verse.ayahNumber,
+                                    loop: .listen(ayah: verse.ayahNumber, repeatCount: 1),
+                                    totalAyahs: total, surahName: verse.surahName
+                                )
                             }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
-                        .staggeredAppear(delay: 0.20)
-                    } else {
-                        VerseOfDayCard()
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 24)
-                            .staggeredAppear(delay: 0.20)
+                        )
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 18)
+                        .staggeredAppear(delay: 0.16)
                     }
 
-                    // ── Due for Review ────────────────────────────────────
+                    // ── Due for review ────────────────────────────────────
                     if srStore.dueCount() > 0 {
-                        DueReviewCard(count: srStore.dueCount()) {
+                        DueReviewSection(count: srStore.dueCount()) {
                             Haptics.tap()
                             showReview = true
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
-                        .staggeredAppear(delay: 0.22)
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 18)
+                        .staggeredAppear(delay: 0.19)
                     }
 
                     // ── Other surahs in progress ──────────────────────────
-                    // The active target already has the hero card above, so it
+                    // The active target already has its own block above, so it
                     // is excluded here — this row is the rest of the backlog.
                     let otherInProgress = memorizationStore.inProgressNumbers
                         .filter { $0 != targetStore.target?.surah }
                     if !otherInProgress.isEmpty && !listVM.surahs.isEmpty {
-                        SectionHeader(title: "In Progress", systemImage: "circle.dotted.and.circle", tint: .orange)
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 10)
-                            .staggeredAppear(delay: 0.25)
-                        ContinueMemorizingRow(
-                            numbers: otherInProgress,
-                            surahs: listVM.surahs
-                        )
-                        .padding(.bottom, 24)
-                        .staggeredAppear(delay: 0.28)
+                        EditorialSection(title: "In progress",
+                                         icon: "circle.dotted.and.circle",
+                                         iconTint: .orange,
+                                         trailing: "\(otherInProgress.count)") {
+                            EmptyView()
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 13)
+                        .staggeredAppear(delay: 0.21)
+
+                        InProgressRail(numbers: otherInProgress, surahs: listVM.surahs)
+                            .padding(.bottom, 18)
+                            .staggeredAppear(delay: 0.23)
                     }
 
                     // ── Progress summary ──────────────────────────────────
-                    HomeProgressCard(store: memorizationStore, surahs: listVM.surahs)
-                        .padding(.horizontal, 16)
+                    ProgressSection(store: memorizationStore, surahs: listVM.surahs)
+                        .padding(.horizontal, 24)
                         .padding(.bottom, 8)
-                        .staggeredAppear(delay: 0.38)
+                        .staggeredAppear(delay: 0.26)
                 }
-                .padding(.bottom, 20)
+                .padding(.bottom, 28)
             }
-            .background(alignment: .top) {
-                HomeAurora()
-                    .ignoresSafeArea(edges: .top)
-            }
-            // "The Holy Quran" is the Quran tab's title; the dashboard carries
-            // the app name so the two tabs read as distinct places.
-            .navigationTitle("Al-Faatiha")
-            .navigationBarTitleDisplayMode(.large)
+            // The masthead is the title now — the nav bar would only repeat it.
+            .toolbar(.hidden, for: .navigationBar)
             // Audio never leaves the tab: what Home starts, Home can also pause,
             // resume and stop without a trip to the reader.
             .safeAreaInset(edge: .bottom) {
@@ -299,193 +286,60 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Aurora backdrop
+// MARK: - Dates
 
-/// A whisper of brand color behind the large title and hero header. Static
-/// (content scrolls over it) and masked to fade out well before mid-screen so
-/// the dashboard below stays on the plain system background.
-private struct HomeAurora: View {
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        MeshGradient(
-            width: 3, height: 3,
-            points: [
-                [0, 0],   [0.5, 0],   [1, 0],
-                [0, 0.4], [0.6, 0.5], [1, 0.4],
-                [0, 1],   [0.5, 1],   [1, 1],
-            ],
-            colors: [
-                .brand, .mint, .brand,
-                .mint,  .brand, .cyan,
-                .clear, .clear, .clear,
-            ]
-        )
-        .opacity(scheme == .dark ? 0.14 : 0.09)
-        .frame(height: 300)
-        .mask(
-            LinearGradient(colors: [.black, .black, .clear],
-                           startPoint: .top, endPoint: .bottom)
-        )
-        .allowsHitTesting(false)
-    }
-}
-
-// MARK: - Due for review card
-
-private struct DueReviewCard: View {
-    let count: Int
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(Color.brand.opacity(0.12))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: "graduationcap.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.brand)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Due for Review")
-                        .font(.title3.bold())
-                    Text("\(count) ayah\(count == 1 ? "" : "s") ready")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Text("Start")
-                    .font(.subheadline.bold())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(LinearGradient.brandHero)
-                    .clipShape(Capsule())
-            }
-            .padding(16)
-            .tintedCard(.brand)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Continue memorizing (current target)
-
-/// The surah + ayah the user is actively memorizing. The header opens the reader
-/// at the working ayah; underneath, the three acquisition drills — Listen, Repeat,
-/// Chain — start straight from the dashboard in the same language the reader's
-/// player uses, so a drill is one tap from opening the app.
-///
-/// The filled hero treatment moved to the resume card above; this one is tinted so
-/// the dashboard has exactly one filled card.
-private struct ContinueMemorizingCard: View {
-    let target: MemorizationTarget
-    let surahs: [Surah]
-    let startIndex: Int
-    let activeDrill: PlayerDrill?
-    let onDrill: (PlayerDrill) -> Void
-
-    var body: some View {
-        VStack(spacing: 14) {
-            NavigationLink {
-                SurahPageView(surahs: surahs, startIndex: startIndex, initialAyah: target.workingAyah)
-            } label: {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 7) {
-                        Image(systemName: "graduationcap.fill")
-                            .font(.caption.bold())
-                            .foregroundStyle(.brand)
-                        Text(target.isComplete
-                             ? "Memorized · \(target.surahName)"
-                             : "Memorizing · \(target.surahName) \(target.workingAyah)")
-                            .font(.subheadline.bold())
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        Spacer(minLength: 6)
-                        Text("\(Int((target.fraction * 100).rounded()))%")
-                            .font(.caption.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.bold())
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color(.tertiarySystemFill))
-                            Capsule().fill(LinearGradient.brandHero)
-                                .frame(width: max(0, geo.size.width * target.fraction))
-                        }
-                    }
-                    .frame(height: 5)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .hapticTap()
-
-            HStack(spacing: 8) {
-                DrillButton(icon: "repeat", label: "Listen",
-                            on: activeDrill == .listen) { onDrill(.listen) }
-                DrillButton(icon: "pause.circle", label: "Repeat",
-                            on: activeDrill == .repeatAfter) { onDrill(.repeatAfter) }
-                DrillButton(icon: "link", label: "Chain",
-                            on: activeDrill == .chain) { onDrill(.chain) }
-            }
-        }
-        .padding(16)
-        .tintedCard(.brand)
-    }
-}
-
-// MARK: - Hero header
-
-private struct HomeHeroHeader: View {
-    let greeting: String
-    let streak: Int
-
+enum HomeDates {
+    // Abbreviated: at small-caps with letterspacing, the full "TUESDAY, 11
+    // AUGUST · 28 SAFAR" runs nearly the width of the page and reads as another
+    // paragraph rather than a dateline.
     private static let dayFmt: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "EEEE, MMMM d"; return f
+        let f = DateFormatter(); f.dateFormat = "EEE d MMM"; return f
     }()
 
-    var body: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(greeting)
-                    .font(.title.bold())
-                    .fontDesign(.serif)
-                Text(Self.dayFmt.string(from: Date()))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if streak > 0 {
-                HStack(spacing: 5) {
-                    Image(systemName: "flame.fill")
-                        .foregroundStyle(.orange)
-                    Text("\(streak)")
-                        .font(.subheadline.bold().monospacedDigit())
-                        .foregroundStyle(.primary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.orange.opacity(0.12), in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.orange.opacity(0.25), lineWidth: 1))
-                .accessibilityLabel("\(streak) day streak")
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    /// The Hijri half of the dateline. Umm al-Qura, the same civil calendar the
+    /// Islamic Calendar screen uses, so the two never disagree by a day.
+    private static let hijriFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .islamicUmmAlQura)
+        f.dateFormat = "d MMMM"
+        return f
+    }()
+
+    static var today: String {
+        let now = Date()
+        return "\(dayFmt.string(from: now)) · \(hijriFmt.string(from: now))"
     }
 }
 
-// MARK: - Holiday chip
+// MARK: - Masthead
 
-private struct HolidayChip: View {
+/// The wordmark, a rule that runs to the streak, and the streak itself. Replaces
+/// the large navigation title so the page starts as a page, not as chrome.
+private struct Masthead: View {
+    let streak: Int
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("Holy Quran")
+                .font(.appSerif(32, weight: .medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+            Rectangle()
+                .fill(Color.rule)
+                .frame(height: 1)
+                .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 5 }
+            if streak > 0 {
+                MetaText("\(streak) DAY\(streak == 1 ? "" : "S")", size: 10)
+                    .accessibilityLabel("\(streak) day streak")
+            }
+        }
+    }
+}
+
+// MARK: - Holiday line
+
+private struct HolidayLine: View {
     let occurrence: EventOccurrence
     let isToday: Bool
 
@@ -493,129 +347,128 @@ private struct HolidayChip: View {
         NavigationLink {
             IslamicCalendarView()
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Image(systemName: occurrence.event.kind.icon)
-                    .font(.caption.bold())
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(occurrence.event.kind.color)
-
                 Text(occurrence.event.name)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.appSerif(16))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-
-                Text(isToday ? "Today" : "Tomorrow")
-                    .font(.caption2.bold())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(occurrence.event.kind.color, in: Capsule())
-
+                Spacer(minLength: 8)
+                MetaText(isToday ? "TODAY" : "TOMORROW",
+                         tint: occurrence.event.kind.color, size: 9.5)
                 Image(systemName: "chevron.right")
-                    .font(.caption2.bold())
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color(.label).opacity(0.3))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(occurrence.event.kind.color.opacity(0.12), in: Capsule())
-            .overlay(
-                Capsule().strokeBorder(occurrence.event.kind.color.opacity(0.25), lineWidth: 1)
-            )
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .overlay(Rectangle().strokeBorder(occurrence.event.kind.color.opacity(0.35), lineWidth: 1))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .hapticTap()
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-// MARK: - Next prayer card
+// MARK: - Memorizing
 
-struct NextPrayerCard: View {
+/// The surah + ayah the user is actively memorizing. The heading opens the reader
+/// at the working ayah; underneath, the three acquisition drills — Listen, Repeat,
+/// Chain — start straight from the dashboard in the same language the reader's
+/// player uses, so a drill is one tap from opening the app.
+private struct MemorizingSection: View {
+    let target: MemorizationTarget
+    let surahs: [Surah]
+    let startIndex: Int
+    let activeDrill: PlayerDrill?
+    let onDrill: (PlayerDrill) -> Void
+
+    var body: some View {
+        EditorialSection(title: "Memorizing",
+                         icon: "graduationcap.fill",
+                         trailing: "\(Int((target.fraction * 100).rounded()))%") {
+            VStack(alignment: .leading, spacing: 0) {
+                NavigationLink {
+                    SurahPageView(surahs: surahs, startIndex: startIndex, initialAyah: target.workingAyah)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(target.surahName)
+                            .font(.appSerif(21, weight: .medium))
+                            .foregroundStyle(.primary)
+                        Text(target.isComplete
+                             ? "memorized"
+                             : "ayah \(target.workingAyah) of \(target.totalAyahs)")
+                            .font(.appSerif(16))
+                            .foregroundStyle(Color(.label).opacity(0.5))
+                        Spacer(minLength: 4)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color(.label).opacity(0.3))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .hapticTap()
+
+                RuleProgress(fraction: target.fraction)
+                    .padding(.top, 13)
+
+                HStack(spacing: 8) {
+                    OutlineButton(label: "Listen", on: activeDrill == .listen) { onDrill(.listen) }
+                    OutlineButton(label: "Repeat", on: activeDrill == .repeatAfter) { onDrill(.repeatAfter) }
+                    OutlineButton(label: "Chain", on: activeDrill == .chain) { onDrill(.chain) }
+                }
+                .padding(.top, 15)
+            }
+        }
+    }
+}
+
+// MARK: - Next prayer
+
+/// The upcoming prayer, its countdown, and the rest of the day as one ruled
+/// line of metadata. No expansion: the whole day already fits.
+struct NextPrayerSection: View {
     let times: PrayerTimes?
     @State private var now = Date()
-    @State private var expanded = false
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
-    private static let prayerIcons: [String: String] = [
-        "Fajr":     "moon.stars.fill",
-        "Sunrise":  "sunrise.fill",
-        "Dhuhr":    "sun.max.fill",
-        "Asr":      "sun.horizon.fill",
-        "Maghrib":  "sunset.fill",
-        "Isha":     "moon.fill",
-        "Midnight": "moon.zzz.fill",
-    ]
-
-    private var nextEntry: (name: String, icon: String, time: Date)? {
+    private var nextEntry: (name: String, time: Date)? {
         guard let t = times else { return nil }
         let canonical: [(String, Date)] = [
             ("Fajr", t.fajr), ("Dhuhr", t.dhuhr),
             ("Asr",  t.asr),  ("Maghrib", t.maghrib), ("Isha", t.isha),
         ]
-        for (name, date) in canonical where date > now {
-            return (name, Self.prayerIcons[name] ?? "clock", date)
-        }
+        for (name, date) in canonical where date > now { return (name, date) }
         // After Isha — next Fajr is +1 day
-        let tomorrowFajr = t.fajr.addingTimeInterval(86_400)
-        return ("Fajr", "moon.stars.fill", tomorrowFajr)
+        return ("Fajr", t.fajr.addingTimeInterval(86_400))
     }
 
     var body: some View {
         Group {
-            if let entry = nextEntry {
-                VStack(spacing: 0) {
-                    // Header (always visible) — tap to expand the full day
-                    HStack(spacing: 16) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.brand.opacity(0.12))
-                                .frame(width: 52, height: 52)
-                            Image(systemName: entry.icon)
-                                .font(.system(size: 22))
-                                .foregroundStyle(.brand)
-                        }
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Next Prayer")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+            if let entry = nextEntry, let t = times {
+                EditorialSection(title: "Next prayer",
+                                 // The prayer's own symbol, so the section is
+                                 // recognisable before the name is read.
+                                 icon: Self.prayerIcons[entry.name] ?? "clock",
+                                 trailing: "in \(countdown(to: entry.time))",
+                                 trailingTint: .brand) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Text(entry.name)
-                                .font(.title3.bold())
+                                .font(.appSerif(21, weight: .medium))
+                            Text(Self.timeFmt.string(from: entry.time))
+                                .font(.appSerif(17).monospacedDigit())
+                                .foregroundStyle(Color(.label).opacity(0.5))
                         }
 
-                        Spacer()
-
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(countdown(to: entry.time))
-                                .font(.title3.bold().monospacedDigit())
-                                .foregroundStyle(.brand)
-                            Text(timeString(entry.time))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Image(systemName: "chevron.down")
-                            .font(.caption.bold())
-                            .foregroundStyle(.tertiary)
-                            .rotationEffect(.degrees(expanded ? 180 : 0))
-                            .padding(.leading, 2)
-                    }
-
-                    if expanded, let t = times {
-                        Divider()
-                            .padding(.top, 14)
-                            .padding(.bottom, 2)
-                        ForEach(t.named, id: \.name) { item in
-                            prayerRow(name: item.name, time: item.time, isNext: item.name == entry.name)
-                        }
-                    }
-                }
-                .padding(16)
-                .tintedCard(.brand)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    Haptics.tap()
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                        expanded.toggle()
+                        Text(restOfDay(t, excluding: entry.name))
+                            .font(.system(size: 9.5, weight: .semibold).monospacedDigit())
+                            .kerning(0.9)
+                            .foregroundStyle(Color(.label).opacity(0.38))
+                            .padding(.top, 11)
                     }
                 }
             }
@@ -623,26 +476,17 @@ struct NextPrayerCard: View {
         .onReceive(ticker) { now = $0 }
     }
 
-    @ViewBuilder
-    private func prayerRow(name: String, time: Date, isNext: Bool) -> some View {
-        let isPast = time < now
-        HStack(spacing: 12) {
-            Image(systemName: Self.prayerIcons[name] ?? "clock")
-                .font(.footnote)
-                .foregroundStyle(isNext ? .brand : .secondary)
-                .frame(width: 20)
-            Text(name)
-                .font(.subheadline)
-                .fontWeight(isNext ? .semibold : .regular)
-                .foregroundStyle(isNext ? .brand : .primary)
-            Spacer()
-            Text(timeString(time))
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(isNext ? .brand : .secondary)
-        }
-        // Dim prayers that have already passed (the upcoming one stays full strength).
-        .opacity(isPast && !isNext ? 0.45 : 1)
-        .padding(.vertical, 7)
+    /// "FAJR 5:12 · DHUHR 1:24 · ASR 5:02 · ISHA 9:41" — the day at a glance,
+    /// minus whichever prayer is already spelled out above.
+    private func restOfDay(_ t: PrayerTimes, excluding: String) -> String {
+        let canonical: [(String, Date)] = [
+            ("Fajr", t.fajr), ("Dhuhr", t.dhuhr),
+            ("Asr", t.asr), ("Maghrib", t.maghrib), ("Isha", t.isha),
+        ]
+        return canonical
+            .filter { $0.0 != excluding }
+            .map { "\($0.0.uppercased()) \(Self.compactFmt.string(from: $0.1))" }
+            .joined(separator: " · ")
     }
 
     private func countdown(to date: Date) -> String {
@@ -655,20 +499,128 @@ struct NextPrayerCard: View {
         return "\(s)s"
     }
 
-    // Static: this is called every ticker tick (once per second while visible),
-    // so allocating a DateFormatter per call would churn.
+    // Static: called every ticker tick while visible, so a per-call formatter
+    // would churn.
     private static let timeFmt: DateFormatter = {
         let f = DateFormatter(); f.timeStyle = .short; return f
     }()
 
-    private func timeString(_ date: Date) -> String {
-        Self.timeFmt.string(from: date)
+    private static let compactFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "h:mm"; return f
+    }()
+
+    static let prayerIcons: [String: String] = [
+        "Fajr":     "moon.stars.fill",
+        "Sunrise":  "sunrise.fill",
+        "Dhuhr":    "sun.max.fill",
+        "Asr":      "sun.horizon.fill",
+        "Maghrib":  "sunset.fill",
+        "Isha":     "moon.fill",
+        "Midnight": "moon.zzz.fill",
+    ]
+}
+
+// MARK: - Verse of the day
+
+/// Today's ayah set as scripture: Arabic at reading size, the translation in the
+/// serif underneath, and the reference as metadata. The whole block opens the
+/// reader; the play button is a sibling, because nested buttons swallow taps.
+private struct VerseOfDaySection: View {
+    let surahs: [Surah]
+    let onPlay: (DailyVerse) -> Void
+
+    @ObservedObject private var service = DailyVerseService.shared
+    @AppStorage("arabicScript") private var arabicScript = ArabicScript.system.rawValue
+
+    private func startIndex(_ v: DailyVerse) -> Int? {
+        surahs.firstIndex { $0.number == v.surahNumber }
+    }
+
+    var body: some View {
+        EditorialSection(title: "Verse of the day",
+                         icon: "sun.horizon.fill",
+                         iconTint: .orange,
+                         trailing: service.verse.map { "\($0.surahName) \($0.ayahNumber)" }) {
+            Group {
+                if service.isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                } else if let v = service.verse {
+                    ZStack(alignment: .bottomTrailing) {
+                        Group {
+                            if let idx = startIndex(v) {
+                                NavigationLink {
+                                    SurahPageView(surahs: surahs, startIndex: idx, initialAyah: v.ayahNumber)
+                                } label: { verse(v) }
+                                    .buttonStyle(.plain)
+                                    .hapticTap()
+                            } else {
+                                verse(v)
+                            }
+                        }
+
+                        Button { onPlay(v) } label: {
+                            PlayCircle(playing: false, size: 34)
+                        }
+                        .buttonStyle(CardButtonStyle(scale: 0.92))
+                        .accessibilityLabel("Play verse of the day")
+                    }
+                }
+            }
+        }
+    }
+
+    private func verse(_ v: DailyVerse) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(v.arabic)
+                .font(.appArabic(24))
+                .lineSpacing(14)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .environment(\.layoutDirection, .rightToLeft)
+                .padding(.top, 4)
+
+            Text(v.translation)
+                .font(.appSerif(17))
+                .foregroundStyle(Color(.label).opacity(0.72))
+                .lineSpacing(3)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(4)
+                .padding(.top, 13)
+                .padding(.trailing, 44)   // room for the play circle
+        }
+        .contentShape(Rectangle())
     }
 }
 
-// MARK: - Continue Memorizing row
+// MARK: - Due for review
 
-private struct ContinueMemorizingRow: View {
+private struct DueReviewSection: View {
+    let count: Int
+    let action: () -> Void
+
+    var body: some View {
+        EditorialSection(title: "Review",
+                         icon: "arrow.triangle.2.circlepath",
+                         trailing: "\(count) due", trailingTint: .brand) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("\(count) ayah\(count == 1 ? "" : "s") ready to recall")
+                    .font(.appSerif(17))
+                    .foregroundStyle(Color(.label).opacity(0.72))
+                Spacer(minLength: 8)
+            }
+            .padding(.bottom, 13)
+
+            OutlineButton(label: "Start review", on: true, action: action)
+        }
+    }
+}
+
+// MARK: - In-progress rail
+
+private struct InProgressRail: View {
     let numbers: [Int]
     let surahs: [Surah]
 
@@ -693,14 +645,16 @@ private struct ContinueMemorizingRow: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 24)
         }
     }
 }
 
-// MARK: - Progress summary card (global; taps into the juz-filterable overview)
+// MARK: - Progress summary
 
-private struct HomeProgressCard: View {
+/// The whole-Quran picture, kept last because it's the slowest-moving number on
+/// the page. Taps into the juz-filterable overview.
+private struct ProgressSection: View {
     @ObservedObject var store: MemorizationStore
     let surahs: [Surah]
     @State private var showOverview = false
@@ -724,42 +678,34 @@ private struct HomeProgressCard: View {
         let total = Double(max(st.total, 1))
 
         Button { Haptics.tap(); showOverview = true } label: {
-            VStack(spacing: 12) {
-                // Header row
-                HStack {
-                    Text("Memorization Progress")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Text("\(st.memorized)/\(st.total) surahs")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.tertiary)
-                }
-
-                // Progress bar
-                GeometryReader { geo in
-                    HStack(spacing: 0) {
-                        Rectangle().fill(Color.green)
-                            .frame(width: geo.size.width * Double(st.memorized) / total)
-                        Rectangle().fill(Color.orange)
-                            .frame(width: geo.size.width * Double(st.inProgress) / total)
-                        Rectangle().fill(Color(.tertiarySystemFill))
+            EditorialSection(title: "Memorization",
+                             icon: "square.grid.3x3.fill",
+                             iconTint: Color(.label).opacity(0.4),
+                             trailing: "\(st.memorized)/\(st.total) surahs") {
+                VStack(alignment: .leading, spacing: 0) {
+                    GeometryReader { geo in
+                        HStack(spacing: 0) {
+                            Rectangle().fill(Color.brand)
+                                .frame(width: geo.size.width * Double(st.memorized) / total)
+                            Rectangle().fill(Color.orange)
+                                .frame(width: geo.size.width * Double(st.inProgress) / total)
+                            Rectangle().fill(Color(.label).opacity(0.16))
+                        }
                     }
-                }
-                .frame(height: 6)
-                .clipShape(Capsule())
+                    .frame(height: 1.5)
 
-                // Legend
-                HStack(spacing: 16) {
-                    StatDot(color: .green,  value: st.memorized,  label: "Memorized")
-                    StatDot(color: .orange, value: st.inProgress, label: "In Progress")
+                    HStack(spacing: 16) {
+                        StatDot(color: .brand,  value: st.memorized,  label: "Memorized")
+                        StatDot(color: .orange, value: st.inProgress, label: "In progress")
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color(.label).opacity(0.3))
+                    }
+                    .padding(.top, 13)
                 }
             }
-            .padding(16)
-            .tintedCard(Color(.systemGray), fillOpacity: 0.04, strokeOpacity: 0.12)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showOverview) {
@@ -767,4 +713,3 @@ private struct HomeProgressCard: View {
         }
     }
 }
-

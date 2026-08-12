@@ -12,6 +12,7 @@ import SwiftUI
 struct QuranWidgetBundle: WidgetBundle {
     var body: some Widget {
         QuranWidget()
+        HifzWidget()
         PrayerCountdownLiveActivity()
     }
 }

@@ -37,9 +37,9 @@ struct MushafView: View {
                             .font(.system(size: 42, weight: .regular))
                             .environment(\.layoutDirection, .rightToLeft)
                         Text(surah.englishName)
-                            .font(.title3.bold())
+                            .font(.appSerif(20, weight: .medium))
                         Text(surah.englishNameTranslation)
-                            .font(.subheadline)
+                            .font(.appSerif(15))
                             .foregroundStyle(.secondary)
                         if surah.number != 1 && surah.number != 9 {
                             Text("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ")
@@ -51,7 +51,7 @@ struct MushafView: View {
                     .frame(maxWidth: .infinity)
                     .padding(20)
                     .background(Color.brand.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(Rectangle())
                     .padding(.horizontal)
 
                     // Continuous Arabic text

@@ -19,7 +19,7 @@ struct JuzBrowserView: View {
                     HStack(spacing: 14) {
                         // Juz number badge
                         ZStack {
-                            RoundedRectangle(cornerRadius: 8)
+                            Rectangle()
                                 .fill(Color.brand.opacity(0.12))
                             Text("\(boundary.juz)")
                                 .font(.system(size: 14, weight: .bold))
@@ -29,7 +29,7 @@ struct JuzBrowserView: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Juz \(boundary.juz)")
-                                .font(.body.bold())
+                                .font(.appSerif(17, weight: .semibold))
                             if let s = startSurah {
                                 Text("\(s.englishName) \(boundary.startAyah == 1 ? "" : "· Ayah \(boundary.startAyah)")")
                                     .font(.caption)
