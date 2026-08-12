@@ -10,7 +10,7 @@ struct ErrorView: View {
                 .font(.system(size: 44))
                 .foregroundStyle(.orange)
             Text("Something went wrong")
-                .font(.headline)
+                .font(.appSerif(17, weight: .semibold))
             Text(message)
                 .font(.caption)
                 .foregroundStyle(.secondary)

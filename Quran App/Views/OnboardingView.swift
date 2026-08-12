@@ -50,12 +50,12 @@ struct OnboardingView: View {
                     }
                 } label: {
                     Text(page == lastPage ? "Get Started" : "Continue")
-                        .font(.headline)
+                        .font(.appSerif(17, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(Color.brand)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .clipShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -132,7 +132,7 @@ struct OnboardingView: View {
                         .foregroundStyle(.brand)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.brand.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                        .background(Color.brand.opacity(0.12), in: Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -161,7 +161,7 @@ struct OnboardingView: View {
                         .foregroundStyle(.brand)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.brand.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                        .background(Color.brand.opacity(0.12), in: Rectangle())
                 }
                 .buttonStyle(.plain)
 
@@ -197,7 +197,7 @@ struct OnboardingView: View {
                         .multilineTextAlignment(.center)
 
                     Text(subtitle)
-                        .font(.subheadline)
+                        .font(.appSerif(15))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -220,7 +220,7 @@ struct OnboardingView: View {
             content()
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .background(Color(.secondarySystemBackground), in: Rectangle())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -236,7 +236,7 @@ private struct FeatureLine: View {
                 .foregroundStyle(.brand)
                 .frame(width: 26)
             Text(text)
-                .font(.subheadline)
+                .font(.appSerif(15))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)

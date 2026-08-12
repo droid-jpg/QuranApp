@@ -52,10 +52,10 @@ struct MemorizationGuideView: View {
                     )
             }
             Text("Memorize, the smart way")
-                .font(.title2.bold())
+                .font(.appSerif(23, weight: .medium))
                 .multilineTextAlignment(.center)
             Text("Add ayahs you want to learn and the app schedules them with spaced repetition — resurfacing each one right before you'd forget, so it sticks with far less effort.")
-                .font(.subheadline)
+                .font(.appSerif(15))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -101,12 +101,12 @@ struct MemorizationGuideView: View {
         GuideSection(title: "How review works", systemImage: "calendar.badge.clock") {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Each ayah has its own schedule. When one is due, it appears in your review queue. Recall it, then rate how it went — the app stretches or shrinks the gap until the next review based on your answer.")
-                    .font(.subheadline)
+                    .font(.appSerif(15))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     Image(systemName: "checkmark.seal.fill")
-                        .font(.title3)
+                        .font(.appSerif(19))
                         .foregroundStyle(.green)
                     Text("Once you've recalled an ayah comfortably for about three weeks, it's counted as **Mastered**.")
                         .font(.caption)
@@ -178,7 +178,7 @@ struct MemorizationGuideView: View {
     private var tip: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "lightbulb.fill")
-                .font(.subheadline)
+                .font(.appSerif(15))
                 .foregroundStyle(.yellow)
             Text("Short and daily beats long and rare. Five honest minutes a day will out-memorize an hour once a week — the spacing is doing the heavy lifting.")
                 .font(.caption)
@@ -206,7 +206,7 @@ private struct GuideSection<Content: View>: View {
                     .font(.subheadline.bold())
                     .foregroundStyle(.brand)
                 Text(title)
-                    .font(.headline)
+                    .font(.appSerif(17, weight: .semibold))
             }
             content
         }
@@ -275,7 +275,7 @@ private struct GuideGradeRow: View {
                 .foregroundStyle(grade.tint)
                 .frame(width: 58)
                 .padding(.vertical, 7)
-                .background(grade.tint.opacity(0.15), in: Capsule())
+                .background(grade.tint.opacity(0.15), in: Rectangle())
             Text(grade.guideDetail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -298,7 +298,7 @@ private struct ConceptCard: View {
                 .font(.system(size: 17))
                 .foregroundStyle(tint)
                 .frame(width: 38, height: 38)
-                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+                .background(tint.opacity(0.14), in: Rectangle())
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.subheadline.weight(.semibold))
                 Text(detail)

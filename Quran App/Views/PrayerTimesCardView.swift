@@ -1,6 +1,9 @@
 import SwiftUI
 import Combine
 
+/// The prayer times block on the More tab. The old horizontal strip of cells put
+/// seven prayers behind a scroll and hid Sunrise and Midnight behind taps; ruled
+/// rows show the whole day at once, which is what the screen is for.
 struct PrayerTimesCardView: View {
     @ObservedObject var service: PrayerTimesService
     @State private var selectedOffset: Int = 0
@@ -8,45 +11,45 @@ struct PrayerTimesCardView: View {
     var body: some View {
         switch service.fetchStatus {
         case .notDetermined:
-            Button { service.requestAndFetch() } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "location.circle.fill").foregroundStyle(.brand)
-                    Text("Enable Prayer Times").font(.subheadline).foregroundStyle(.brand)
-                }
-                .frame(maxWidth: .infinity).padding(.vertical, 12)
+            OutlineButton(label: "Enable prayer times", icon: "location.fill", on: true) {
+                Haptics.tap()
+                service.requestAndFetch()
             }
 
         case .denied:
-            HStack(spacing: 8) {
-                Image(systemName: "location.slash.fill").foregroundStyle(.secondary)
-                Text("Location access denied — enable in Settings").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 9) {
+                Image(systemName: "location.slash.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(.label).opacity(0.4))
+                Text("Location access denied — enable in Settings")
+                    .font(.appSerif(15))
+                    .foregroundStyle(Color(.label).opacity(0.5))
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
         case .fetching:
-            HStack(spacing: 8) {
-                ProgressView()
-                Text("Getting prayer times…").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                ProgressView().scaleEffect(0.7)
+                Text("Getting prayer times…")
+                    .font(.appSerif(15))
+                    .foregroundStyle(Color(.label).opacity(0.5))
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
         case .ready:
-            VStack(spacing: 0) {
-                // Day picker strip
+            VStack(alignment: .leading, spacing: 0) {
                 DayPickerStrip(selectedOffset: $selectedOffset)
-                    .padding(.top, 10)
-
-                Divider().padding(.vertical, 6)
-
-                // Prayer times for selected day
+                    .padding(.bottom, 16)
                 PrayerTimesForDayView(service: service, dayOffset: selectedOffset)
             }
         }
     }
 }
 
-// MARK: - Prayer times strip (horizontal scrolling row of prayer cells)
+// MARK: - Prayer rows
 
+/// The day's prayers as ruled lines. The prayer currently being observed carries
+/// an accent rule in the margin; the next one carries a live countdown.
 struct PrayerTimesStrip: View {
     let times: PrayerTimes
     /// When false (a future/past date), no prayer is highlighted and no live
@@ -54,64 +57,44 @@ struct PrayerTimesStrip: View {
     var isToday: Bool = true
 
     @State private var now = Date()
-    @State private var showSunrise = false
-    @State private var showMidnight = false
     private let ticker = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
-    private let basePrayers: [(String, String)] = [
-        ("Fajr",    "moon.stars.fill"),
-        ("Dhuhr",   "sun.max.fill"),
-        ("Asr",     "sun.horizon.fill"),
-        ("Maghrib", "sunset.fill"),
-        ("Isha",    "moon.fill"),
+    /// Sunrise and Islamic Midnight are shown outright now rather than hidden
+    /// behind a tap on Fajr / Isha — they're two more lines, not two more cells.
+    private let entries: [(name: String, icon: String)] = [
+        ("Fajr",     "moon.stars.fill"),
+        ("Sunrise",  "sunrise.fill"),
+        ("Dhuhr",    "sun.max.fill"),
+        ("Asr",      "sun.horizon.fill"),
+        ("Maghrib",  "sunset.fill"),
+        ("Isha",     "moon.fill"),
+        ("Midnight", "moon.zzz.fill"),
     ]
-
-    // Sunrise and Midnight are revealed by tapping Fajr / Isha respectively.
-    private var displayEntries: [(String, String)] {
-        var entries = basePrayers
-        if showMidnight { entries.append(("Midnight", "moon.zzz.fill")) }
-        if showSunrise, let idx = entries.firstIndex(where: { $0.0 == "Fajr" }) {
-            entries.insert(("Sunrise", "sunrise.fill"), at: idx + 1)
-        }
-        return entries
-    }
 
     private var current: String? { isToday ? times.currentPrayer(at: now) : nil }
     private var upcoming: (name: String, date: Date)? { isToday ? times.upcomingPrayer(at: now) : nil }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(displayEntries, id: \.0) { (name, icon) in
-                    if let time = prayerTime(named: name) {
-                        PrayerCell(
-                            name: name,
-                            icon: icon,
-                            time: time,
-                            isCurrent: name == current,
-                            isUpcoming: name == upcoming?.name,
-                            countdownDate: name == upcoming?.name ? upcoming?.date : nil,
-                            now: now,
-                            onTap: tapAction(for: name)
-                        )
+        VStack(spacing: 0) {
+            ForEach(Array(entries.enumerated()), id: \.element.name) { index, entry in
+                if let time = prayerTime(named: entry.name) {
+                    if index > 0 {
+                        Hairline(opacity: 0.6)
                     }
+                    PrayerRow(
+                        name: entry.name,
+                        icon: entry.icon,
+                        time: time,
+                        isCurrent: entry.name == current,
+                        isUpcoming: entry.name == upcoming?.name,
+                        countdownDate: entry.name == upcoming?.name ? upcoming?.date : nil,
+                        now: now,
+                        isPast: isToday && time < now
+                    )
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
         }
         .onReceive(ticker) { now = $0 }
-    }
-
-    private func tapAction(for name: String) -> (() -> Void)? {
-        switch name {
-        case "Fajr":
-            return { withAnimation(.spring(duration: 0.3)) { showSunrise.toggle() } }
-        case "Isha":
-            return { withAnimation(.spring(duration: 0.3)) { showMidnight.toggle() } }
-        default:
-            return nil
-        }
     }
 
     private func prayerTime(named name: String) -> Date? {
@@ -128,83 +111,66 @@ struct PrayerTimesStrip: View {
     }
 }
 
-private struct PrayerCell: View {
+private struct PrayerRow: View {
     let name: String
     let icon: String
     let time: Date
-    /// The prayer currently being prayed — gets a solid highlight.
+    /// The prayer currently being observed.
     let isCurrent: Bool
-    /// The next prayer coming up — gets a pulsing glow and a live countdown.
+    /// The next prayer coming up — carries the live countdown.
     let isUpcoming: Bool
     let countdownDate: Date?
     let now: Date
-    let onTap: (() -> Void)?
+    let isPast: Bool
 
-    @State private var pulsing = false
-
-    private var accent: Bool { isCurrent || isUpcoming }
+    private var accented: Bool { isCurrent || isUpcoming }
 
     private static let fmt: DateFormatter = {
         let f = DateFormatter(); f.timeStyle = .short; return f
     }()
 
     var body: some View {
-        VStack(spacing: 5) {
-            ZStack {
-                if isUpcoming {
-                    Circle()
-                        .fill(Color.brand)
-                        .frame(width: 30, height: 30)
-                        .scaleEffect(pulsing ? 1.25 : 0.85)
-                        .opacity(pulsing ? 0.3 : 0.12)
-                        .blur(radius: 3)
-                }
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: accent ? .semibold : .regular))
-                    .foregroundStyle(accent ? .brand : .secondary)
-            }
-            .frame(height: 30)
-            Text(name)
-                .font(.system(size: 11, weight: accent ? .semibold : .regular))
-                .foregroundStyle(accent ? .brand : .secondary)
-            Text(Self.fmt.string(from: time))
-                .font(.system(size: 12, weight: isCurrent ? .bold : .regular).monospacedDigit())
-                .foregroundStyle(accent ? .primary : .secondary)
-            if isUpcoming, let date = countdownDate {
-                Text("in \(countdown(to: date))")
-                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(.brand)
-            }
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isCurrent ? Color.brand.opacity(0.12) : Color.clear)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture { onTap?() }
-        .animation(.easeInOut(duration: 0.3), value: isCurrent)
-        .onAppear { if isUpcoming { startPulse() } }
-        .onChange(of: isUpcoming) { _, newValue in
-            if newValue { startPulse() } else { pulsing = false }
-        }
-    }
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: accented ? .semibold : .regular))
+                .foregroundStyle(accented ? Color.brand : Color(.label).opacity(0.35))
+                .frame(width: 18)
 
-    private func startPulse() {
-        pulsing = false
-        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-            pulsing = true
+            Text(name)
+                .font(.appSerif(17, weight: isCurrent ? .semibold : .regular))
+                .foregroundStyle(accented ? Color.brand : Color(.label))
+
+            Spacer(minLength: 8)
+
+            if isUpcoming, let date = countdownDate {
+                MetaText("IN \(countdown(to: date))", tint: .brand, size: 9)
+            }
+
+            Text(Self.fmt.string(from: time))
+                .font(.appSerif(16).monospacedDigit())
+                .foregroundStyle(accented ? Color(.label) : Color(.label).opacity(0.5))
         }
+        .padding(.vertical, 11)
+        // Prayers already prayed step back so the eye lands on what's next.
+        .opacity(isPast && !accented ? 0.45 : 1)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.brand)
+                .frame(width: 2)
+                .opacity(isCurrent ? 1 : 0)
+                .offset(x: -12)
+        }
+        .animation(AppAnim.smooth, value: isCurrent)
+        .accessibilityElement(children: .combine)
     }
 
     private func countdown(to date: Date) -> String {
         let secs = max(0, date.timeIntervalSince(now))
         let h = Int(secs) / 3600
         let m = (Int(secs) % 3600) / 60
-        if h > 0 { return "\(h)h \(m)m" }
-        if m > 0 { return "\(m)m" }
-        return "now"
+        if h > 0 { return "\(h)H \(m)M" }
+        if m > 0 { return "\(m)M" }
+        return "NOW"
     }
 }
 
@@ -228,23 +194,28 @@ private struct DayPickerStrip: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(0...30, id: \.self) { offset in
+                        let on = selectedOffset == offset
                         Button {
-                            withAnimation(.spring(duration: 0.3)) { selectedOffset = offset }
+                            Haptics.selection()
+                            withAnimation(AppAnim.smooth) { selectedOffset = offset }
                         } label: {
-                            Text(label(for: offset))
-                                .font(.system(size: 13, weight: selectedOffset == offset ? .semibold : .regular))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(selectedOffset == offset ? Color.brand : Color(.tertiarySystemBackground))
-                                .foregroundStyle(selectedOffset == offset ? .white : .secondary)
-                                .clipShape(Capsule())
+                            Text(label(for: offset).uppercased())
+                                .font(.system(size: 10, weight: .semibold))
+                                .kerning(1.1)
+                                .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.5))
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 8)
+                                .overlay(
+                                    Rectangle().strokeBorder(on ? Color.brand : Color(.label).opacity(0.18),
+                                                             lineWidth: 1)
+                                )
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .id(offset)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 4)
+                .padding(.vertical, 1)
             }
             .onChange(of: selectedOffset) { _, newVal in
                 withAnimation { proxy.scrollTo(newVal, anchor: .center) }
@@ -264,7 +235,7 @@ private struct PrayerTimesForDayView: View {
     var body: some View {
         Group {
             if isLoading {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 14)
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 30)
             } else if let t = times {
                 PrayerTimesStrip(times: t, isToday: dayOffset == 0)
             } else {

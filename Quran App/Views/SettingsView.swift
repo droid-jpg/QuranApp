@@ -1,7 +1,11 @@
 import SwiftUI
 
-// SettingsView is presented as a NavigationLink destination inside MoreView's
-// NavigationStack — it intentionally has no NavigationStack of its own.
+/// Settings, rebuilt as ruled blocks rather than a grouped `Form`. Same settings,
+/// same order, but the page now reads like the rest of the app: hairlines, small-
+/// caps eyebrows with a glyph, and serif labels.
+///
+/// Presented as a NavigationLink destination inside MoreView's NavigationStack —
+/// it intentionally has no NavigationStack of its own.
 struct SettingsView: View {
     @AppStorage("colorSchemePreference") private var colorSchemeRaw = "system"
     @AppStorage("selectedReciterId")     private var selectedReciterId = 7
@@ -20,19 +24,22 @@ struct SettingsView: View {
     @AppStorage("prayerAsrSchool")       private var prayerAsrSchool = 0
 
     @AppStorage("arabicFontSize")          private var arabicFontSize: Double = 26
-    @AppStorage("translationFontSize")     private var translationFontSize: Double = 14
+    @AppStorage("translationFontSize")     private var translationFontSize: Double = 17
     @AppStorage("transliterationFontSize") private var transliterationFontSize: Double = 13
+    @AppStorage("readingFace")             private var readingFace = ReadingFace.newYork.rawValue
 
     @AppStorage("memoReminderEnabled") private var memoReminderEnabled = false
     @AppStorage("memoReminderHour")    private var memoReminderHour = 19
     @AppStorage("memoReminderMinute")  private var memoReminderMinute = 0
 
     @AppStorage("fillBlankUseTransliteration") private var fillBlankUseTransliteration = false
-    @AppStorage("memorizationCardScript")          private var cardScript: MemorizationCardScript = .arabic
-    @AppStorage("memorizationArabicFontSize")       private var cardArabicFontSize: Double = 30
+    @AppStorage("memorizationCardScript")              private var cardScript: MemorizationCardScript = .arabic
+    @AppStorage("memorizationArabicFontSize")          private var cardArabicFontSize: Double = 30
     @AppStorage("memorizationTransliterationFontSize") private var cardTransliterationFontSize: Double = 18
 
     @EnvironmentObject private var prayerService: PrayerTimesService
+    @State private var theme = AppTheme.current
+    @State private var showReadingType = false
 
     /// Picking a language selects that language's first translation. The getter
     /// derives the current language from the selected edition, so no extra state.
@@ -48,203 +55,224 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Form {
-            // MARK: Appearance
-            Section {
-                Picker("Theme", selection: $colorSchemeRaw) {
-                    Label("System", systemImage: "circle.lefthalf.filled").tag("system")
-                    Label("Light",  systemImage: "sun.max").tag("light")
-                    Label("Dark",   systemImage: "moon").tag("dark")
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-            } header: {
-                Label("Appearance", systemImage: "paintbrush")
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
 
-            // MARK: Reading Text Size
-            Section {
-                FontSizeSlider(
-                    title: "Arabic",
-                    size: $arabicFontSize,
-                    range: 18...44,
-                    sample: "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ",
-                    rightToLeft: true
-                )
-                FontSizeSlider(
-                    title: "Translation",
-                    size: $translationFontSize,
-                    range: 12...26,
-                    sample: "In the name of Allah, the Most Gracious, the Most Merciful."
-                )
-                FontSizeSlider(
-                    title: "Transliteration",
-                    size: $transliterationFontSize,
-                    range: 11...22,
-                    sample: "Bismi Allāhi r-raḥmāni r-raḥīm",
-                    italic: true
-                )
-            } header: {
-                Label("Reading Text Size", systemImage: "textformat.size")
-            } footer: {
-                Text("Applies to the surah reading view.")
-            }
-
-            // MARK: Translation
-            Section {
-                Picker("Language", selection: languageBinding) {
-                    ForEach(Translation.languages, id: \.self) { lang in
-                        Text(lang).tag(lang)
-                    }
-                }
-                Picker("Translation", selection: $translationId) {
-                    ForEach(Translation.translations(in: Translation.selected.language)) { t in
-                        Text(t.name).tag(t.id)
-                    }
-                }
-            } header: {
-                Label("Translation", systemImage: "character.book.closed")
-            } footer: {
-                Text("Sets the translation shown beneath each ayah.")
-            }
-
-            // MARK: Reciter
-            Section {
-                Picker("Reciter", selection: $selectedReciterId) {
-                    ForEach(Reciter.all) { reciter in
-                        Text(reciter.name).tag(reciter.id)
-                    }
-                }
-            } header: {
-                Label("Reciter", systemImage: "person.wave.2")
-            } footer: {
-                Text("Changes apply when you next play an ayah.")
-            }
-
-            // MARK: Memorization
-            Section {
-                Picker("Card display", selection: $cardScript) {
-                    ForEach(MemorizationCardScript.allCases) { s in
-                        Text(s.title).tag(s)
-                    }
-                }
-                if cardScript.showsArabic {
-                    FontSizeSlider(
-                        title: "Card Arabic",
-                        size: $cardArabicFontSize,
-                        range: 22...46,
-                        sample: "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ",
-                        rightToLeft: true
+                // ── Appearance ────────────────────────────────────────────
+                EditorialSection(title: "Appearance", icon: "circle.lefthalf.filled") {
+                    EditorialSegmented(
+                        selection: $colorSchemeRaw,
+                        options: [.init("system", "System"), .init("light", "Light"), .init("dark", "Dark")]
                     )
                 }
-                if cardScript.showsTransliteration {
-                    FontSizeSlider(
-                        title: "Card Transliteration",
-                        size: $cardTransliterationFontSize,
-                        range: 13...30,
-                        sample: "Bismi Allāhi r-raḥmāni r-raḥīm",
-                        italic: true
+
+                // ── Colour theme ──────────────────────────────────────────
+                EditorialSection(title: "Colour theme", icon: "circle.hexagongrid.fill",
+                                 trailing: theme.displayName) {
+                    ThemePicker(selection: $theme)
+                        .padding(.top, 4)
+                    Footnote("The accent used across the app, the reader, and your widgets. \(theme.caption).")
+                }
+
+                // ── Reading ───────────────────────────────────────────────
+                EditorialSection(title: "Reading", icon: "textformat.size") {
+                    EditorialNavRow(title: "Reading type",
+                                    value: ReadingFace.current.displayName) {
+                        Haptics.tap()
+                        showReadingType = true
+                    }
+                    .padding(.bottom, 16)
+
+                    EditorialSpecimenSlider(
+                        label: "Arabic", value: $arabicFontSize, range: 18...44,
+                        sample: "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", rightToLeft: true
                     )
-                }
-            } header: {
-                Label("Memorization Cards", systemImage: "rectangle.on.rectangle.angled")
-            } footer: {
-                Text("Sets what the ayah shows on review cards — Arabic, transliteration, or both — and their sizes.")
-            }
+                    .padding(.bottom, 16)
 
-            Section {
-                Picker("Fill-in-the-blank hint", selection: $fillBlankUseTransliteration) {
-                    Text("Translation").tag(false)
-                    Text("Transliteration").tag(true)
-                }
-            } header: {
-                Label("Memorization", systemImage: "graduationcap")
-            } footer: {
-                Text("Choose what's shown beneath the ayah when you reveal a fill-in-the-blank review card.")
-            }
+                    EditorialSpecimenSlider(
+                        label: "Translation", value: $translationFontSize, range: 13...26,
+                        sample: "In the name of Allah, the Most Gracious, the Most Merciful."
+                    )
+                    .padding(.bottom, 16)
 
-            // MARK: Memorization Reminder
-            Section {
-                Toggle("Daily reminder", isOn: $memoReminderEnabled)
-                    .onChange(of: memoReminderEnabled) { rescheduleMemoReminder() }
-                if memoReminderEnabled {
-                    DatePicker("Time", selection: reminderTime, displayedComponents: .hourAndMinute)
-                        .onChange(of: memoReminderHour) { rescheduleMemoReminder() }
-                        .onChange(of: memoReminderMinute) { rescheduleMemoReminder() }
-                }
-            } header: {
-                Label("Memorization Reminder", systemImage: "bell.badge")
-            } footer: {
-                Text("A daily nudge to continue memorizing the ayah you're working on.")
-            }
+                    EditorialSpecimenSlider(
+                        label: "Translit.", value: $transliterationFontSize, range: 11...22,
+                        sample: "Bismi Allāhi r-raḥmāni r-raḥīm", italic: true
+                    )
 
-            // MARK: Prayer Calculation
-            Section {
-                Picker("Method", selection: $prayerCalcMethod) {
-                    ForEach(PrayerCalcMethod.all) { m in
-                        Text(m.name).tag(m.id)
+                    Footnote("Applies to the surah reading view.")
+                }
+
+                // ── Translation ───────────────────────────────────────────
+                EditorialSection(title: "Translation", icon: "character.book.closed.fill") {
+                    EditorialMenuRow(
+                        title: "Language", selection: languageBinding,
+                        options: Translation.languages.map { .init($0, $0) }
+                    )
+                    Hairline().padding(.vertical, 13)
+                    EditorialMenuRow(
+                        title: "Edition", selection: $translationId,
+                        options: Translation.translations(in: Translation.selected.language)
+                            .map { .init($0.id, $0.name) }
+                    )
+                    Footnote("Sets the translation shown beneath each ayah.")
+                }
+
+                // ── Reciter ───────────────────────────────────────────────
+                EditorialSection(title: "Reciter", icon: "person.wave.2.fill") {
+                    EditorialMenuRow(
+                        title: "Voice", selection: $selectedReciterId,
+                        options: Reciter.all.map { .init($0.id, $0.name) }
+                    )
+                    Footnote("Changes apply when you next play an ayah.")
+                }
+
+                // ── Memorization cards ────────────────────────────────────
+                EditorialSection(title: "Memorization cards", icon: "rectangle.on.rectangle.angled") {
+                    EditorialMenuRow(
+                        title: "Card display", selection: $cardScript,
+                        options: MemorizationCardScript.allCases.map { .init($0, $0.title) }
+                    )
+                    if cardScript.showsArabic {
+                        Hairline().padding(.vertical, 13)
+                        EditorialSpecimenSlider(
+                            label: "Arabic", value: $cardArabicFontSize, range: 22...46,
+                            sample: "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", rightToLeft: true
+                        )
+                    }
+                    if cardScript.showsTransliteration {
+                        Hairline().padding(.vertical, 13)
+                        EditorialSpecimenSlider(
+                            label: "Translit.", value: $cardTransliterationFontSize, range: 13...30,
+                            sample: "Bismi Allāhi r-raḥmāni r-raḥīm", italic: true
+                        )
+                    }
+                    Footnote("What the ayah shows on review cards — Arabic, transliteration, or both — and their sizes.")
+                }
+
+                // ── Memorization ──────────────────────────────────────────
+                EditorialSection(title: "Memorization", icon: "graduationcap.fill") {
+                    EditorialMenuRow(
+                        title: "Fill-in-the-blank hint", selection: $fillBlankUseTransliteration,
+                        options: [.init(false, "Translation"), .init(true, "Transliteration")]
+                    )
+                    Footnote("What's shown beneath the ayah when you reveal a fill-in-the-blank card.")
+                }
+
+                // ── Memorization reminder ─────────────────────────────────
+                EditorialSection(title: "Memorization reminder", icon: "bell.badge.fill") {
+                    EditorialToggle(title: "Daily reminder", isOn: $memoReminderEnabled)
+                        .onChange(of: memoReminderEnabled) { rescheduleMemoReminder() }
+
+                    if memoReminderEnabled {
+                        Hairline().padding(.vertical, 13)
+                        HStack {
+                            Text("Time")
+                                .font(.appSerif(17))
+                            Spacer()
+                            DatePicker("", selection: reminderTime, displayedComponents: .hourAndMinute)
+                                .labelsHidden()
+                                .onChange(of: memoReminderHour) { rescheduleMemoReminder() }
+                                .onChange(of: memoReminderMinute) { rescheduleMemoReminder() }
+                        }
+                    }
+                    Footnote("A daily nudge to continue memorizing the ayah you're working on.")
+                }
+
+                // ── Prayer calculation ────────────────────────────────────
+                EditorialSection(title: "Prayer calculation", icon: "location.circle.fill") {
+                    EditorialMenuRow(
+                        title: "Method", selection: $prayerCalcMethod,
+                        options: PrayerCalcMethod.all.map { .init($0.id, $0.name) }
+                    )
+                    .onChange(of: prayerCalcMethod) { prayerService.refetchForSettingsChange() }
+
+                    Hairline().padding(.vertical, 13)
+
+                    EditorialMenuRow(
+                        title: "Asr (juristic)", selection: $prayerAsrSchool,
+                        options: [.init(0, "Standard"), .init(1, "Hanafi")]
+                    )
+                    .onChange(of: prayerAsrSchool) { prayerService.refetchForSettingsChange() }
+
+                    Footnote("The twilight angles and Asr method used to compute your local prayer times.")
+                }
+
+                // ── Prayer notifications ──────────────────────────────────
+                EditorialSection(title: "Prayer notifications", icon: "bell.fill") {
+                    EditorialToggle(title: "Enable notifications", isOn: $notifEnabled)
+                        .onChange(of: notifEnabled) { reschedule() }
+
+                    if notifEnabled {
+                        Hairline().padding(.vertical, 13)
+                        EditorialToggle(title: "Live Activity", caption: "10 min countdown",
+                                        isOn: $liveActivityEnabled)
+                            .onChange(of: liveActivityEnabled) { reschedule() }
+
+                        Hairline().padding(.vertical, 13)
+                        Eyebrow("Which ones").padding(.bottom, 11)
+
+                        prayerToggle("Fajr", $notifFajr)
+                        prayerToggle("Sunrise", $notifSunrise)
+                        prayerToggle("Dhuhr", $notifDhuhr)
+                        prayerToggle("Asr", $notifAsr)
+                        prayerToggle("Maghrib", $notifMaghrib)
+                        prayerToggle("Isha", $notifIsha)
+                        prayerToggle("Midnight", $notifMidnight)
+
+                        Hairline().padding(.vertical, 13)
+                        EditorialMenuRow(
+                            title: "Pre-prayer reminder", selection: $notifPreReminder,
+                            options: [.init(0, "None"), .init(5, "5 min"), .init(10, "10 min"),
+                                      .init(15, "15 min"), .init(30, "30 min")]
+                        )
+                        .onChange(of: notifPreReminder) { reschedule() }
+
+                        Footnote("Notifications use your local prayer times based on location.")
                     }
                 }
-                .onChange(of: prayerCalcMethod) { prayerService.refetchForSettingsChange() }
 
-                Picker("Asr (juristic)", selection: $prayerAsrSchool) {
-                    Text("Standard").tag(0)
-                    Text("Hanafi").tag(1)
-                }
-                .onChange(of: prayerAsrSchool) { prayerService.refetchForSettingsChange() }
-            } header: {
-                Label("Prayer Calculation", systemImage: "location.circle")
-            } footer: {
-                Text("Sets the twilight angles and Asr method used to compute your local prayer times.")
-            }
-
-            // MARK: Prayer Notifications
-            Section {
-                Toggle("Enable Prayer Notifications", isOn: $notifEnabled)
-                    .onChange(of: notifEnabled) { reschedule() }
-
-                if notifEnabled {
-                    Toggle("Live Activity (10 min countdown)", isOn: $liveActivityEnabled)
-                        .onChange(of: liveActivityEnabled) { reschedule() }
-                    Toggle("Fajr",    isOn: $notifFajr)    .onChange(of: notifFajr)    { reschedule() }
-                    Toggle("Dhuhr",   isOn: $notifDhuhr)   .onChange(of: notifDhuhr)   { reschedule() }
-                    Toggle("Asr",     isOn: $notifAsr)     .onChange(of: notifAsr)     { reschedule() }
-                    Toggle("Maghrib", isOn: $notifMaghrib) .onChange(of: notifMaghrib) { reschedule() }
-                    Toggle("Isha",    isOn: $notifIsha)    .onChange(of: notifIsha)    { reschedule() }
-                    Toggle("Sunrise", isOn: $notifSunrise).onChange(of: notifSunrise) { reschedule() }
-                    Toggle("Midnight", isOn: $notifMidnight).onChange(of: notifMidnight) { reschedule() }
-
-                    Picker("Pre-prayer reminder", selection: $notifPreReminder) {
-                        Text("None").tag(0)
-                        Text("5 min").tag(5)
-                        Text("10 min").tag(10)
-                        Text("15 min").tag(15)
-                        Text("30 min").tag(30)
-                    }
-                    .onChange(of: notifPreReminder) { reschedule() }
-                }
-            } header: {
-                Label("Prayer Notifications", systemImage: "bell")
-            } footer: {
-                if notifEnabled {
-                    Text("Notifications use your local prayer times based on location.")
+                // ── About ─────────────────────────────────────────────────
+                EditorialSection(title: "About", icon: "info.circle.fill") {
+                    EditorialValueRow(title: "Data source", value: "alquran.cloud")
+                    Hairline().padding(.vertical, 13)
+                    EditorialValueRow(title: "Audio source", value: "everyayah.com")
                 }
             }
-
-            // MARK: About
-            Section {
-                LabeledContent("Data source", value: "alquran.cloud")
-                LabeledContent("Audio source", value: "everyayah.com")
-            } header: {
-                Label("About", systemImage: "info.circle")
-            }
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
         }
         .navigationTitle("Settings")
+        .sheet(isPresented: $showReadingType) {
+            ReadingTypeSheet()
+        }
         .task {
             if notifEnabled {
                 _ = await NotificationService.shared.requestPermission()
             }
         }
+    }
+
+    @ViewBuilder
+    private func prayerToggle(_ name: String, _ binding: Binding<Bool>) -> some View {
+        HStack(spacing: 11) {
+            Image(systemName: NextPrayerSection.prayerIcons[name] ?? "clock")
+                .font(.system(size: 12))
+                .foregroundStyle(binding.wrappedValue ? Color.brand : Color(.label).opacity(0.3))
+                .frame(width: 18)
+            Text(name)
+                .font(.appSerif(16))
+            Spacer(minLength: 8)
+            Toggle("", isOn: binding)
+                .labelsHidden()
+                .tint(.brand)
+                .scaleEffect(0.85)
+                .frame(width: 46, alignment: .trailing)
+        }
+        .padding(.bottom, 4)
+        .onChange(of: binding.wrappedValue) { reschedule() }
+        .accessibilityElement(children: .combine)
     }
 
     private func reschedule() {
@@ -282,40 +310,73 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Font size slider
+// MARK: - Footnote
 
-private struct FontSizeSlider: View {
-    let title: String
-    @Binding var size: Double
-    let range: ClosedRange<Double>
-    let sample: String
-    var rightToLeft: Bool = false
-    var italic: Bool = false
+/// The explanatory line that used to be a Form section footer.
+struct Footnote: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                Text("\(Int(size)) pt")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+        Text(text)
+            .font(.appSerif(13.5, italic: true))
+            .foregroundStyle(Color(.label).opacity(0.42))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 12)
+    }
+}
+
+// MARK: - Theme picker
+
+/// A row of swatches. Selecting one writes through `AppTheme.set`, which
+/// persists to the App Group (so widgets follow) and tells the root scene to
+/// repaint — the whole app changes colour under you, live.
+private struct ThemePicker: View {
+    @Binding var selection: AppTheme
+
+    private let columns = [GridItem(.adaptive(minimum: 62), spacing: 12)]
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+            ForEach(AppTheme.allCases) { theme in
+                Button {
+                    Haptics.selection()
+                    selection = theme
+                    AppTheme.set(theme)
+                } label: {
+                    VStack(spacing: 7) {
+                        ZStack {
+                            Circle()
+                                .fill(theme.swatch)
+                                .frame(width: 32, height: 32)
+                            if theme == selection {
+                                Circle()
+                                    .strokeBorder(theme.swatch, lineWidth: 1.5)
+                                    .frame(width: 44, height: 44)
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .frame(height: 46)
+
+                        Text(theme.displayName.uppercased())
+                            .font(.system(size: 8.5, weight: theme == selection ? .bold : .semibold))
+                            .kerning(0.9)
+                            .foregroundStyle(theme == selection
+                                             ? Color(.label)
+                                             : Color(.label).opacity(0.45))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(theme.displayName)
+                .accessibilityAddTraits(theme == selection ? [.isButton, .isSelected] : .isButton)
             }
-
-            // Live preview at the chosen size
-            Text(sample)
-                .font(.system(size: size))
-                .italic(italic)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: rightToLeft ? .trailing : .leading)
-                .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight)
-                .animation(.easeOut(duration: 0.12), value: size)
-
-            Slider(value: $size, in: range, step: 1)
-                .tint(.brand)
         }
-        .padding(.vertical, 4)
+        .animation(.easeOut(duration: 0.15), value: selection)
     }
 }

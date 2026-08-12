@@ -26,7 +26,7 @@ struct WordLoopPickerView: View {
                     VStack(spacing: 16) {
                         ProgressView()
                         Text("Loading word timings…")
-                            .font(.subheadline)
+                            .font(.appSerif(15))
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -37,7 +37,7 @@ struct WordLoopPickerView: View {
                             .font(.system(size: 36))
                             .foregroundStyle(.orange)
                         Text("Word timings unavailable")
-                            .font(.headline)
+                            .font(.appSerif(17, weight: .semibold))
                         Text(errorMessage ?? "Could not load word-level timing data.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -49,7 +49,7 @@ struct WordLoopPickerView: View {
                 } else {
                     // Instruction banner
                     Text(instruction)
-                        .font(.subheadline)
+                        .font(.appSerif(15))
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 12)
                         .frame(maxWidth: .infinity)
@@ -74,7 +74,7 @@ struct WordLoopPickerView: View {
                             startId = nil; endId = nil
                         } label: {
                             Label("Reset Selection", systemImage: "arrow.counterclockwise")
-                                .font(.subheadline)
+                                .font(.appSerif(15))
                         }
                         .padding(.bottom, 8)
                     }
@@ -186,9 +186,9 @@ struct WordChip: View {
         .padding(.vertical, 6)
         .background(bg)
         .foregroundStyle(fg)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(Rectangle())
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            Rectangle()
                 .stroke(border, lineWidth: state != .normal ? 1.5 : 0)
         )
         .scaleEffect(state == .start || state == .end || state == .single ? 1.05 : 1.0)

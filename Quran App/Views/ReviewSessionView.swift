@@ -62,9 +62,7 @@ struct ReviewSessionView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if !queue.isEmpty {
-                        Text("\(reviewedCount)/\(total)")
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                        MetaText("\(reviewedCount)/\(total)", size: 11)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -83,30 +81,26 @@ struct ReviewSessionView: View {
     }
 
     private var completionView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 60))
-                .foregroundStyle(.brand)
-            Text(total == 0 ? "Nothing due right now" : "Review complete")
-                .font(.title2.bold())
+        VStack(spacing: 0) {
+            DiamondRule()
+                .frame(width: 150)
+                .padding(.bottom, 26)
+
+            Text(total == 0 ? "Nothing due right now." : "Review complete.")
+                .font(.appSerif(26, weight: .medium))
+                .multilineTextAlignment(.center)
+                .padding(.bottom, 8)
+
             Text(total == 0
                  ? "Add ayahs from the reader to start memorizing."
                  : "You reviewed \(reviewedCount) ayah\(reviewedCount == 1 ? "" : "s").")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.appSerif(16))
+                .foregroundStyle(Color(.label).opacity(0.5))
                 .multilineTextAlignment(.center)
-            Button { dismiss() } label: {
-                Text("Done")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.brand)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 40)
-            .padding(.top, 8)
+
+            OutlineButton(label: "Done", on: true) { dismiss() }
+                .padding(.horizontal, 40)
+                .padding(.top, 30)
         }
         .padding(40)
     }
@@ -175,17 +169,20 @@ private struct ReviewCardView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Label(mode.title, systemImage: mode.icon)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.brand)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(Color.brand.opacity(0.12)))
-                .padding(.top, 12)
+            HStack(spacing: 7) {
+                Image(systemName: mode.icon)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.brand)
+                Eyebrow(mode.title, tint: .brand)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .overlay(Rectangle().strokeBorder(Color.brand.opacity(0.4), lineWidth: 1))
+            .padding(.top, 12)
 
             Text("\(card.surahName) · Ayah \(card.ayah)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.appSerif(15))
+                .foregroundStyle(Color(.label).opacity(0.45))
 
             ScrollView {
                 VStack(spacing: 18) {
@@ -225,14 +222,14 @@ private struct ReviewCardView: View {
             audioButton
 
             if revealed {
-                Divider()
+                Hairline()
                 meaningToggle
                 meaningText
                 // When the prompt itself isn't already showing the transliteration,
                 // surface it on reveal as a pronunciation aid.
                 if cardScript == .arabic && !card.transliteration.isEmpty {
                     Text(card.transliteration)
-                        .font(.system(size: cardTransliterationFontSize)).italic()
+                        .font(.appSerif(cardTransliterationFontSize, italic: true))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -251,15 +248,14 @@ private struct ReviewCardView: View {
         VStack(spacing: 10) {
             if showArabic {
                 Text(card.arabic)
-                    .font(.system(size: cardArabicFontSize))
+                    .font(.appArabic(cardArabicFontSize))
                     .environment(\.layoutDirection, .rightToLeft)
                     .multilineTextAlignment(.center)
                     .lineSpacing(10)
             }
             if showTranslit {
                 Text(card.transliteration)
-                    .font(.system(size: cardTransliterationFontSize))
-                    .italic()
+                    .font(.appSerif(cardTransliterationFontSize, italic: true))
                     .foregroundStyle(showArabic ? .secondary : .primary)
                     .multilineTextAlignment(.center)
             }
@@ -272,7 +268,7 @@ private struct ReviewCardView: View {
         Button { isPlaying ? clip.stop() : clip.play(audioURL) } label: {
             Label(isPlaying ? "Stop" : "Play recitation",
                   systemImage: isPlaying ? "stop.circle.fill" : "play.circle.fill")
-                .font(.subheadline.weight(.medium))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.brand)
         }
         .buttonStyle(.plain)
@@ -285,12 +281,11 @@ private struct ReviewCardView: View {
                 ForEach(Array(fillBlankWords.enumerated()), id: \.offset) { idx, word in
                     if idx == blankIndex && !revealed {
                         Text("ـــــ")
-                            .font(.system(size: wordFont))
+                            .font(fillBlankUsesTranslit ? .appSerif(wordFont, italic: true) : .appArabic(wordFont))
                             .foregroundStyle(.brand)
                     } else {
                         Text(word)
-                            .font(.system(size: wordFont))
-                            .italic(fillBlankUsesTranslit)
+                            .font(fillBlankUsesTranslit ? .appSerif(wordFont, italic: true) : .appArabic(wordFont))
                             .foregroundStyle(idx == blankIndex ? .brand : .primary)
                     }
                 }
@@ -300,18 +295,18 @@ private struct ReviewCardView: View {
             gapAudioButton
 
             if revealed {
-                Divider()
+                Hairline()
                 // Reveal the alternate script so "Both" and "Transliteration" still
                 // surface the Arabic (or vice-versa) once the answer is shown.
                 if fillBlankUsesTranslit {
                     Text(card.arabic)
-                        .font(.system(size: cardArabicFontSize))
+                        .font(.appArabic(cardArabicFontSize))
                         .environment(\.layoutDirection, .rightToLeft)
                         .multilineTextAlignment(.center)
                         .lineSpacing(10)
                 } else if cardScript == .both && !card.transliteration.isEmpty {
                     Text(card.transliteration)
-                        .font(.system(size: cardTransliterationFontSize)).italic()
+                        .font(.appSerif(cardTransliterationFontSize, italic: true))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -320,7 +315,7 @@ private struct ReviewCardView: View {
                 let hintText = useTranslitHint ? card.transliteration : displayedMeaning
                 if !hintText.isEmpty {
                     Text(hintText)
-                        .font(.callout)
+                        .font(.appSerif(16))
                         .italic(useTranslitHint)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -353,7 +348,7 @@ private struct ReviewCardView: View {
                 Label(gap.isActive ? "Stop"
                         : (revealed ? "Play full ayah" : "Play with gap"),
                       systemImage: gap.isActive ? "stop.circle.fill" : "play.circle.fill")
-                    .font(.subheadline.weight(.medium))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.brand)
             }
             .buttonStyle(.plain)
@@ -369,16 +364,14 @@ private struct ReviewCardView: View {
             }
             .buttonStyle(.plain)
 
-            Text(isPlaying ? "Listening…" : "Tap to replay")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            Eyebrow(isPlaying ? "Listening" : "Tap to replay")
 
             if revealed {
-                Divider()
+                Hairline()
                 promptScript
                 if !displayedMeaning.isEmpty {
                     Text(displayedMeaning)
-                        .font(.callout)
+                        .font(.appSerif(16))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -390,8 +383,9 @@ private struct ReviewCardView: View {
 
     private func hint(_ text: String) -> some View {
         Text(text)
-            .font(.footnote)
-            .foregroundStyle(.tertiary)
+            .font(.appSerif(14, italic: true))
+            .foregroundStyle(Color(.label).opacity(0.38))
+            .multilineTextAlignment(.center)
     }
 
     // MARK: Meaning (translation ⟷ simple)
@@ -407,11 +401,10 @@ private struct ReviewCardView: View {
     /// deliberately simple edition. The choice is global (persisted), so it
     /// carries across cards and the other drill styles too.
     private var meaningToggle: some View {
-        Picker("Meaning", selection: $useSimpleMeaning) {
-            Text("Translation").tag(false)
-            Text("Simple").tag(true)
-        }
-        .pickerStyle(.segmented)
+        EditorialSegmented(
+            selection: $useSimpleMeaning,
+            options: [.init(false, "Translation"), .init(true, "Simple")]
+        )
         .frame(maxWidth: 280)
     }
 
@@ -421,14 +414,14 @@ private struct ReviewCardView: View {
         } else {
             VStack(spacing: 4) {
                 Text(displayedMeaning.isEmpty ? "(no translation)" : displayedMeaning)
-                    .font(.title3)
+                    .font(.appSerif(19))
                     .multilineTextAlignment(.center)
                 if useSimpleMeaning {
                     Text(simpleText != nil
                          ? Translation.simpleMeaningName
                          : "Simple unavailable offline — showing your translation")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .font(.appSerif(12, italic: true))
+                        .foregroundStyle(Color(.label).opacity(0.35))
                         .multilineTextAlignment(.center)
                 }
             }
@@ -482,35 +475,31 @@ private struct ReviewCardView: View {
     // MARK: Controls
 
     private var revealButton: some View {
-        Button {
+        OutlineButton(label: "Show answer", on: true) {
+            Haptics.tap()
             withAnimation(.easeInOut(duration: 0.2)) { revealed = true }
-        } label: {
-            Text("Show Answer")
-                .font(.headline)
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(Color.brand)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
         }
-        .buttonStyle(.plain)
         .padding(.horizontal, 24)
     }
 
+    /// The four SM-2 grades. Outlined in each grade's own colour — this is the
+    /// one place in the app where more than one accent is doing real work, since
+    /// the whole point is telling "Again" from "Easy" at a glance.
     private var gradeButtons: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             ForEach(ReviewGrade.allCases, id: \.self) { grade in
                 Button {
                     Haptics.tap()
                     onGrade(grade)
                 } label: {
-                    Text(grade.label)
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(grade.tint.opacity(0.18))
+                    Text(grade.label.uppercased())
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .kerning(1.1)
                         .foregroundStyle(grade.tint)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .overlay(Rectangle().strokeBorder(grade.tint.opacity(0.55), lineWidth: 1))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }

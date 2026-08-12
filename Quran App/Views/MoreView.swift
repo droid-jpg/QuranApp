@@ -1,86 +1,82 @@
 import SwiftUI
+import Combine
 
+/// Holds the More tab's navigation stack outside the view, so changing the
+/// colour theme — which rebuilds the whole tab tree to repaint it — puts the
+/// user back on the screen they were on rather than at the top of the tab.
+@MainActor
+final class MoreNavigation: ObservableObject {
+    static let shared = MoreNavigation()
+    @Published var path = NavigationPath()
+    private init() {}
+}
+
+/// The index to everything that isn't reading or the dashboard. Ruled rows
+/// rather than a grouped List of gradient tiles — the tiles were the last place
+/// in the app still speaking the old language.
 struct MoreView: View {
     @EnvironmentObject private var prayerService: PrayerTimesService
+    @ObservedObject private var nav = MoreNavigation.shared
     @State private var hasAppeared = false
-    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack(path: $path) {
-            List {
-                // MARK: Prayer Times
-                Section {
-                    PrayerTimesCardView(service: prayerService)
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
-                } header: {
-                    SectionHeader(title: "Prayer Times", systemImage: "clock.fill")
+        NavigationStack(path: $nav.path) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 26) {
+
+                    EditorialSection(title: "Prayer times", icon: "clock.fill") {
+                        PrayerTimesCardView(service: prayerService)
+                    }
+
+                    EditorialSection(title: "Memorize", icon: "brain.head.profile") {
+                        MoreRow(title: "Memorization",
+                                caption: "Spaced-repetition review, goals, and progress",
+                                symbol: "graduationcap.fill",
+                                route: .memorization)
+                    }
+
+                    EditorialSection(title: "Tools", icon: "wrench.and.screwdriver.fill") {
+                        MoreRow(title: "Qibla compass",
+                                caption: "Find the direction of Mecca",
+                                symbol: "location.north.line.fill",
+                                route: .qibla)
+                        Hairline().padding(.vertical, 14)
+                        MoreRow(title: "Dhikr counter",
+                                caption: "Track your remembrance",
+                                symbol: "hand.raised.fingers.spread.fill",
+                                route: .dhikr)
+                    }
+
+                    EditorialSection(title: "Learn", icon: "book.closed.fill") {
+                        MoreRow(title: "Bookmarks",
+                                caption: "Saved ayahs for quick access",
+                                symbol: "bookmark.fill",
+                                route: .bookmarks)
+                        Hairline().padding(.vertical, 14)
+                        MoreRow(title: "99 Names of Allah",
+                                caption: "Memorize and review the Beautiful Names",
+                                symbol: "text.book.closed.fill",
+                                route: .names)
+                        Hairline().padding(.vertical, 14)
+                        MoreRow(title: "Islamic calendar",
+                                caption: "Holidays, fasting days, and special nights",
+                                symbol: "moon.stars.fill",
+                                route: .calendar)
+                    }
+
+                    EditorialSection(title: "App", icon: "gearshape.fill") {
+                        MoreRow(title: "Settings",
+                                caption: "Theme, type, reciter, notifications",
+                                symbol: "gear",
+                                route: .settings)
+                    }
                 }
-
-                // MARK: Memorize
-                Section {
-                    MoreRow(title: "Memorization",
-                            subtitle: "Spaced-repetition review, goals, and progress",
-                            symbol: "graduationcap.fill",
-                            color: .brand,
-                            route: .memorization)
-                } header: {
-                    SectionHeader(title: "Memorize", systemImage: "brain.head.profile")
-                }
-
-                // MARK: Tools
-                Section {
-                    MoreRow(title: "Qibla Compass",
-                            subtitle: "Find the direction of Mecca",
-                            symbol: "location.north.line.fill",
-                            color: .green,
-                            route: .qibla)
-
-                    MoreRow(title: "Dhikr Counter",
-                            subtitle: "Track your remembrance",
-                            symbol: "hand.raised.fingers.spread.fill",
-                            color: .purple,
-                            route: .dhikr)
-                } header: {
-                    SectionHeader(title: "Tools", systemImage: "wrench.and.screwdriver.fill")
-                }
-
-                // MARK: Learn
-                Section {
-                    MoreRow(title: "Bookmarks",
-                            subtitle: "Saved ayahs for quick access",
-                            symbol: "bookmark.fill",
-                            color: .pink,
-                            route: .bookmarks)
-
-                    MoreRow(title: "99 Names of Allah",
-                            subtitle: "Memorize and review the Beautiful Names",
-                            symbol: "text.book.closed.fill",
-                            color: .indigo,
-                            route: .names)
-
-                    MoreRow(title: "Islamic Calendar",
-                            subtitle: "Holidays, fasting days, and special nights",
-                            symbol: "moon.stars.fill",
-                            color: .orange,
-                            route: .calendar)
-                } header: {
-                    SectionHeader(title: "Learn", systemImage: "graduationcap.fill")
-                }
-
-                // MARK: App
-                Section {
-                    MoreRow(title: "Settings",
-                            subtitle: "Theme, reciter, notifications",
-                            symbol: "gear",
-                            color: .gray,
-                            route: .settings)
-                } header: {
-                    SectionHeader(title: "App", systemImage: "apps.iphone")
-                }
+                .padding(.horizontal, 24)
+                .padding(.top, 8)
+                .padding(.bottom, 40)
             }
-            .listStyle(.insetGrouped)
             .navigationTitle("More")
+            .navigationBarTitleDisplayMode(.large)
             .navigationDestination(for: MoreRoute.self) { $0.destination }
             .opacity(hasAppeared ? 1 : 0)
             .offset(y: hasAppeared ? 0 : 12)
@@ -89,9 +85,8 @@ struct MoreView: View {
                 withAnimation(AppAnim.spring.delay(0.08)) { hasAppeared = true }
             }
         }
-        // Light tap on push only (not when popping back). Replaces a per-row
-        // gesture, which on List rows fired the haptic without navigating.
-        .sensoryFeedback(trigger: path) { old, new in
+        // Light tap on push only (not when popping back).
+        .sensoryFeedback(trigger: nav.path) { old, new in
             new.count > old.count ? .impact(weight: .light) : nil
         }
     }
@@ -115,44 +110,41 @@ private enum MoreRoute: Hashable {
     }
 }
 
-// MARK: - Reusable row with coloured square icon
+// MARK: - Row
 
 private struct MoreRow: View {
     let title: String
-    let subtitle: String
+    let caption: String
     let symbol: String
-    let color: Color
     let route: MoreRoute
 
     var body: some View {
         NavigationLink(value: route) {
             HStack(spacing: 14) {
-                // Settings-app style tile: gradient fill, white glyph.
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [color.opacity(0.95), color.opacity(0.70)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    Image(systemName: symbol)
-                        .foregroundStyle(.white)
-                        .font(.system(size: 16, weight: .semibold))
-                }
-                .frame(width: 36, height: 36)
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.brand)
+                    .frame(width: 24)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.body)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.appSerif(18))
+                        .foregroundStyle(Color(.label))
+                    Text(caption)
+                        .font(.appSerif(13.5, italic: true))
+                        .foregroundStyle(Color(.label).opacity(0.45))
+                        .multilineTextAlignment(.leading)
                 }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color(.label).opacity(0.3))
             }
-            .padding(.vertical, 4)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(CardButtonStyle(scale: 0.985))
     }
 }
 

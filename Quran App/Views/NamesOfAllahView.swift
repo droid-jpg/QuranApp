@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// The Beautiful Names as a ruled register: a numeral in the margin, the
+/// transliteration and meaning in serif, the Arabic set right. Tapping a line
+/// marks it memorized.
 struct NamesOfAllahView: View {
     @EnvironmentObject private var store: NamesStore
     @State private var searchText = ""
@@ -18,98 +21,81 @@ struct NamesOfAllahView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Progress header
-            NamesProgressHeader(store: store)
-
-            // Filter chips
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    FilterChip(label: "All",       isSelected: filterStatus == nil)   { filterStatus = nil }
-                    FilterChip(label: "Memorized", isSelected: filterStatus == .memorized,
-                               color: .brand)   { filterStatus = filterStatus == .memorized ? nil : .memorized }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Progress
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("\(store.memorizedCount)")
+                        .font(.appSerif(40, weight: .medium))
+                        .contentTransition(.numericText())
+                    Text("of 99 memorized")
+                        .font(.appSerif(16, italic: true))
+                        .foregroundStyle(Color(.label).opacity(0.45))
+                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-            }
+                .padding(.bottom, 13)
 
-            List(filtered) { name in
-                NameRow(name: name, status: store.status(for: name.id))
-                    .onTapGesture { store.cycle(for: name.id) }
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                RuleProgress(fraction: Double(store.memorizedCount) / 99, tint: .brand)
+                    .padding(.bottom, 18)
+
+                // Filters
+                HStack(spacing: 8) {
+                    filterChip("All", on: filterStatus == nil) { filterStatus = nil }
+                    filterChip("Memorized", on: filterStatus == .memorized) {
+                        filterStatus = filterStatus == .memorized ? nil : .memorized
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.bottom, 20)
+
+                // Register
+                VStack(spacing: 0) {
+                    ForEach(Array(filtered.enumerated()), id: \.element.id) { index, name in
+                        if index > 0 { Hairline(opacity: 0.6) }
+                        NameRow(name: name, status: store.status(for: name.id))
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                Haptics.selection()
+                                store.cycle(for: name.id)
+                            }
+                    }
+                }
             }
-            .listStyle(.plain)
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
         }
-        .navigationTitle("99 Names of Allah")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("99 Names")
+        .navigationBarTitleDisplayMode(.large)
         .searchable(text: $searchText, prompt: "Search name or meaning…")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showFlashcards = true } label: {
-                    Label("Flashcards", systemImage: "rectangle.on.rectangle.angled")
+                Button { Haptics.tap(); showFlashcards = true } label: {
+                    Image(systemName: "rectangle.on.rectangle.angled")
                 }
+                .accessibilityLabel("Flashcards")
             }
         }
         .sheet(isPresented: $showFlashcards) {
             NamesFlashcardView().environmentObject(store)
         }
     }
-}
 
-// MARK: - Progress header
-
-private struct NamesProgressHeader: View {
-    @ObservedObject var store: NamesStore
-
-    var body: some View {
-        HStack(spacing: 0) {
-            StatBlock(value: store.memorizedCount, label: "Memorized", color: .brand)
-            Divider().frame(height: 36)
-            StatBlock(value: 99 - store.memorizedCount, label: "Remaining", color: .secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(Color(.secondarySystemBackground))
-    }
-}
-
-private struct StatBlock: View {
-    let value: Int
-    let label: String
-    let color: Color
-
-    var body: some View {
-        VStack(spacing: 2) {
-            Text("\(value)")
-                .font(.title2.bold())
-                .foregroundStyle(color)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - Filter chip
-
-private struct FilterChip: View {
-    let label: String
-    let isSelected: Bool
-    var color: Color = .brand
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(label)
-                .font(.subheadline.weight(isSelected ? .semibold : .regular))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(isSelected ? color.opacity(0.15) : Color(.tertiarySystemBackground))
-                .foregroundStyle(isSelected ? color : .secondary)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(isSelected ? color : Color.clear, lineWidth: 1))
+    private func filterChip(_ label: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.selection()
+            action()
+        } label: {
+            Text(label.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .kerning(1.1)
+                .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.5))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .overlay(
+                    Rectangle().strokeBorder(on ? Color.brand : Color(.label).opacity(0.18), lineWidth: 1)
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -121,66 +107,43 @@ private struct NameRow: View {
     let name: AllahName
     let status: NamesStore.NameStatus
 
-    var body: some View {
-        HStack(spacing: 14) {
-            // Number badge
-            ZStack {
-                Circle()
-                    .fill(statusColor.opacity(0.12))
-                Text("\(name.id)")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(statusColor)
-            }
-            .frame(width: 34, height: 34)
+    private var isMemorized: Bool { status == .memorized }
 
-            // Text block
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text("\(name.id)")
+                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                .foregroundStyle(isMemorized ? Color.brand : Color(.label).opacity(0.3))
+                .frame(minWidth: 22, alignment: .leading)
+                .padding(.top, 5)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(name.transliteration)
-                    .font(.body.bold())
+                    .font(.appSerif(18, weight: .medium))
+                    .foregroundStyle(Color(.label))
                 Text(name.meaning)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.appSerif(14, italic: true))
+                    .foregroundStyle(Color(.label).opacity(0.45))
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            // Arabic name
-            Text(name.arabic)
-                .font(.system(size: 20))
-                .environment(\.layoutDirection, .rightToLeft)
-                .foregroundStyle(.primary)
-
-            AudioSpeakButton(text: name.arabic)
-                .font(.body)
-
-            // Status indicator
-            Image(systemName: statusIcon)
-                .font(.subheadline)
-                .foregroundStyle(statusColor)
-                .frame(width: 20)
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(name.arabic)
+                    .font(.appArabic(21))
+                    .environment(\.layoutDirection, .rightToLeft)
+                HStack(spacing: 10) {
+                    AudioSpeakButton(text: name.arabic, size: 13)
+                    Image(systemName: isMemorized ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 13))
+                        .foregroundStyle(isMemorized ? Color.brand : Color(.label).opacity(0.22))
+                }
+            }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(status == .notStarted ? Color.clear : statusColor.opacity(0.05))
-        )
+        .padding(.vertical, 13)
         .animation(.easeInOut(duration: 0.2), value: status)
-        .contentShape(Rectangle())
-    }
-
-    private var statusColor: Color {
-        switch status {
-        case .notStarted: return .brand
-        case .memorized:  return .brand
-        }
-    }
-
-    private var statusIcon: String {
-        switch status {
-        case .notStarted: return "circle"
-        case .memorized:  return "checkmark.circle.fill"
-        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isMemorized ? [.isSelected] : [])
     }
 }
 
