@@ -74,83 +74,69 @@ struct PlayerEngine {
     func prev()      { audioService.skipToPreviousAyah() }
     func next()      { audioService.skipToNextAyah() }
     func seek(_ f: Double) { audioService.seek(toFraction: f) }
+
+    /// "Ayah 14 · looping ×5" — what the player is doing, in one line, the same
+    /// phrasing Home's docked bar uses.
+    var summary: String {
+        let reps = loop.repeatCount
+        let tail = reps > 0 ? " ×\(reps)" : ""
+        switch loop.mode {
+        case .off:
+            return loop.listenAndRepeat ? "Ayah \(currentAyah) · listen & repeat" : "Ayah \(currentAyah)"
+        case .single:
+            return loop.listenAndRepeat
+                ? "Ayah \(currentAyah) · repeat after\(tail)"
+                : "Ayah \(currentAyah) · looping\(tail)"
+        case .segment:
+            return "Ayah \(currentAyah) · chaining \(loop.startAyah)–\(loop.endAyah)"
+        }
+    }
 }
 
 let playerSpeeds: [Float] = [1.0, 1.5, 2.0, 0.75]
 
-// MARK: - Player (mini + expanded, both in place above the reader)
+// MARK: - Mini bar
 
-/// The reader's audio player. It floats above the scripture in two stages: a mini
-/// bar, and an expanded sheet you swipe up to. Both stay in place — the reader
-/// keeps the screen, so the ayah being drilled is always the one you're reading.
-struct QuranPlayerView: View {
+/// The docked bar. The reader hands it to its pager as a bottom safe-area inset,
+/// so every page reserves exactly its height and no ayah is ever drawn under it.
+struct QuranPlayerBar: View {
     let surah: Surah
     @ObservedObject var viewModel: SurahDetailViewModel
+    let onExpand: () -> Void
+
     @EnvironmentObject private var audioService: AudioService
 
-    @State private var stage: Stage = .mini
-    @State private var rangeA = 1
-    @State private var rangeB = 1
-    @State private var selectedDrill: PlayerDrill? = nil
+    private var type = ReadingType()
 
-    private enum Stage { case mini, expanded }
+    init(surah: Surah, viewModel: SurahDetailViewModel, onExpand: @escaping () -> Void) {
+        self.surah = surah
+        _viewModel = ObservedObject(wrappedValue: viewModel)
+        self.onExpand = onExpand
+    }
 
-    private var engine: PlayerEngine { PlayerEngine(surah: surah, viewModel: viewModel, audioService: audioService) }
-    private var total: Int { surah.numberOfAyahs }
-    private var currentAyah: Int { audioService.currentAyah ?? 1 }
+    private var engine: PlayerEngine {
+        PlayerEngine(surah: surah, viewModel: viewModel, audioService: audioService)
+    }
     private var playing: Bool { audioService.isPlaying }
     private var scope: PlayerScope { engine.scope }
-    private var repsCount: Int { engine.repsCount }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            if stage != .mini {
-                Color.black.opacity(0.32)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-                    .onTapGesture { setStage(.mini) }
-            }
-            switch stage {
-            case .mini:
-                miniBar.transition(.move(edge: .bottom).combined(with: .opacity))
-            case .expanded:
-                expandedSheet.transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .onAppear(perform: syncRange)
-        .onChange(of: currentAyah) { _, _ in if scope != .range { syncRange() } }
-    }
-
-    // MARK: Stage transitions
-
-    private func goUp()   { Haptics.tap(); setStage(.expanded) }
-    private func goDown() { Haptics.tap(); setStage(.mini) }
-    private func setStage(_ s: Stage) {
-        withAnimation(AppAnim.spring) { stage = s }
-    }
-    private var stageDrag: some Gesture {
-        DragGesture(minimumDistance: 8)
-            .onEnded { v in
-                if v.translation.height <= -30 { goUp() }
-                else if v.translation.height >= 30 { goDown() }
-            }
-    }
-
-    // MARK: Mini
-
-    private var miniBar: some View {
-        HStack(spacing: 13) {
-            Button { goUp() } label: {
-                HStack(spacing: 13) {
-                    if playing { PlayingIndicatorView(color: .brand) }
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(surah.englishName)
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        Text("Ayah \(currentAyah)")
-                            .font(.subheadline.weight(.medium))
-                            .contentTransition(.numericText())
+        HStack(spacing: 14) {
+            Button { onExpand() } label: {
+                HStack(spacing: 12) {
+                    if playing {
+                        PlayingIndicatorView(color: .brand)
+                    } else {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.brand)
+                            .frame(width: 20, height: 14)
                     }
+                    Text(engine.summary)
+                        .font(type.serif(15))
+                        .foregroundStyle(Color(.label).opacity(0.8))
+                        .lineLimit(1)
+                        .contentTransition(.numericText())
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
@@ -159,56 +145,125 @@ struct QuranPlayerView: View {
 
             Button {
                 Haptics.selection()
-                selectedDrill = nil
                 engine.setScope(scope == .off ? .ayah : scope == .ayah ? .range : .off,
-                                a: rangeA, b: rangeB)
+                                a: engine.loop.startAyah, b: engine.loop.endAyah)
             } label: {
                 Image(systemName: "repeat")
-                    .font(.system(size: 17, weight: .semibold))
-                    .symbolVariant(scope == .ayah ? .fill : .none)
-                    .foregroundStyle(scope == .off ? Color(.tertiaryLabel) : .brand)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(scope == .off ? Color(.label).opacity(0.4) : .brand)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Loop scope")
 
-            PlayPauseButton(size: 44, playing: playing) { Haptics.tap(); engine.playPause() }
+            Button { Haptics.tap(); engine.playPause() } label: {
+                PlayCircle(playing: playing, size: 38)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(playing ? "Pause" : "Play")
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 0.5)
+        .padding(.vertical, 11)
+        .background(.regularMaterial)
+        .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.16), lineWidth: 1))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 8).onEnded { v in
+                if v.translation.height <= -30 { onExpand() }
+            }
         )
-        .shadow(color: .black.opacity(0.14), radius: 12, y: 6)
-        .padding(.horizontal, 10)
-        .padding(.bottom, 10 + safeInsets.bottom)
-        .simultaneousGesture(stageDrag)
         .animation(AppAnim.springFast, value: playing)
     }
+}
 
-    // MARK: Expanded
+// MARK: - Expanded player
 
-    private var expandedSheet: some View {
-        VStack(spacing: 0) {
-            Capsule().fill(Color(.tertiaryLabel).opacity(0.7)).frame(width: 40, height: 5)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 10).padding(.bottom, 10)
+/// The drill surface: presets, scrubber, scope, range, transport. Presented as an
+/// overlay over the whole reader (never a system sheet) so the ayah being drilled
+/// stays on screen behind it.
+struct QuranExpandedPlayer: View {
+    let surah: Surah
+    @ObservedObject var viewModel: SurahDetailViewModel
+    let onCollapse: () -> Void
+
+    @EnvironmentObject private var audioService: AudioService
+
+    @State private var rangeA = 1
+    @State private var rangeB = 1
+    @State private var selectedDrill: PlayerDrill? = nil
+    @State private var showRangePicker = false
+
+    private var type = ReadingType()
+
+    init(surah: Surah, viewModel: SurahDetailViewModel, onCollapse: @escaping () -> Void) {
+        self.surah = surah
+        _viewModel = ObservedObject(wrappedValue: viewModel)
+        self.onCollapse = onCollapse
+    }
+
+    private var engine: PlayerEngine {
+        PlayerEngine(surah: surah, viewModel: viewModel, audioService: audioService)
+    }
+    private var total: Int { surah.numberOfAyahs }
+    private var currentAyah: Int { audioService.currentAyah ?? 1 }
+    private var playing: Bool { audioService.isPlaying }
+    private var scope: PlayerScope { engine.scope }
+    private var repsCount: Int { engine.repsCount }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.black.opacity(0.32))
+                .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture { setStage(.mini) }
-                .simultaneousGesture(stageDrag)
+                .onTapGesture { onCollapse() }
+                .transition(.opacity)
+
+            sheet
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+        .ignoresSafeArea(edges: .bottom)
+        .onAppear(perform: syncRange)
+        .onChange(of: currentAyah) { _, _ in if scope != .range { syncRange() } }
+        .sheet(isPresented: $showRangePicker) {
+            AyahRangePickerSheet(
+                ayahs: viewModel.ayahs,
+                totalAyahs: total,
+                initialStart: min(rangeA, rangeB),
+                initialEnd: max(rangeA, rangeB)
+            ) { start, end in
+                rangeA = start
+                rangeB = end
+                Haptics.selection()
+                selectedDrill = nil
+                engine.setScope(.range, a: start, b: end)
+            }
+        }
+    }
+
+    private var sheet: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(Color(.label).opacity(0.22)).frame(width: 38, height: 2)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 12).padding(.bottom, 14)
+                .contentShape(Rectangle())
+                .onTapGesture { onCollapse() }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 8).onEnded { v in
+                        if v.translation.height >= 30 { onCollapse() }
+                    }
+                )
 
             VStack(spacing: 15) {
-                HStack {
-                    Text("Memorize ayah \(currentAyah)")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    Spacer()
-                    Text("1 tap · plays now")
-                        .font(.system(size: 10, weight: .bold))
+                HStack(spacing: 7) {
+                    Image(systemName: "graduationcap.fill")
+                        .font(.system(size: 10.5, weight: .semibold))
                         .foregroundStyle(.brand)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Color.brand.opacity(0.12), in: Capsule())
+                    Eyebrow("Memorize ayah \(currentAyah)")
+                    Spacer(minLength: 8)
+                    MetaText("1 TAP · PLAYS NOW", tint: .brand, size: 9)
                 }
 
                 HStack(spacing: 8) {
@@ -217,65 +272,97 @@ struct QuranPlayerView: View {
                     DrillButton(icon: "link", label: "Chain", on: selectedDrill == .chain) { drill(.chain) }
                 }
 
-                Scrubber(audioService: audioService)
+                Scrubber(clock: audioService.clock) { engine.seek($0) }
 
                 HStack(spacing: 8) {
                     ScopeSegmented(scope: scope) { setScope($0) }
-                    RepsControl(options: [0, 3, 5], current: repsCount, fill: false) { setReps($0) }
+                    RepsControl(options: [0, 3, 5], current: repsCount) { setReps($0) }
                 }
 
-                // The A–B rail only earns its space once "Range" is the chosen
-                // scope — otherwise the two handles have nothing to point at.
+                // The range block only earns its space once "Range" is the chosen
+                // scope. It shows the two ayahs the loop actually runs between —
+                // dragging two unlabelled handles never told anyone what they'd
+                // picked.
                 if scope == .range {
-                    VStack(spacing: 10) {
-                        HStack {
-                            Text("Loop range")
-                                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.brand)
-                            Spacer()
-                            Text(rangeLabel)
-                                .font(.system(size: 12, weight: .bold)).foregroundStyle(.brand)
-                        }
-                        RangeRail(total: total, a: $rangeA, b: $rangeB) {
-                            Haptics.selection(); selectedDrill = nil
-                            engine.setScope(.range, a: rangeA, b: rangeB)
-                        }
-                    }
-                    .padding(.horizontal, 14).padding(.vertical, 12)
-                    .background(Color(.secondarySystemBackground),
-                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(Color.brand.opacity(0.18), lineWidth: 1)
-                    )
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    rangeBlock
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
+
+                Hairline()
 
                 HStack(spacing: 14) {
-                    SpeedPill(rate: audioService.playbackRate, prominent: true) { cycleSpeed() }
+                    SpeedPill(rate: audioService.playbackRate) { cycleSpeed() }
                     Spacer()
-                    TransportButton(system: "backward.end.fill", size: 26) { Haptics.tap(); engine.prev() }
-                    PlayPauseButton(size: 58, playing: playing) { Haptics.tap(); engine.playPause() }
-                    TransportButton(system: "forward.end.fill", size: 26) { Haptics.tap(); engine.next() }
+                    TransportButton(system: "backward.end.fill", size: 24) { Haptics.tap(); engine.prev() }
+                    Button { Haptics.tap(); engine.playPause() } label: {
+                        PlayCircle(playing: playing, size: 54)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(playing ? "Pause" : "Play")
+                    TransportButton(system: "forward.end.fill", size: 24) { Haptics.tap(); engine.next() }
                     Spacer()
-                    TransportButton(system: "stop.fill", size: 20, tint: .secondary) {
-                        Haptics.tap(); engine.stop(); setStage(.mini)
+                    TransportButton(system: "stop.fill", size: 18,
+                                    tint: Color(.label).opacity(0.45)) {
+                        Haptics.tap(); engine.stop(); onCollapse()
                     }
                 }
             }
-            .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 20)
+            .padding(.horizontal, 20)
+            .padding(.top, 4)
+            // The safe-area allowance lives inside the sheet so its background
+            // runs all the way to the screen edge — padding the sheet itself
+            // leaves a strip of dimmed page under the home indicator.
+            .padding(.bottom, 22 + safeInsets.bottom)
             .animation(AppAnim.spring, value: scope)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-                .shadow(color: .black.opacity(0.22), radius: 24, y: 12)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .strokeBorder(Color.brand.opacity(0.12), lineWidth: 0.5)
-        )
-        .padding(.horizontal, 8)
-        .padding(.bottom, 8 + safeInsets.bottom)
+        .background(Color(.systemBackground))
+        .overlay(alignment: .top) { Hairline() }
+    }
+
+    // MARK: Range
+
+    /// From / to, each with the opening of the ayah itself. Tapping either opens
+    /// the full picker, where every ayah is shown with its text.
+    private var rangeBlock: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Eyebrow("Loop range", tint: .brand)
+                Spacer()
+                MetaText(rangeLabel.uppercased(), tint: .brand, size: 9.5)
+            }
+            .padding(.bottom, 10)
+
+            Button {
+                Haptics.tap()
+                showRangePicker = true
+            } label: {
+                VStack(spacing: 0) {
+                    RangeEndRow(tag: "From", number: min(rangeA, rangeB),
+                                preview: preview(min(rangeA, rangeB)), script: type.script)
+                    Hairline()
+                    RangeEndRow(tag: "To", number: max(rangeA, rangeB),
+                                preview: preview(max(rangeA, rangeB)), script: type.script)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 6) {
+                Image(systemName: "hand.tap")
+                    .font(.system(size: 9, weight: .bold))
+                MetaText("TAP TO CHOOSE AYAHS", size: 9)
+            }
+            .foregroundStyle(Color(.label).opacity(0.4))
+            .padding(.top, 9)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .overlay(Rectangle().strokeBorder(Color.brand.opacity(0.4), lineWidth: 1))
+    }
+
+    /// The opening of an ayah — enough to recognise which one it is.
+    private func preview(_ n: Int) -> String? {
+        viewModel.ayahs.first { $0.numberInSurah == n }?.arabic
     }
 
     // MARK: Control actions
@@ -296,7 +383,7 @@ struct QuranPlayerView: View {
 
     private var rangeLabel: String {
         let a = min(rangeA, rangeB), b = max(rangeA, rangeB)
-        return a == b ? "Ayah \(a)" : "Ayahs \(a)–\(b)"
+        return a == b ? "Ayah \(a)" : "Ayahs \(a)–\(b) · \(b - a + 1) ayahs"
     }
 
     private func syncRange() {
@@ -307,47 +394,85 @@ struct QuranPlayerView: View {
     private var safeInsets: UIEdgeInsets { keyWindowInsets() }
 }
 
-
 // MARK: - Reusable control views
 
-/// Slim in-ayah scrubber. Its own view so only it re-renders on the 0.1 s
-/// playback tick — the surrounding sheet stays put.
-private struct Scrubber: View {
-    @ObservedObject var audioService: AudioService
+/// One end of the loop range: its tag, its number, and the opening words of the
+/// ayah so the choice can be made by reading rather than by counting.
+private struct RangeEndRow: View {
+    let tag: String
+    let number: Int
+    let preview: String?
+    let script: ArabicScript
 
     var body: some View {
-        let dur = audioService.duration
-        let frac = dur > 0 ? min(1, max(0, audioService.progress)) : 0
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Eyebrow(tag, tint: Color(.label).opacity(0.4), size: 8.5)
+                MetaText("\(number)", tint: .brand, size: 13)
+            }
+            .frame(width: 34, alignment: .leading)
+
+            if let preview {
+                Text(preview)
+                    .font(script.font(size: 16))
+                    .foregroundStyle(Color(.label).opacity(0.75))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .environment(\.layoutDirection, .rightToLeft)
+            } else {
+                Text("Ayah \(number)")
+                    .font(.appSerif(15))
+                    .foregroundStyle(Color(.label).opacity(0.5))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Color(.label).opacity(0.3))
+        }
+        .padding(.vertical, 9)
+    }
+}
+
+/// Slim in-ayah scrubber. It observes the *clock* rather than the audio service:
+/// the playhead ticks ten times a second, and nothing else should redraw with it.
+private struct Scrubber: View {
+    @ObservedObject var clock: PlaybackClock
+    let onSeek: (Double) -> Void
+
+    var body: some View {
+        let dur = clock.duration
+        let frac = dur > 0 ? min(1, max(0, clock.progress)) : 0
         return HStack(spacing: 10) {
-            Text(fmtTime(dur * frac))
-                .font(.system(size: 11, weight: .semibold)).monospacedDigit().foregroundStyle(.secondary)
+            MetaText(fmtTime(dur * frac), size: 10.5)
             GeometryReader { geo in
                 let w = geo.size.width
+                // Ruled like the rest of the app: a 1.5pt track with a small
+                // playhead, not a capsule with a white knob.
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color(.tertiarySystemFill)).frame(height: 6)
-                    Capsule().fill(Color.brand).frame(width: max(0, w * frac), height: 6)
-                    Circle().fill(.white).frame(width: 17, height: 17)
-                        .shadow(color: .black.opacity(0.28), radius: 3, y: 1)
-                        .offset(x: max(0, min(w - 17, w * frac - 8.5)))
+                    Rectangle().fill(Color(.label).opacity(0.16)).frame(height: 1.5)
+                    Rectangle().fill(Color.brand).frame(width: max(0, w * frac), height: 1.5)
+                    Circle().fill(Color.brand).frame(width: 11, height: 11)
+                        .offset(x: max(0, min(w - 11, w * frac - 5.5)))
                 }
-                .frame(height: 17)
+                .frame(height: 18)
                 .animation(.linear(duration: 0.12), value: frac)
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
-                        .onChanged { v in audioService.seek(toFraction: v.location.x / max(w, 1)) }
+                        .onChanged { v in onSeek(v.location.x / max(w, 1)) }
                 )
             }
-            .frame(height: 17)
-            Text(fmtTime(dur))
-                .font(.system(size: 11, weight: .semibold)).monospacedDigit().foregroundStyle(.secondary)
+            .frame(height: 18)
+            MetaText(fmtTime(dur), size: 10.5)
         }
     }
 }
 
-/// One of the three acquisition drills — Listen, Repeat, Chain. Shared by the
-/// reader's expanded player and Home's memorizing card so the same drill always
-/// looks and reads the same wherever it's started from.
+/// One of the three acquisition drills — Listen, Repeat, Chain. Outlined rather
+/// than filled: `OutlineButton` with the drill's glyph, so a drill looks the same
+/// here as it does on the dashboard.
 struct DrillButton: View {
     let icon: String
     let label: String
@@ -355,21 +480,7 @@ struct DrillButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 19, weight: .semibold))
-                Text(label).font(.system(size: 13, weight: .semibold))
-            }
-            .foregroundStyle(on ? .white : .brand)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(on ? AnyShapeStyle(LinearGradient.brandHero) : AnyShapeStyle(Color.brand.opacity(0.1)))
-            }
-            .shadow(color: on ? Color.brandDeep.opacity(0.3) : .clear, radius: 8, y: 4)
-        }
-        .buttonStyle(.plain)
+        OutlineButton(label: label, icon: icon, on: on, action: action)
     }
 }
 
@@ -378,25 +489,30 @@ private struct ScopeSegmented: View {
     let onPick: (PlayerScope) -> Void
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: -1) {   // shared borders, one hairline between segments
             item("Off", scope == .off) { onPick(.off) }
             item("This ayah", scope == .ayah) { onPick(.ayah) }
             item("Range", scope == .range) { onPick(.range) }
         }
-        .padding(3)
-        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .frame(maxWidth: .infinity)
     }
 
     private func item(_ label: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label)
-                .font(.system(size: 12, weight: on ? .bold : .semibold))
-                .foregroundStyle(on ? .white : .secondary)
+            Text(label.uppercased())
+                .font(.system(size: 9.5, weight: .semibold))
+                .kerning(1)
+                .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.55))
                 .lineLimit(1).minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .background(on ? Color.brand : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.vertical, 9)
+                .overlay(
+                    Rectangle().strokeBorder(on ? Color.brand : Color(.label).opacity(0.18),
+                                             lineWidth: 1)
+                )
+                // The selected segment's border has to win where they overlap.
+                .zIndex(on ? 1 : 0)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -405,53 +521,53 @@ private struct ScopeSegmented: View {
 private struct RepsControl: View {
     let options: [Int]
     let current: Int
-    let fill: Bool
     let onPick: (Int) -> Void
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: -1) {
             ForEach(options, id: \.self) { n in
                 Button { onPick(n) } label: {
                     Text(n == 0 ? "∞" : "\(n)×")
-                        .font(.system(size: fill ? 13 : 12, weight: current == n ? .bold : .semibold))
-                        .foregroundStyle(current == n ? .white : .secondary)
-                        .frame(maxWidth: fill ? .infinity : nil)
-                        .padding(.horizontal, fill ? 0 : 8)
-                        .padding(.vertical, fill ? 7 : 6)
-                        .background(current == n ? Color.brand : .clear,
-                                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(current == n ? Color.brand : Color(.label).opacity(0.55))
+                        .frame(minWidth: 34)
+                        .padding(.vertical, 9)
+                        .overlay(
+                            Rectangle().strokeBorder(current == n ? Color.brand : Color(.label).opacity(0.18),
+                                                     lineWidth: 1)
+                        )
+                        .zIndex(current == n ? 1 : 0)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(fill ? 3 : 4)
-        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .frame(maxWidth: fill ? .infinity : nil)
     }
 }
 
 private struct SpeedPill: View {
     let rate: Float
-    let prominent: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(speedLabel(rate))
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(prominent ? .brand : .secondary)
+                .font(.system(size: 10.5, weight: .semibold))
+                .kerning(0.8)
+                .foregroundStyle(.brand)
                 .padding(.horizontal, 11).padding(.vertical, 8)
-                .background(prominent ? Color.brand.opacity(0.1) : Color(.tertiarySystemFill),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(Rectangle().strokeBorder(Color.brand.opacity(0.5), lineWidth: 1))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Playback speed \(speedLabel(rate))")
     }
 }
 
 private struct TransportButton: View {
     let system: String
     let size: CGFloat
-    var tint: Color = .primary
+    var tint: Color = Color(.label).opacity(0.75)
     let action: () -> Void
 
     var body: some View {
@@ -459,92 +575,10 @@ private struct TransportButton: View {
             Image(systemName: system)
                 .font(.system(size: size * 0.62))
                 .foregroundStyle(tint)
+                .frame(width: size + 12, height: size + 12)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct PlayPauseButton: View {
-    let size: CGFloat
-    let playing: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: playing ? "pause.fill" : "play.fill")
-                .font(.system(size: size * 0.4, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: size, height: size)
-                .background(LinearGradient.brandHero, in: Circle())
-                .shadow(color: Color.brandDeep.opacity(0.4), radius: size * 0.14, y: size * 0.07)
-                .contentTransition(.symbolEffect(.replace))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - A–B loop-range rail
-
-/// Two draggable handles ("A" start, "B" end) over the surah's ayahs. Dragging a
-/// handle snaps it to the nearest ayah; releasing commits the segment loop.
-private struct RangeRail: View {
-    let total: Int
-    @Binding var a: Int
-    @Binding var b: Int
-    let onCommit: () -> Void
-
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let xLo = x(for: min(a, b), w: w)
-            let xHi = x(for: max(a, b), w: w)
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color(.tertiaryLabel).opacity(0.28)).frame(height: 5)
-                Capsule().fill(Color.brand)
-                    .frame(width: max(0, xHi - xLo), height: 5).offset(x: xLo)
-
-                if total <= 20 {
-                    ForEach(1...max(total, 1), id: \.self) { n in
-                        Circle().fill(Color(.tertiaryLabel).opacity(0.5))
-                            .frame(width: 6, height: 6).offset(x: x(for: n, w: w) - 3)
-                    }
-                }
-
-                handle("A", filled: false, cx: x(for: a, w: w)) { px in
-                    let n = ayah(atX: px, w: w); if n != a { a = n; Haptics.selection() }
-                }
-                handle("B", filled: true, cx: x(for: b, w: w)) { px in
-                    let n = ayah(atX: px, w: w); if n != b { b = n; Haptics.selection() }
-                }
-            }
-            .frame(height: 26)
-            .frame(maxHeight: .infinity, alignment: .center)
-        }
-        .frame(height: 26)
-    }
-
-    private func x(for ayah: Int, w: CGFloat) -> CGFloat {
-        guard total > 0 else { return 0 }
-        return (CGFloat(ayah) - 0.5) / CGFloat(total) * w
-    }
-    private func ayah(atX px: CGFloat, w: CGFloat) -> Int {
-        guard total > 0, w > 0 else { return 1 }
-        return min(max(Int((px / w * CGFloat(total)) + 0.5), 1), total)
-    }
-    private func handle(_ label: String, filled: Bool, cx: CGFloat,
-                        set: @escaping (CGFloat) -> Void) -> some View {
-        Circle()
-            .fill(filled ? Color.brand : Color(.systemBackground))
-            .overlay(Text(label).font(.system(size: 11, weight: .heavy)).foregroundStyle(filled ? .white : .brand))
-            .overlay(Circle().strokeBorder(Color.brand.opacity(filled ? 0 : 0.5), lineWidth: filled ? 0 : 1))
-            .frame(width: 26, height: 26)
-            .shadow(color: .black.opacity(0.22), radius: 3, y: 1)
-            .offset(x: cx - 13)
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { v in set(v.location.x) }
-                    .onEnded { _ in onCommit() }
-            )
     }
 }
 

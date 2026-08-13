@@ -2,6 +2,19 @@ import AVFoundation
 import Combine
 import MediaPlayer
 
+/// The playhead, published apart from `AudioService`.
+///
+/// The position ticks ten times a second. While it lived on `AudioService`
+/// itself, every view observing that object — the whole reader, including each
+/// loaded ayah, and the whole dashboard — re-rendered ten times a second, which
+/// is what made the reader and the expanded player stutter. Only the handful of
+/// views that actually draw a playhead observe this.
+@MainActor
+final class PlaybackClock: ObservableObject {
+    @Published fileprivate(set) var progress: Double = 0
+    @Published fileprivate(set) var duration: Double = 0
+}
+
 @MainActor
 class AudioService: ObservableObject {
     /// Ayah counts for all 114 surahs — used to auto-continue playback.
@@ -24,12 +37,24 @@ class AudioService: ObservableObject {
     @Published var currentAyah: Int? = nil
     @Published var currentSurah: Int = 0
     @Published var currentSurahName: String = ""
-    @Published var progress: Double = 0
     @Published var isWordLooping = false
     @Published var playbackRate: Float = 1.0
-    /// Duration of the ayah currently loaded, in seconds. Published so the
-    /// expanded/focus player can render elapsed / total and lay out its scrubber.
-    @Published private(set) var duration: Double = 0
+
+    /// Playhead + ayah length. Deliberately *not* `@Published` on this object:
+    /// see `PlaybackClock`. Views that draw a scrubber observe `clock` directly.
+    let clock = PlaybackClock()
+
+    /// Fraction of the current ayah already played, 0…1.
+    var progress: Double {
+        get { clock.progress }
+        set { clock.progress = newValue }
+    }
+
+    /// Duration of the ayah currently loaded, in seconds.
+    private(set) var duration: Double {
+        get { clock.duration }
+        set { clock.duration = newValue }
+    }
 
     // AVQueuePlayer lets us pre-queue the next ayah so iOS advances
     // automatically when the app is in the background — replaceCurrentItem

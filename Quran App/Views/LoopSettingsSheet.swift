@@ -147,7 +147,7 @@ struct LoopSettingsSheet: View {
                 }
             }
             .sheet(isPresented: $showAyahPicker) {
-                AyahRangePicker(
+                AyahRangePickerSheet(
                     ayahs: ayahs,
                     totalAyahs: totalAyahs,
                     initialStart: settings.startAyah,
@@ -224,8 +224,11 @@ private struct PresetRow: View {
 
 /// Full-height selector that lists every ayah with its Arabic, transliteration,
 /// and translation. Tap the first ayah, then the last; the endpoints and every
-/// ayah between them highlight in teal — mirroring `WordLoopPickerView`.
-private struct AyahRangePicker: View {
+/// ayah between them are marked in the accent.
+///
+/// Also the reader's answer to "set a loop range": the expanded player opens this
+/// instead of asking anyone to drag two unlabelled handles along a rail.
+struct AyahRangePickerSheet: View {
     let totalAyahs: Int
     let onSelect: (Int, Int) -> Void
     private let ayahByNumber: [Int: Ayah]
@@ -262,35 +265,34 @@ private struct AyahRangePicker: View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Instruction + live summary banner
-                VStack(spacing: 6) {
+                VStack(spacing: 7) {
                     Text(instruction)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(awaitingEnd ? Color.brand : .primary)
+                        .font(.appSerif(17, weight: .medium))
+                        .foregroundStyle(awaitingEnd ? Color.brand : Color(.label))
                         .animation(.default, value: awaitingEnd)
-                    HStack(spacing: 8) {
-                        Text(summary)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        MetaText(summary.uppercased(), size: 9.5)
                         if !(start == 1 && end == totalAyahs && !awaitingEnd) {
-                            Button("Whole Surah") {
+                            Button("Whole surah") {
                                 start = 1; end = totalAyahs; awaitingEnd = false
                                 Haptics.selection()
                             }
-                            .font(.caption.weight(.semibold))
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .kerning(1)
+                            .textCase(.uppercase)
                             .foregroundStyle(.brand)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, 14)
                 .padding(.horizontal, 16)
-                .background(Color(.secondarySystemBackground))
 
-                Divider()
+                Hairline()
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 8) {
+                        LazyVStack(spacing: 0) {
                             ForEach(rowNumbers, id: \.self) { n in
                                 AyahSelectRow(
                                     number: n,
@@ -299,10 +301,10 @@ private struct AyahRangePicker: View {
                                 )
                                 .id(n)
                                 .onTapGesture { handleTap(n) }
+                                Hairline()
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                        .padding(.bottom, 12)
                     }
                     .onAppear {
                         DispatchQueue.main.async {
@@ -380,78 +382,62 @@ private struct AyahSelectRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
-            HStack {
+        VStack(alignment: .trailing, spacing: 9) {
+            HStack(spacing: 8) {
                 if let endpointLabel {
-                    Text(endpointLabel)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
+                    Text(endpointLabel.uppercased())
+                        .font(.system(size: 9, weight: .bold))
+                        .kerning(1.2)
+                        .foregroundStyle(Color(.systemBackground))
+                        .padding(.horizontal, 7)
                         .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.brand))
+                        .background(Rectangle().fill(Color.brand))
                 }
                 Spacer()
-                Text("\(number)")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(isSelected ? .white : Color(.secondaryLabel))
-                    .frame(width: 26, height: 26)
-                    .background(isSelected ? Color.brand : Color(.tertiarySystemFill))
-                    .clipShape(Circle())
+                MetaText("\(number)", tint: isSelected ? .brand : Color(.label).opacity(0.4), size: 11)
             }
 
             if let ayah {
                 Text(ayah.arabic)
-                    .font(.system(size: 22))
+                    .font(.appArabic(21))
+                    .lineSpacing(9)
                     .environment(\.layoutDirection, .rightToLeft)
                     .frame(maxWidth: .infinity, alignment: .trailing)
 
                 if !ayah.transliteration.isEmpty {
                     Text(ayah.transliteration)
-                        .font(.system(size: 13, weight: .light))
-                        .italic()
-                        .foregroundStyle(.secondary)
+                        .font(.appSerif(13, weight: .light, italic: true))
+                        .foregroundStyle(Color(.label).opacity(0.44))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if !ayah.translation.isEmpty {
                     Text(ayah.translation)
-                        .font(.system(size: 14))
+                        .font(.appSerif(14))
                         .foregroundStyle(Color(.label).opacity(0.8))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
                 Text("Ayah \(number)")
-                    .font(.headline)
+                    .font(.appSerif(17, weight: .medium))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(rowBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(borderColor, lineWidth: isEndpoint ? 2 : 1)
-        )
+        .padding(.horizontal, 20)
+        .padding(.vertical, 15)
+        .background(alignment: .leading) {
+            // Selection is a rule in the margin and a wash, not a filled card —
+            // the same mark the reader puts beside the ayah being recited.
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color.brand)
+                    .frame(width: isEndpoint ? 3 : (state == .inRange ? 1.5 : 0))
+                Rectangle()
+                    .fill(Color.brand.opacity(isSelected ? 0.07 : 0))
+            }
+        }
         .contentShape(Rectangle())
         .animation(.easeOut(duration: 0.2), value: isSelected)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private var rowBackground: Color {
-        switch state {
-        case .normal:               return Color(.secondarySystemGroupedBackground)
-        case .inRange:              return Color.brand.opacity(0.12)
-        case .start, .end, .single: return Color.brand.opacity(0.18)
-        }
-    }
-
-    private var borderColor: Color {
-        switch state {
-        case .start, .end, .single: return .brand
-        case .inRange:              return .brand.opacity(0.4)
-        case .normal:               return .clear
-        }
     }
 }
