@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// Saved ayahs, set as scripture rather than as cards — the same block the
+/// reader uses, ruled off from its neighbours.
 struct BookmarksView: View {
     @EnvironmentObject private var store: BookmarkStore
     @State private var showClearAlert = false
@@ -7,66 +9,74 @@ struct BookmarksView: View {
     var body: some View {
         Group {
             if store.bookmarks.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "bookmark.slash")
-                        .font(.system(size: 52))
-                        .foregroundStyle(.tertiary)
-                    Text("No Bookmarks Yet")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                    Text("Long-press any ayah and tap Bookmark to save it here.")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EditorialEmptyState(
+                    icon: "bookmark",
+                    title: "No bookmarks yet.",
+                    message: "Long-press any ayah and choose Bookmark to save it here."
+                )
             } else {
-                List {
-                    ForEach(store.bookmarks) { bm in
-                        let allSurahs = SurahRegistry.shared.surahs
-                        let idx = allSurahs.firstIndex(where: { $0.number == bm.surahNumber }) ?? 0
-                        // Use the full registry so swiping between surahs works.
-                        // Fall back to a stub surah if registry isn't loaded yet.
-                        let dest: AnyView = allSurahs.isEmpty
-                            ? AnyView(SurahDetailView(
-                                surah: Surah(
-                                    number: bm.surahNumber,
-                                    name: bm.surahArabicName,
-                                    englishName: bm.surahName,
-                                    englishNameTranslation: "",
-                                    numberOfAyahs: 0,
-                                    revelationType: ""
-                                ),
-                                initialAyah: bm.ayahNumber))
-                            : AnyView(SurahPageView(surahs: allSurahs, startIndex: idx, initialAyah: bm.ayahNumber))
-                        NavigationLink(destination: dest) {
-                            BookmarkRow(bm: bm)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(Array(store.bookmarks.enumerated()), id: \.element.id) { index, bm in
+                            if index > 0 {
+                                Hairline().padding(.vertical, 22)
+                            }
+                            NavigationLink(destination: destination(for: bm)) {
+                                BookmarkRow(bm: bm)
+                            }
+                            .buttonStyle(CardButtonStyle(scale: 0.985))
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    Haptics.warning()
+                                    store.remove(atOffsets: IndexSet(integer: index))
+                                } label: {
+                                    Label("Remove bookmark", systemImage: "bookmark.slash")
+                                }
+                            }
                         }
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     }
-                    .onDelete { store.remove(atOffsets: $0) }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+                    .padding(.bottom, 40)
                 }
-                .listStyle(.plain)
             }
         }
         .navigationTitle("Bookmarks")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
             if !store.bookmarks.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Clear All", role: .destructive) { showClearAlert = true }
-                        .font(.subheadline)
+                    Button("Clear", role: .destructive) { showClearAlert = true }
                         .foregroundStyle(.red)
                 }
             }
         }
-        .alert("Clear All Bookmarks?", isPresented: $showClearAlert) {
+        .alert("Clear all bookmarks?", isPresented: $showClearAlert) {
             Button("Clear", role: .destructive) { store.clearAll() }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    /// Prefer the full registry so swiping between surahs works; fall back to a
+    /// stub surah when it hasn't loaded yet.
+    private func destination(for bm: BookmarkedAyah) -> AnyView {
+        let allSurahs = SurahRegistry.shared.surahs
+        guard !allSurahs.isEmpty else {
+            // The reader is always the pager now (it owns the bar, the player and
+            // the menu) — a single-surah pager stands in until the registry loads.
+            let stub = Surah(
+                number: bm.surahNumber,
+                name: bm.surahArabicName,
+                englishName: bm.surahName,
+                englishNameTranslation: "",
+                numberOfAyahs: 0,
+                revelationType: ""
+            )
+            return AnyView(SurahPageView(surahs: [stub], startIndex: 0,
+                                         initialAyah: bm.ayahNumber))
+        }
+        let idx = allSurahs.firstIndex { $0.number == bm.surahNumber } ?? 0
+        return AnyView(SurahPageView(surahs: allSurahs, startIndex: idx, initialAyah: bm.ayahNumber))
     }
 }
 
@@ -74,31 +84,72 @@ private struct BookmarkRow: View {
     let bm: BookmarkedAyah
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label("\(bm.surahName) · Ayah \(bm.ayahNumber)", systemImage: "bookmark.fill")
-                    .font(.caption.bold())
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 7) {
+                Image(systemName: "bookmark.fill")
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.brand)
-                Spacer()
+                Eyebrow("\(bm.surahName) \(bm.ayahNumber)", tint: .brand)
+                Spacer(minLength: 8)
                 Text(bm.surahArabicName)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.secondary)
+                    .font(.appArabic(15))
+                    .foregroundStyle(Color(.label).opacity(0.4))
             }
+            .padding(.bottom, 13)
+
             Text(bm.arabic)
-                .font(.system(size: 20, weight: .regular))
+                .font(.appArabic(21))
+                .lineSpacing(12)
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .environment(\.layoutDirection, .rightToLeft)
-                .lineSpacing(6)
+
             Text(bm.translation)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.appSerif(16))
+                .foregroundStyle(Color(.label).opacity(0.72))
+                .lineSpacing(3)
                 .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 12)
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
-        )
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Shared empty state
+
+/// The ruled empty state used by the tool screens: a glyph, a serif line, and a
+/// quiet instruction. No illustration, no card.
+struct EditorialEmptyState: View {
+    let icon: String
+    let title: String
+    let message: String
+    var action: (label: String, run: () -> Void)? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Image(systemName: icon)
+                .font(.system(size: 26, weight: .light))
+                .foregroundStyle(.brand)
+                .padding(.bottom, 18)
+
+            Text(title)
+                .font(.appSerif(23, weight: .medium))
+                .padding(.bottom, 7)
+
+            Text(message)
+                .font(.appSerif(16))
+                .foregroundStyle(Color(.label).opacity(0.5))
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let action {
+                OutlineButton(label: action.label, on: true, action: action.run)
+                    .padding(.top, 22)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 24)
+        .padding(.top, 40)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
