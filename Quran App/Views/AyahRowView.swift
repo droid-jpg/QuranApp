@@ -1,219 +1,220 @@
 import SwiftUI
 
+/// One ayah, set as a page of a book rather than a row of a list.
+///
+/// The control row that used to sit above every ayah is gone: a tap reveals a
+/// compact strip, a long press opens the full menu, and immersive reading turns
+/// even the strip off. What's left on the page is scripture, a numeral, and — on
+/// the ayah being recited — a single accent rule down the left margin.
 struct AyahRowView: View {
     let ayah: Ayah
-    let surahName: String
     let surahNumber: Int
     let isPlaying: Bool
     let isWordLooping: Bool
-    let wordTimings: [WordTiming]?   // nil = not yet loaded; [] = loaded but empty/error
     let isLoadingTimings: Bool
-    let wordTimingsError: String?
     let wordDetails: [WordDetail]?   // per-word meaning/audio; nil until loaded
-    let tafsir: String?              // ayah commentary; nil when this ayah has none
     let isBookmarked: Bool
     let isMemorizing: Bool           // enrolled in spaced-repetition review
     var isWorkingAyah: Bool = false  // the current memorization target ayah
+    let hasTafsir: Bool
     let onBookmark: () -> Void
     let onToggleMemorize: () -> Void
     let onPlay: () -> Void
-    let onWordLoop: (WordTiming, WordTiming) -> Void
-    let onRequestTimings: () -> Void
-    var onSetWorking: () -> Void = {}   // "Memorize from here"
-    var onMarkLearned: () -> Void = {}  // "Mark learned → next ayah"
+    var onRepeat: () -> Void = {}       // "Repeat this ayah"
+    /// Opens the word-by-word picker (the reader owns the sheet).
+    var onWordByWord: () -> Void = {}
+    var onTafsir: () -> Void = {}
+    /// Long press — the reader raises its own menu panel for this ayah.
+    var onLongPress: () -> Void = {}
 
     @AppStorage("showTranslation")          private var showTranslation     = true
     @AppStorage("showTransliteration")      private var showTransliteration = true
     @AppStorage("arabicFontSize")           private var arabicFontSize: Double = 26
-    @AppStorage("translationFontSize")      private var translationFontSize: Double = 14
+    @AppStorage("translationFontSize")      private var translationFontSize: Double = 17
     @AppStorage("transliterationFontSize")  private var transliterationFontSize: Double = 13
+    @AppStorage("immersiveReading")         private var immersiveReading = false
+    // Read during body — that is what makes a change of face or script repaint
+    // the page immediately rather than on the next visit. Not `private`: a plain
+    // stored property (unlike the wrappers above) would take the memberwise
+    // initializer private with it.
+    var type = ReadingType()
 
-    @State private var showWordPicker = false
-    @State private var showTafsir = false
+    @State private var revealed = false
+
+    /// Brand while reciting, orange while it's the memorization target, otherwise
+    /// dim — the numeral is the only status indicator left on the page.
+    private var numeralTint: Color {
+        if isPlaying { return .brand }
+        if isWorkingAyah { return .orange }
+        return Color(.label).opacity(0.35)
+    }
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 0) {
-            // Control row
-            HStack(spacing: 10) {
-                Button(action: onPlay) {
-                    Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 26))
-                        .foregroundStyle(isPlaying ? .brand : Color(.secondaryLabel))
-                        .contentTransition(.symbolEffect(.replace))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    onRequestTimings()
-                    showWordPicker = true
-                } label: {
-                    Group {
-                        if isLoadingTimings {
-                            ProgressView().scaleEffect(0.65)
-                        } else {
-                            Image(systemName: "text.word.spacing")
-                                .font(.system(size: 16))
-                                .foregroundStyle(isWordLooping ? Color.brand : Color(.tertiaryLabel))
-                                .symbolVariant(isWordLooping ? .fill : .none)
-                        }
-                    }
-                    .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.plain)
-                .sheet(isPresented: $showWordPicker) {
-                    WordLoopPickerView(
-                        ayah: ayah,
-                        timings: wordTimings ?? [],
-                        isLoading: isLoadingTimings,
-                        errorMessage: wordTimingsError
-                    ) { start, end in
-                        onWordLoop(start, end)
-                    }
-                }
-
-                // Commentary — shown only on ayahs that have tafsir.
-                if let tafsir {
-                    Button { showTafsir = true } label: {
-                        Image(systemName: "text.book.closed")
-                            .font(.system(size: 16))
-                            .foregroundStyle(Color.brand.opacity(0.7))
-                            .frame(width: 22, height: 22)
-                    }
-                    .buttonStyle(.plain)
-                    .sheet(isPresented: $showTafsir) {
-                        TafsirSheet(ayah: ayah, surahName: surahName, text: tafsir)
-                    }
-                }
-
-                Button(action: onToggleMemorize) {
-                    Image(systemName: isMemorizing ? "checkmark.circle.fill" : "plus.circle")
-                        .font(.system(size: 16))
-                        .foregroundStyle(isMemorizing ? Color.brand : Color(.tertiaryLabel))
-                        .symbolEffect(.bounce, value: isMemorizing)
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Text("\(ayah.numberInSurah)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 26, height: 26)
-                    .background(isPlaying ? Color.brand : (isWorkingAyah ? Color.orange : Color(.tertiaryLabel)))
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .strokeBorder(Color.orange, lineWidth: isWorkingAyah && !isPlaying ? 2 : 0)
-                            .padding(-3)
-                    )
-                    .scaleEffect(isPlaying ? 1.08 : 1.0)
-                    .animation(AppAnim.spring, value: isPlaying)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 12)
-
-            // Arabic text — each word is tappable for its meaning/audio.
+        VStack(alignment: .leading, spacing: 0) {
+            // Arabic — each word is tappable for its meaning/audio.
             TappableArabicText(
                 ayah: ayah,
                 surahNumber: surahNumber,
                 wordDetails: wordDetails,
-                fontSize: arabicFontSize
+                fontSize: arabicFontSize,
+                script: type.script
             )
-            .padding(.horizontal, 16)
-            .padding(.bottom, (showTransliteration || showTranslation) ? 12 : 14)
+            .padding(.horizontal, 28)
+            .padding(.top, 22)
 
             if showTransliteration || showTranslation {
-                Divider().padding(.horizontal, 16)
+                HStack(alignment: .top, spacing: 12) {
+                    Text("\(ayah.numberInSurah)")
+                        .font(.system(size: 11, weight: .bold).monospacedDigit())
+                        .kerning(0.6)
+                        .foregroundStyle(numeralTint)
+                        .frame(minWidth: 20, alignment: .leading)
+                        .padding(.top, 4)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    if showTransliteration {
-                        Text(ayah.transliteration)
-                            .font(.system(size: transliterationFontSize, weight: .light))
-                            .italic()
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    if showTranslation {
-                        Text(ayah.translation)
-                            .font(.system(size: translationFontSize))
-                            .foregroundStyle(Color(.label).opacity(0.78))
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 6) {
+                        if showTransliteration {
+                            Text(ayah.transliteration)
+                                .font(type.serif(transliterationFontSize, weight: .light, italic: true))
+                                .foregroundStyle(Color(.label).opacity(0.44))
+                                .lineSpacing(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if showTranslation {
+                            Text(ayah.translation)
+                                .font(type.serif(translationFontSize))
+                                .foregroundStyle(Color(.label).opacity(0.86))
+                                .lineSpacing(3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 14)
+                .padding(.horizontal, 28)
+                .padding(.top, 16)
+            } else {
+                // Nothing beneath the Arabic, so the numeral carries the line.
+                Text("\(ayah.numberInSurah)")
+                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .kerning(0.6)
+                    .foregroundStyle(numeralTint)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 12)
+            }
+
+            if revealed && !immersiveReading {
+                controlStrip
+                    .padding(.horizontal, 28)
+                    .padding(.top, 16)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(isPlaying ? Color.brand.opacity(0.07) : Color.clear)
-        .animation(AppAnim.smooth, value: isPlaying)
+        .padding(.bottom, 22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !immersiveReading else { return }
+            Haptics.tap()
+            withAnimation(AppAnim.springFast) { revealed.toggle() }
+        }
+        // The app's own panel, raised by the reader, instead of `.contextMenu` —
+        // the last piece of UIKit chrome the restyle hadn't reached.
+        .onLongPressGesture(minimumDuration: 0.32) { onLongPress() }
+        // The one accent on the page: a rule down the margin of the ayah being
+        // recited. Replaces the old tinted background wash.
         .overlay(alignment: .leading) {
             Rectangle()
                 .fill(Color.brand)
-                .frame(width: 3)
+                .frame(width: 2)
                 .opacity(isPlaying ? 1 : 0)
-                .pulseGlow(color: .brand, active: isPlaying)
                 .animation(AppAnim.spring, value: isPlaying)
         }
-        .contextMenu {
-            ShareLink(item: shareText()) {
-                Label("Share Ayah", systemImage: "square.and.arrow.up")
-            }
-            ShareLink(item: shareTextWithTranslation()) {
-                Label("Share with Translation", systemImage: "doc.text")
-            }
-            Divider()
-            Button {
-                onBookmark()
-            } label: {
-                Label(isBookmarked ? "Remove Bookmark" : "Bookmark Ayah",
-                      systemImage: isBookmarked ? "bookmark.slash" : "bookmark")
-            }
-            Button {
-                onToggleMemorize()
-            } label: {
-                Label(isMemorizing ? "Remove from Memorization" : "Add to Memorization",
-                      systemImage: isMemorizing ? "graduationcap.fill" : "graduationcap")
-            }
-            Divider()
-            if isWorkingAyah {
-                Button {
-                    onMarkLearned()
-                } label: {
-                    Label("Mark Learned → Next Ayah", systemImage: "checkmark.circle")
-                }
-            } else {
-                Button {
-                    onSetWorking()
-                } label: {
-                    Label("Memorize From Here", systemImage: "target")
-                }
-            }
+        .onChange(of: immersiveReading) { _, on in
+            if on { revealed = false }
         }
     }
 
-    // MARK: - Share helpers
+    // MARK: - Revealed controls
 
-    private func shareText() -> String {
-        """
-        \(ayah.arabic)
+    /// The compact strip a tap reveals. Everything here is also in the long-press
+    /// menu — this exists so the common actions cost one tap instead of a press.
+    private var controlStrip: some View {
+        HStack(spacing: 18) {
+            GlyphButton(icon: isPlaying ? "pause.fill" : "play.fill",
+                        on: isPlaying, label: isPlaying ? "Pause" : "Play from here",
+                        action: onPlay)
 
-        [\(surahName) \(ayah.numberInSurah)]
-        """
+            GlyphButton(icon: "repeat", on: false, label: "Repeat this ayah", action: onRepeat)
+
+            GlyphButton(icon: "text.word.spacing", on: isWordLooping,
+                        loading: isLoadingTimings, label: "Word by word",
+                        action: onWordByWord)
+
+            if hasTafsir {
+                GlyphButton(icon: "text.book.closed", on: false, label: "Tafsir", action: onTafsir)
+            }
+
+            GlyphButton(icon: isMemorizing ? "checkmark.circle.fill" : "plus.circle",
+                        on: isMemorizing, label: "Add to review", action: onToggleMemorize)
+
+            GlyphButton(icon: isBookmarked ? "bookmark.fill" : "bookmark",
+                        on: isBookmarked, label: "Bookmark", action: onBookmark)
+
+            Spacer(minLength: 0)
+        }
     }
 
-    private func shareTextWithTranslation() -> String {
-        """
-        \(ayah.arabic)
+}
 
-        \(ayah.translation)
+// MARK: - Share helpers
+//
+// The long-press menu itself now lives in the reader (so its panel can be drawn
+// above the pager and the player); these build what it shares.
 
-        [\(surahName) \(ayah.numberInSurah)]
-        """
+func ayahShareText(_ ayah: Ayah, surahName: String) -> String {
+    """
+    \(ayah.arabic)
+
+    [\(surahName) \(ayah.numberInSurah)]
+    """
+}
+
+func ayahShareTextWithTranslation(_ ayah: Ayah, surahName: String) -> String {
+    """
+    \(ayah.arabic)
+
+    \(ayah.translation)
+
+    [\(surahName) \(ayah.numberInSurah)]
+    """
+}
+
+// MARK: - Glyph button
+
+/// A bare glyph in the revealed strip — no border, no fill, accent only when the
+/// thing it toggles is on.
+private struct GlyphButton: View {
+    let icon: String
+    let on: Bool
+    var loading: Bool = false
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if loading {
+                    ProgressView().scaleEffect(0.6)
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.5))
+                        .contentTransition(.symbolEffect(.replace))
+                }
+            }
+            .frame(width: 24, height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
@@ -228,6 +229,8 @@ private struct TappableArabicText: View {
     let surahNumber: Int
     let wordDetails: [WordDetail]?
     let fontSize: CGFloat
+    /// Passed in rather than looked up, so a change of script repaints the page.
+    let script: ArabicScript
 
     @State private var selected: WordDetail?
 
@@ -243,9 +246,10 @@ private struct TappableArabicText: View {
     }
 
     var body: some View {
-        FlowLayout(spacing: 4, lineSpacing: 12, rightToLeft: true) {
+        FlowLayout(spacing: 5, lineSpacing: fontSize * 0.62, rightToLeft: true) {
             ForEach(Array(words.enumerated()), id: \.offset) { idx, word in
-                ArabicWordChip(word: word, fontSize: fontSize, detail: detail(forDisplayIndex: idx)) { d in
+                ArabicWordChip(word: word, fontSize: fontSize, script: script,
+                               detail: detail(forDisplayIndex: idx)) { d in
                     selected = d
                 }
             }
@@ -255,11 +259,12 @@ private struct TappableArabicText: View {
     }
 }
 
-/// A single Arabic word. Taps flash a teal highlight and open the definition
+/// A single Arabic word. Taps flash an accent highlight and open the definition
 /// sheet; words without loaded `WordDetail` data are inert.
 private struct ArabicWordChip: View {
     let word: String
     let fontSize: CGFloat
+    let script: ArabicScript
     let detail: WordDetail?
     let onTap: (WordDetail) -> Void
 
@@ -267,13 +272,10 @@ private struct ArabicWordChip: View {
 
     var body: some View {
         Text(word)
-            .font(.system(size: fontSize))
+            .font(script.font(size: fontSize))
             .padding(.horizontal, 3)
             .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.brand.opacity(flash ? 0.22 : 0))
-            )
+            .background(Rectangle().fill(Color.brand.opacity(flash ? 0.18 : 0)))
             .contentShape(Rectangle())
             .onTapGesture {
                 guard let detail else { return }
@@ -306,19 +308,19 @@ private struct WordDefinitionSheet: View {
                 .padding(.top, 8)
 
             Text(detail.arabic)
-                .font(.system(size: 40))
+                .font(.appArabic(40))
                 .environment(\.layoutDirection, .rightToLeft)
                 .multilineTextAlignment(.center)
 
             if !detail.transliteration.isEmpty {
                 Text(detail.transliteration)
-                    .font(.title3).italic()
+                    .font(.appSerif(19, italic: true))
                     .foregroundStyle(.secondary)
             }
 
             if !detail.translation.isEmpty {
                 Text(detail.translation)
-                    .font(.title2.weight(.medium))
+                    .font(.appSerif(21, weight: .medium))
                     .multilineTextAlignment(.center)
             }
 
@@ -326,13 +328,16 @@ private struct WordDefinitionSheet: View {
                 Button {
                     if isPlaying { clip.stop() } else { clip.play(url) }
                 } label: {
-                    Label(isPlaying ? "Stop" : "Play",
-                          systemImage: isPlaying ? "stop.fill" : "play.fill")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 24).padding(.vertical, 10)
-                        .background(Color.brand)
-                        .clipShape(Capsule())
+                    HStack(spacing: 7) {
+                        Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(isPlaying ? "STOP" : "PLAY")
+                            .font(.system(size: 11, weight: .semibold))
+                            .kerning(1.2)
+                    }
+                    .foregroundStyle(Color.brand)
+                    .padding(.horizontal, 22).padding(.vertical, 10)
+                    .overlay(Rectangle().strokeBorder(Color.brand.opacity(0.55), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -346,8 +351,8 @@ private struct WordDefinitionSheet: View {
     }
 }
 
-/// Scrollable commentary sheet for a single ayah.
-private struct TafsirSheet: View {
+/// Scrollable commentary sheet for a single ayah. Presented by the reader.
+struct TafsirSheet: View {
     let ayah: Ayah
     let surahName: String
     let text: String
@@ -358,18 +363,18 @@ private struct TafsirSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(ayah.arabic)
-                        .font(.system(size: 24))
+                        .font(.appArabic(24))
+                        .lineSpacing(12)
                         .environment(\.layoutDirection, .rightToLeft)
                         .frame(maxWidth: .infinity, alignment: .trailing)
 
-                    Text(TafsirService.shared.sourceName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Eyebrow(TafsirService.shared.sourceName)
 
-                    Divider()
+                    Hairline()
 
                     Text(text)
-                        .font(.body)
+                        .font(.appSerif(17))
+                        .lineSpacing(4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }

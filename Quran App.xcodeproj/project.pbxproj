@@ -20,6 +20,13 @@
 			remoteGlobalIDString = C4EBA6992FAD446D004C898D;
 			remoteInfo = QuranWidgetExtension;
 		};
+		AA100000000000000000000B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C4032EFB2FAC9FE6005ED3EA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C4032F022FAC9FE6005ED3EA;
+			remoteInfo = "Quran App";
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -42,12 +49,14 @@
 		C4EBA67E2FAD4436004C898D /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		C4EBA6802FAD4436004C898D /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		C4EBA69A2FAD446D004C898D /* QuranWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QuranWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA1000000000000000000001 /* QuranTourUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuranTourUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		6E3544B5EF3A4C1D95E6CBBE /* Exceptions for "Quran App" folder in "QuranWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Models/AppTheme.swift,
 				Models/PrayerCountdownAttributes.swift,
 			);
 			target = C4EBA6992FAD446D004C898D /* QuranWidgetExtension */;
@@ -86,6 +95,11 @@
 			path = QuranWidget;
 			sourceTree = "<group>";
 		};
+		AA1000000000000000000002 /* QuranTourUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = QuranTourUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -105,6 +119,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA1000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -114,6 +135,7 @@
 				C4319DC42FAEF9B3005231EF /* QuranWidgetExtension.entitlements */,
 				C4032F052FAC9FE6005ED3EA /* Quran App */,
 				C4EBA69D2FAD446D004C898D /* QuranWidget */,
+				AA1000000000000000000002 /* QuranTourUITests */,
 				C4EBA67D2FAD4436004C898D /* Frameworks */,
 				C4032F042FAC9FE6005ED3EA /* Products */,
 			);
@@ -124,6 +146,7 @@
 			children = (
 				C4032F032FAC9FE6005ED3EA /* Quran App.app */,
 				C4EBA69A2FAD446D004C898D /* QuranWidgetExtension.appex */,
+				AA1000000000000000000001 /* QuranTourUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -186,6 +209,29 @@
 			productReference = C4EBA69A2FAD446D004C898D /* QuranWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		AA1000000000000000000003 /* QuranTourUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA1000000000000000000007 /* Build configuration list for PBXNativeTarget "QuranTourUITests" */;
+			buildPhases = (
+				AA1000000000000000000004 /* Sources */,
+				AA1000000000000000000005 /* Frameworks */,
+				AA1000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA100000000000000000000A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA1000000000000000000002 /* QuranTourUITests */,
+			);
+			name = QuranTourUITests;
+			packageProductDependencies = (
+			);
+			productName = QuranTourUITests;
+			productReference = AA1000000000000000000001 /* QuranTourUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -201,6 +247,10 @@
 					};
 					C4EBA6992FAD446D004C898D = {
 						CreatedOnToolsVersion = 26.4.1;
+					};
+					AA1000000000000000000003 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = C4032F022FAC9FE6005ED3EA;
 					};
 				};
 			};
@@ -220,6 +270,7 @@
 			targets = (
 				C4032F022FAC9FE6005ED3EA /* Quran App */,
 				C4EBA6992FAD446D004C898D /* QuranWidgetExtension */,
+				AA1000000000000000000003 /* QuranTourUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -233,6 +284,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C4EBA6982FAD446D004C898D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1000000000000000000006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -256,6 +314,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA1000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -263,6 +328,11 @@
 			isa = PBXTargetDependency;
 			target = C4EBA6992FAD446D004C898D /* QuranWidgetExtension */;
 			targetProxy = C4EBA6A92FAD446F004C898D /* PBXContainerItemProxy */;
+		};
+		AA100000000000000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C4032F022FAC9FE6005ED3EA /* Quran App */;
+			targetProxy = AA100000000000000000000B /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -453,7 +523,7 @@
 				DEVELOPMENT_TEAM = SDYLFC5XLX;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = QuranWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Quran;
+				INFOPLIST_KEY_CFBundleDisplayName = "Holy Quran";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -485,7 +555,7 @@
 				DEVELOPMENT_TEAM = SDYLFC5XLX;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = QuranWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Quran;
+				INFOPLIST_KEY_CFBundleDisplayName = "Holy Quran";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -503,6 +573,42 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		AA1000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SDYLFC5XLX;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sami.Quran-App.QuranTourUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Quran App";
+			};
+			name = Debug;
+		};
+		AA1000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SDYLFC5XLX;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "sami.Quran-App.QuranTourUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Quran App";
 			};
 			name = Release;
 		};
@@ -535,6 +641,15 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
+		};
+		AA1000000000000000000007 /* Build configuration list for PBXNativeTarget "QuranTourUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA1000000000000000000008 /* Debug */,
+				AA1000000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 	};

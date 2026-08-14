@@ -1,4 +1,33 @@
 import SwiftUI
+import UIKit
+import WidgetKit
+
+/// Tab identity, held by the scene rather than by the TabView, so a theme change
+/// (which rebuilds the TabView) doesn't bounce the user back to Home.
+enum AppTab: String, Hashable, CaseIterable, Identifiable {
+    case home, quran, more
+
+    var id: String { rawValue }
+
+    /// Set in the tab bar's own letterspaced caps.
+    var title: String {
+        switch self {
+        case .home:  "Today"
+        case .quran: "Qur’an"
+        case .more:  "More"
+        }
+    }
+
+    /// VoiceOver reads the curly apostrophe badly, and "Today" alone is vague
+    /// out of context.
+    var accessibilityName: String {
+        switch self {
+        case .home:  "Today"
+        case .quran: "Quran"
+        case .more:  "More"
+        }
+    }
+}
 
 @main
 struct QuranAppApp: App {
@@ -14,6 +43,40 @@ struct QuranAppApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSplash = true
     @State private var showOnboarding = false
+    @State private var selectedTab: AppTab = .home
+    @ObservedObject private var chrome = Chrome.shared
+    /// Bumped when the colour theme changes. `Color.brand` is computed, so the
+    /// whole tree has to be rebuilt for the new accent to reach views that
+    /// weren't otherwise going to re-render. Tab selection and the More tab's
+    /// navigation path live outside the rebuilt subtree, so the user keeps their
+    /// place — including the Settings screen they changed the theme from.
+    @State private var themeEpoch = 0
+
+    init() {
+        Self.applySerifNavigationTitles()
+    }
+
+    /// The restyle takes English into serif, and a system large title in SF is
+    /// the one place that would still shout. Set once at launch, and always to
+    /// New York rather than the user's chosen reading face — the bar is drawn by
+    /// UIKit, which can't re-resolve a custom face mid-session, and New York is
+    /// the default face and the only one guaranteed present.
+    private static func applySerifNavigationTitles() {
+        func serif(_ size: CGFloat, _ weight: UIFont.Weight) -> UIFont {
+            let base = UIFont.systemFont(ofSize: size, weight: weight)
+            guard let descriptor = base.fontDescriptor.withDesign(.serif) else { return base }
+            return UIFont(descriptor: descriptor, size: size)
+        }
+
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithDefaultBackground()
+        appearance.largeTitleTextAttributes = [.font: serif(34, .bold)]
+        appearance.titleTextAttributes = [.font: serif(17, .semibold)]
+
+        UINavigationBar.appearance().standardAppearance = appearance
+        UINavigationBar.appearance().compactAppearance = appearance
+        UINavigationBar.appearance().scrollEdgeAppearance = appearance
+    }
 
     /// Runs a request left by the "Continue Memorizing" Siri intent: start a chain
     /// loop of the working ayah plus the couple before it, paused after each.
@@ -37,20 +100,27 @@ struct QuranAppApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                TabView {
-                    Tab("Home", systemImage: "house.fill") {
-                        HomeView()
+                TabView(selection: $selectedTab) {
+                    Tab(value: AppTab.home) {
+                        HomeView().toolbar(.hidden, for: .tabBar)
                     }
-                    Tab("Quran", systemImage: "book.fill") {
-                        SurahListView()
+                    Tab(value: AppTab.quran) {
+                        SurahListView().toolbar(.hidden, for: .tabBar)
                     }
-                    Tab("More", systemImage: "ellipsis.circle.fill") {
-                        MoreView()
+                    Tab(value: AppTab.more) {
+                        MoreView().toolbar(.hidden, for: .tabBar)
                     }
                 }
-                // Liquid Glass tab bar: float over content and tuck away while
-                // reading so the scripture gets the full screen.
-                .tabBarMinimizeBehavior(.onScrollDown)
+                // The system bar is hidden per-tab above; `EditorialTabBar` takes
+                // its place as a safe-area inset, so it reserves its own space
+                // instead of floating over the last row of every screen.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if !chrome.tabBarHidden {
+                        EditorialTabBar(selection: $selectedTab)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .animation(AppAnim.spring, value: chrome.tabBarHidden)
                 .tint(.brand)
                 .environmentObject(audioService)
                 .environmentObject(memorizationStore)
@@ -59,6 +129,7 @@ struct QuranAppApp: App {
                 .environmentObject(prayerTimesService)
                 .environmentObject(namesStore)
                 .environmentObject(bookmarkStore)
+                .id(themeEpoch)
 
                 if showSplash {
                     SplashView()
@@ -98,6 +169,17 @@ struct QuranAppApp: App {
                 try? await Task.sleep(for: .milliseconds(1400))
                 withAnimation(.easeOut(duration: 0.5)) { showSplash = false }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .appThemeDidChange)) { _ in
+                themeEpoch += 1
+                WidgetCenter.shared.reloadAllTimelines()
+            }
+            // Same trick for a change of reading face — but never while the
+            // reader is open: it repaints itself in place (`ReadingType`), and a
+            // rebuild would throw away the page the user is scrolled to.
+            .onReceive(NotificationCenter.default.publisher(for: .readingTypeDidChange)) { _ in
+                guard !chrome.tabBarHidden else { return }
+                themeEpoch += 1
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { performPendingHifzAction() }
                 // Leaving the app is the last chance to record exactly where
@@ -120,40 +202,24 @@ private struct SplashView: View {
             Color(colorScheme == .dark ? .black : .white)
                 .ignoresSafeArea()
 
-            VStack(spacing: 20) {
-                // Moon & star icon cluster
-                ZStack {
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [Color.brand.opacity(0.18), Color.brand.opacity(0.04)],
-                                center: .center, startRadius: 8, endRadius: 70
-                            )
-                        )
-                        .frame(width: 132, height: 132)
-                    Circle()
-                        .strokeBorder(Color.brand.opacity(0.15), lineWidth: 1)
-                        .frame(width: 132, height: 132)
-                    Image(systemName: "moon.stars.fill")
-                        .font(.system(size: 56))
-                        .foregroundStyle(LinearGradient.brandHero)
-                }
+            VStack(spacing: 0) {
+                Text("القرآن الكريم")
+                    .font(.appArabic(30))
+                    .foregroundStyle(Color(.label).opacity(0.75))
+                    .environment(\.layoutDirection, .rightToLeft)
 
-                VStack(spacing: 8) {
-                    Text("القرآن الكريم")
-                        .font(.system(size: 36, weight: .regular))
-                        .foregroundStyle(.primary)
-                        .environment(\.layoutDirection, .rightToLeft)
+                Text("Holy Quran")
+                    .font(.appSerif(34, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .padding(.top, 10)
 
-                    Text("The Holy Quran")
-                        .font(.title3)
-                        .fontDesign(.serif)
-                        .foregroundStyle(.secondary)
-                }
+                DiamondRule()
+                    .frame(width: 190)
+                    .padding(.top, 22)
 
                 ProgressView()
                     .tint(.brand)
-                    .padding(.top, 8)
+                    .padding(.top, 26)
             }
             .scaleEffect(scale)
             .opacity(opacity)
