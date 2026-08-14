@@ -22,63 +22,35 @@ struct SurahListView: View {
         }
     }
 
+    /// The count that sits at the end of the masthead rule: the whole book when
+    /// nothing is narrowing the list, otherwise how much of it is left showing.
+    private var countLabel: String {
+        let narrowed = filter != .all || !viewModel.searchText.isEmpty
+        guard !viewModel.surahs.isEmpty else { return "" }
+        return narrowed
+            ? "\(displayedSurahs.count) SHOWN"
+            : "\(viewModel.surahs.count) SURAHS"
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
-            Group {
-                if viewModel.isLoading && viewModel.surahs.isEmpty {
-                    ProgressView("Loading Surahs…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let err = viewModel.error, viewModel.surahs.isEmpty {
-                    ErrorView(message: err) { Task { await viewModel.load() } }
-                } else {
-                    List {
-                        // Full surah list
-                        Section {
-                            if displayedSurahs.isEmpty {
-                                FilterEmptyState(filter: filter)
-                                    .listRowSeparator(.hidden)
-                                    .listRowBackground(Color.clear)
-                            } else {
-                                ForEach(displayedSurahs) { surah in
-                                    let idx = viewModel.surahs.firstIndex(where: { $0.number == surah.number }) ?? 0
-                                    NavigationLink(value: idx) {
-                                        SurahRowView(
-                                            surah: surah,
-                                            status: store.status(for: surah.number)
-                                        )
-                                    }
-                                    .contextMenu {
-                                        SurahQuickActions(
-                                            surah: surah,
-                                            store: store,
-                                            downloadManager: downloadManager,
-                                            audioService: audioService
-                                        )
-                                    }
-                                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                        let next = store.status(for: surah.number).next
-                                        Button {
-                                            Haptics.impact()
-                                            withAnimation { store.cycle(for: surah.number) }
-                                        } label: {
-                                            Label(next.label, systemImage: next.icon)
-                                        }
-                                        .tint(next.color)
-                                    }
-                                }
-                            }
-                        } header: {
-                            if filter != .all {
-                                SectionHeader(title: filter.label, systemImage: filter.icon)
-                            }
-                        }
+            VStack(spacing: 0) {
+                SurahListTopBar(
+                    count: countLabel,
+                    searchText: $viewModel.searchText,
+                    filter: $filter,
+                    onJuz: {
+                        Haptics.tap()
+                        showJuzBrowser = true
                     }
-                    .listStyle(.plain)
-                    .searchable(text: $viewModel.searchText, prompt: "Search surah…")
-                }
+                )
+
+                content
             }
-            .navigationTitle("The Holy Quran")
-            .navigationBarTitleDisplayMode(.large)
+            // The system bar drew a large SF title, a grey capsule search field
+            // and a popover menu — the last stretch of stock iOS in the tab.
+            // `SurahListTopBar` replaces it from inside the layout.
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Int.self) { idx in
                 SurahPageView(surahs: viewModel.surahs, startIndex: idx)
             }
@@ -95,33 +67,189 @@ struct SurahListView: View {
             .onChange(of: selectedReciterId) { _, _ in
                 downloadManager.syncCurrentReciter()
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        Haptics.tap()
-                        showJuzBrowser = true
-                    } label: {
-                        Image(systemName: "list.number")
-                            .foregroundStyle(.primary)
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Picker("Filter", selection: $filter) {
-                            ForEach(SurahFilter.allCases) { f in
-                                Label(f.label, systemImage: f.icon).tag(f)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: filter == .all
-                              ? "line.3.horizontal.decrease.circle"
-                              : "line.3.horizontal.decrease.circle.fill")
-                            .foregroundStyle(filter == .all ? Color.primary : Color.brand)
-                    }
-                }            }
             .sheet(isPresented: $showJuzBrowser) {
                 JuzBrowserView(surahs: viewModel.surahs)
-            }        }
+            }
+        }
+    }
+
+    // MARK: - List
+
+    @ViewBuilder
+    private var content: some View {
+        if viewModel.isLoading && viewModel.surahs.isEmpty {
+            ProgressView("Loading Surahs…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let err = viewModel.error, viewModel.surahs.isEmpty {
+            ErrorView(message: err) { Task { await viewModel.load() } }
+        } else {
+            List {
+                if displayedSurahs.isEmpty {
+                    FilterEmptyState(filter: filter)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                } else {
+                    ForEach(displayedSurahs) { surah in
+                        let idx = viewModel.surahs.firstIndex(where: { $0.number == surah.number }) ?? 0
+                        NavigationLink(value: idx) {
+                            SurahRowView(
+                                surah: surah,
+                                status: store.status(for: surah.number)
+                            )
+                        }
+                        .contextMenu {
+                            SurahQuickActions(
+                                surah: surah,
+                                store: store,
+                                downloadManager: downloadManager,
+                                audioService: audioService
+                            )
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            let next = store.status(for: surah.number).next
+                            Button {
+                                Haptics.impact()
+                                withAnimation { store.cycle(for: surah.number) }
+                            } label: {
+                                Label(next.label, systemImage: next.icon)
+                            }
+                            .tint(next.color)
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            // The search field is ours now and sits above the list, so a scroll
+            // is the only way left to put the keyboard away.
+            .scrollDismissesKeyboard(.immediately)
+        }
+    }
+}
+
+// MARK: - Top bar
+
+/// The Qur'an tab's own bar, in place of the system's large title, search field
+/// and toolbar menu: a wordmark ruled across to the count, the search field set
+/// in the reading serif, and the filter as segments rather than a popover.
+private struct SurahListTopBar: View {
+    let count: String
+    @Binding var searchText: String
+    @Binding var filter: SurahFilter
+    let onJuz: () -> Void
+
+    /// Read during body so a change of reading face repaints the wordmark here
+    /// and now, rather than on the next visit to the tab.
+    var type = ReadingType()
+
+    private var filterOptions: [EditorialOption<SurahFilter>] {
+        SurahFilter.allCases.map { EditorialOption($0, $0.shortLabel) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("Qur’an")
+                    .font(type.serif(32, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .accessibilityAddTraits(.isHeader)
+
+                Rectangle()
+                    .fill(Color.rule)
+                    .frame(height: 1)
+                    .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 5 }
+
+                if !count.isEmpty {
+                    MetaText(count, size: 10)
+                        .contentTransition(.numericText())
+                        .animation(AppAnim.smooth, value: count)
+                }
+
+                BarButton(icon: "list.number", label: "Browse by juz", action: onJuz)
+                    // The glyph's own 38pt box would otherwise push the bar's
+                    // baseline around; pin it to the wordmark's instead.
+                    .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 9 }
+            }
+            .padding(.leading, 24)
+            .padding(.trailing, 12)
+            .padding(.top, 8)
+
+            SurahSearchField(text: $searchText)
+                .padding(.horizontal, 24)
+                .padding(.top, 14)
+
+            EditorialSegmented(selection: $filter, options: filterOptions)
+                .padding(.horizontal, 24)
+                .padding(.top, 10)
+                .padding(.bottom, 14)
+        }
+        .background(Color(.systemBackground))
+        .overlay(alignment: .bottom) { Hairline() }
+    }
+}
+
+/// The ruled search field. `.searchable` draws UIKit's grey capsule inside the
+/// navigation bar — this is the same job done in the app's own hand.
+private struct SurahSearchField: View {
+    @Binding var text: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(focused || !text.isEmpty
+                                 ? Color.brand
+                                 : Color(.label).opacity(0.35))
+
+            ZStack(alignment: .leading) {
+                if text.isEmpty {
+                    Text("Search surah…")
+                        .font(.appSerif(15.5, italic: true))
+                        .foregroundStyle(Color(.label).opacity(0.35))
+                        .allowsHitTesting(false)
+                }
+                TextField("", text: $text)
+                    .font(.appSerif(15.5))
+                    .textFieldStyle(.plain)
+                    .tint(.brand)
+                    .focused($focused)
+                    .submitLabel(.search)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.words)
+                    .accessibilityLabel("Search surah")
+            }
+
+            if !text.isEmpty {
+                Button {
+                    Haptics.tap()
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color(.label).opacity(0.4))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+                .transition(.opacity)
+            }
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, text.isEmpty ? 12 : 4)
+        .padding(.vertical, 9)
+        .overlay(
+            Rectangle().strokeBorder(
+                focused ? Color.brand.opacity(0.65) : Color(.label).opacity(0.18),
+                lineWidth: 1
+            )
+        )
+        .animation(AppAnim.smooth, value: focused)
+        .animation(AppAnim.smooth, value: text.isEmpty)
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
     }
 }
 
@@ -132,44 +260,53 @@ struct SurahRowView: View {
     let status: MemorizationStatus
     @ObservedObject private var downloadManager = DownloadManager.shared
 
-    var body: some View {
-        HStack(spacing: 16) {
-            NumberBadge(number: surah.number)
+    // Declared so the list follows a change of reading face or script.
+    @AppStorage("readingFace")  private var readingFace = ReadingFace.newYork.rawValue
+    @AppStorage("arabicScript") private var arabicScript = ArabicScript.system.rawValue
 
-            VStack(alignment: .leading, spacing: 2) {
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            // The numeral carries the index — a seal badge was a lot of
+            // furniture for a number the eye only scans.
+            Text("\(surah.number)")
+                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                .kerning(0.6)
+                .foregroundStyle(.brand)
+                .frame(width: 22, alignment: .leading)
+                .padding(.top, 5)
+
+            VStack(alignment: .leading, spacing: 1) {
                 Text(surah.englishName)
-                    .font(.system(.body, weight: .semibold))
+                    .font(.appSerif(19, weight: .medium))
                 Text(surah.englishNameTranslation)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.appSerif(14, italic: true))
+                    .foregroundStyle(Color(.label).opacity(0.5))
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            VStack(alignment: .trailing, spacing: 3) {
+            VStack(alignment: .trailing, spacing: 5) {
                 Text(surah.name)
-                    .font(.system(size: 20))
+                    .font(.appArabic(19))
                     .environment(\.layoutDirection, .rightToLeft)
 
                 HStack(spacing: 6) {
                     if downloadManager.isDownloaded(surah.number) {
                         Image(systemName: "arrow.down.circle.fill")
-                            .font(.caption2)
+                            .font(.system(size: 10))
                             .foregroundStyle(.brand)
                     }
                     if status != .notStarted {
                         Image(systemName: status.icon)
-                            .font(.caption)
+                            .font(.system(size: 11))
                             .foregroundStyle(status.color)
                     } else {
-                        Text("\(surah.numberOfAyahs) ayahs")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        MetaText("\(surah.numberOfAyahs) AYAHS", size: 9)
                     }
                 }
             }
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 8)
     }
 }
 
@@ -186,6 +323,17 @@ enum SurahFilter: String, CaseIterable, Identifiable {
         case .downloaded: "Downloaded"
         case .memorized:  "Memorized"
         case .inProgress: "In Progress"
+        }
+    }
+
+    /// What the segmented filter says. "All Surahs" and "In Progress" don't fit
+    /// four across at small caps, and the segment is already labelled by context.
+    var shortLabel: String {
+        switch self {
+        case .all:        "All"
+        case .downloaded: "Saved"
+        case .memorized:  "Memorized"
+        case .inProgress: "Learning"
         }
     }
 
@@ -286,92 +434,16 @@ struct SurahQuickActions: View {
     }
 }
 
-struct NumberBadge: View {
+/// Retired with the seal-badge era — surah numbers are set as plain marginal
+/// numerals now. Kept only until the last caller is gone.
+private struct NumberBadge: View {
     let number: Int
 
     var body: some View {
-        ZStack {
-            Image(systemName: "seal.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [Color.brand.opacity(0.16), Color.brand.opacity(0.07)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            Image(systemName: "seal")
-                .font(.system(size: 40, weight: .thin))
-                .foregroundStyle(.brand.opacity(0.35))
-            Text("\(number)")
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(.brand)
-        }
-        .frame(width: 44, height: 44)
-    }
-}
-
-// MARK: - Verse of the Day
-
-struct VerseOfDayCard: View {
-    /// Home overlays its own Play button on the card's top-right corner. It can't
-    /// live *inside* the card, because the whole card is a NavigationLink there and
-    /// nested buttons swallow each other's taps — so the card just leaves room.
-    var reservesPlaySlot: Bool = false
-
-    @ObservedObject private var service = DailyVerseService.shared
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack {
-                Label("Verse of the Day", systemImage: "sun.horizon.fill")
-                    .font(.caption.bold())
-                    .foregroundStyle(.orange)
-                Spacer()
-                if let v = service.verse {
-                    Text("\(v.surahName) \(v.ayahNumber)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.trailing, reservesPlaySlot ? 72 : 0)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
-
-            if service.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-            } else if let v = service.verse {
-                VStack(alignment: .trailing, spacing: 12) {
-                    Text(v.arabic)
-                        .font(.system(size: 24, weight: .regular))
-                        .multilineTextAlignment(.trailing)
-                        .lineSpacing(10)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .environment(\.layoutDirection, .rightToLeft)
-
-                    Text(v.translation)
-                        .font(.subheadline)
-                        .fontDesign(.serif)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .lineLimit(4)
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 16)
-            }
-        }
-        .tintedCard(.orange)
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(Color.orange.opacity(0.5))
-                .frame(width: 3)
-                .padding(.vertical, 12)
-        }
+        Text("\(number)")
+            .font(.system(size: 11, weight: .bold).monospacedDigit())
+            .foregroundStyle(.brand)
+            .frame(minWidth: 22, alignment: .leading)
     }
 }
 

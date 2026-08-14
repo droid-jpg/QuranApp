@@ -1,5 +1,6 @@
 import SwiftUI
 import WidgetKit
+import Combine
 
 /// Drives the "also enroll the ayahs before this one?" prompt after a single-ayah
 /// enrollment that leaves an un-enrolled run before it.
@@ -9,58 +10,382 @@ private struct PrecedingEnrollPrompt: Identifiable {
     let count: Int      // how many earlier ayahs are not yet enrolled
 }
 
-struct SurahDetailView: View {
-    let surah: Surah
-    /// Whether this page is the one currently shown in the paged surah browser.
-    /// Only the active page contributes toolbar items + nav title, so swiping
-    /// between surahs doesn't produce duplicate bar buttons.
-    let isActivePage: Bool
-    @StateObject private var viewModel: SurahDetailViewModel
+// MARK: - Page models
+
+/// One `SurahDetailViewModel` per surah, owned by the pager rather than by the
+/// page. The reader's chrome — top bar, player, sheets — is drawn once, outside
+/// the pages, and needs the *active* page's model to do it; a `@StateObject`
+/// inside each page would be out of reach. Swiping back to a surah also finds its
+/// ayahs still loaded.
+@MainActor
+final class SurahModelStore: ObservableObject {
+    // Nothing here is `@Published`: models are vended during body evaluation, and
+    // publishing from there would be a mutation mid-update.
+    private var models: [Int: SurahDetailViewModel] = [:]
+
+    func model(for surah: Surah) -> SurahDetailViewModel {
+        if let existing = models[surah.number] { return existing }
+        let made = SurahDetailViewModel(surah: surah)
+        models[surah.number] = made
+        return made
+    }
+}
+
+// MARK: - Surah page browser (swipe between surahs)
+
+/// Wraps multiple `SurahDetailView`s in a horizontally-paged TabView so the user
+/// can swipe left/right between surahs, and owns everything that must sit *above*
+/// the pages: the reader's own top bar (the system navigation bar is hidden — on
+/// iOS 26 it floats over scroll content, which put chrome on top of scripture),
+/// the audio player, the action menu, and the reader's sheets.
+struct SurahPageView: View {
+    let surahs: [Surah]
+    let startIndex: Int
+    var initialAyah: Int? = nil
+
     @EnvironmentObject private var audioService: AudioService
-    @EnvironmentObject private var bookmarkStore: BookmarkStore
     @EnvironmentObject private var srStore: MemorizationSRStore
     @EnvironmentObject private var memorizationStore: MemorizationStore
     @EnvironmentObject private var targetStore: MemorizationTargetStore
-    @ObservedObject private var downloadManager = DownloadManager.shared
+    @Environment(\.dismiss) private var dismiss
 
-    @AppStorage("showTranslation")      private var showTranslation     = true
-    @AppStorage("showTransliteration")  private var showTransliteration = true
-    @AppStorage("selectedTranslationId") private var translationId = Translation.fallbackId
+    @StateObject private var models = SurahModelStore()
+    @StateObject private var menu = EditorialMenuPresenter()
 
-    @State private var showMushaf = false
-    @State private var showSurahComplete = false
-    @State private var showMemorizeSheet = false
-    @State private var reviewSession: ReviewSessionConfig?
-    /// Set when the memorize sheet is opened from the banner's first-time flow, so
-    /// a focused review starts as soon as the user finishes enrolling.
-    @State private var reviewAfterEnroll = false
-    @State private var precedingPrompt: PrecedingEnrollPrompt? = nil
-    @State private var scrollTarget: Int? = nil
-    @State private var showResumeBar = false
-    @State private var resumeAyah = 0
-    @State private var resumeProxy: ScrollViewProxy? = nil
-    /// True once the header has scrolled up under the nav bar — drives the
-    /// transliteration title appearing inline.
+    @State private var currentIndex: Int
+    /// True once the active page's chapter title has scrolled up behind the bar —
+    /// the bar then shows the surah name in its place.
     @State private var headerPassed = false
+    @State private var playerExpanded = false
+    @State private var showReadingType = false
+    @State private var showMushaf = false
+    @State private var showLoopSheet = false
+    @State private var showMemorizeSheet = false
+    @State private var reviewAfterEnroll = false
+    @State private var reviewSession: ReviewSessionConfig?
 
-    init(surah: Surah, initialAyah: Int? = nil, isActivePage: Bool = true) {
-        self.surah = surah
-        self.isActivePage = isActivePage
-        _viewModel = StateObject(wrappedValue: SurahDetailViewModel(surah: surah))
-        _scrollTarget = State(initialValue: initialAyah)
+    init(surahs: [Surah], startIndex: Int, initialAyah: Int? = nil) {
+        self.surahs    = surahs
+        self.startIndex = startIndex
+        self.initialAyah = initialAyah
+        _currentIndex = State(initialValue: max(0, min(startIndex, surahs.count - 1)))
     }
 
-    private var isThisSurahActive: Bool {
-        audioService.currentSurah == surah.number
+    private var surah: Surah { surahs[max(0, min(currentIndex, surahs.count - 1))] }
+    private var model: SurahDetailViewModel { models.model(for: surah) }
+
+    /// The player belongs to the surah on screen, so swiping away from what's
+    /// playing puts the page back to full height.
+    private var playerActive: Bool {
+        audioService.currentAyah != nil && audioService.currentSurah == surah.number
     }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ReaderTopBar(
+                surah: surah,
+                model: model,
+                showsTitle: headerPassed,
+                onBack: { Haptics.tap(); dismiss() },
+                onLoop: { Haptics.tap(); showLoopSheet = true },
+                onType: { Haptics.tap(); showReadingType = true },
+                onMore: { presentReaderMenu() }
+            )
+
+            TabView(selection: $currentIndex) {
+                ForEach(surahs.indices, id: \.self) { idx in
+                    SurahDetailView(
+                        surah: surahs[idx],
+                        viewModel: models.model(for: surahs[idx]),
+                        initialAyah: idx == startIndex ? initialAyah : nil,
+                        isActivePage: idx == currentIndex,
+                        headerPassed: $headerPassed,
+                        menu: menu
+                    )
+                    .tag(idx)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            // The mini bar is an inset rather than an overlay, so every page's
+            // scroll view reserves exactly its height — no ayah ends up under it,
+            // and no magic number goes stale when the bar changes.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if playerActive {
+                    QuranPlayerBar(surah: surah, viewModel: model) {
+                        Haptics.tap()
+                        withAnimation(AppAnim.spring) { playerExpanded = true }
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(AppAnim.spring, value: playerActive)
+        }
+        // Ours replaces it: see `ReaderTopBar`.
+        .toolbar(.hidden, for: .navigationBar)
+        .overlay {
+            if playerExpanded && playerActive {
+                QuranExpandedPlayer(surah: surah, viewModel: model) {
+                    withAnimation(AppAnim.spring) { playerExpanded = false }
+                }
+                .zIndex(10)
+            }
+        }
+        .editorialMenu(menu)
+        // Reading gets the whole page — the tab bar comes back on the way out.
+        .onAppear { Chrome.shared.tabBarHidden = true }
+        .onDisappear { Chrome.shared.tabBarHidden = false }
+        .onChange(of: playerActive) { _, active in
+            if !active { playerExpanded = false }
+        }
+        .onChange(of: currentIndex) { _, _ in
+            headerPassed = false
+            menu.dismiss()
+        }
+        .sheet(isPresented: $showReadingType) {
+            ReadingTypeSheet()
+        }
+        .sheet(isPresented: $showMushaf) {
+            MushafView(surah: surah, ayahs: model.ayahs)
+        }
+        .sheet(isPresented: $showLoopSheet) {
+            LoopSettingsSheet(
+                settings: model.loopSettings,
+                totalAyahs: surah.numberOfAyahs,
+                ayahs: model.ayahs,
+                focusAyah: loopFocusAyah,
+                onApply: { newSettings in
+                    model.applyLoopSettings(newSettings, audioService: audioService)
+                },
+                onStartPreset: { preset in
+                    model.applyLoopSettings(preset, audioService: audioService)
+                    audioService.playLoop(surah: surah.number, settings: preset,
+                                          totalAyahs: surah.numberOfAyahs,
+                                          surahName: surah.englishName)
+                }
+            )
+        }
+        .sheet(isPresented: $showMemorizeSheet, onDismiss: { reviewAfterEnroll = false }) {
+            MemorizeSurahSheet(surah: surah, ayahs: model.ayahs) {
+                // First-time flow: once enrolled, start a focused review. The delay
+                // lets the sheet finish dismissing before the cover presents.
+                guard reviewAfterEnroll else { return }
+                reviewAfterEnroll = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { startSurahReview() }
+            }
+        }
+        .fullScreenCover(item: $reviewSession) { cfg in
+            ReviewSessionView(store: srStore, initialCards: cfg.cards, title: cfg.title)
+        }
+    }
+
+    // MARK: Bar actions
 
     /// The ayah the Repeat sheet centers its presets on: the ayah currently playing
     /// in this surah, else the memorization working ayah when this is the target
     /// surah, else the first ayah.
     private var loopFocusAyah: Int {
-        if isThisSurahActive, let a = audioService.currentAyah { return a }
+        if playerActive, let a = audioService.currentAyah { return a }
         if let t = targetStore.target, t.surah == surah.number { return t.workingAyah }
         return 1
+    }
+
+    /// The reader's overflow, as the app's own panel rather than a UIKit menu.
+    private func presentReaderMenu() {
+        let dm = DownloadManager.shared
+        let prog = dm.progress[surah.number]
+        let isDownloaded = prog == 1.0
+        let isDownloading = prog != nil && prog! < 1.0
+
+        let library: [EditorialAction] = [
+            EditorialAction(
+                isDownloaded ? "Remove download" : (isDownloading ? "Downloading" : "Download for offline"),
+                icon: isDownloaded ? "arrow.down.circle.fill" : "arrow.down.circle",
+                kind: isDownloaded ? .accent : .normal,
+                detail: isDownloading ? "\(Int((prog ?? 0) * 100))%" : nil,
+                isEnabled: !isDownloading
+            ) {
+                let subfolder = Reciter.selected.subfolder
+                if isDownloaded {
+                    dm.deleteSurah(surah.number, reciterSubfolder: subfolder)
+                } else {
+                    dm.downloadSurah(surah.number, ayahCount: surah.numberOfAyahs,
+                                     reciterSubfolder: subfolder)
+                }
+            },
+            EditorialAction("Mushaf view", icon: "book.pages.fill") { showMushaf = true },
+        ]
+
+        let due = srStore.dueItems(inSurah: surah.number).count
+        let enrolled = srStore.goal(forSurah: surah.number) != nil
+        let memorize: [EditorialAction] = [
+            EditorialAction("Memorize this surah", icon: "target", kind: .accent) {
+                startMemorizingSurah()
+            },
+            EditorialAction(
+                enrolled ? "Review this surah" : "Set up flashcards",
+                icon: "graduationcap",
+                detail: due > 0 ? "\(due) due" : nil,
+                isEnabled: !model.ayahs.isEmpty
+            ) { reviewOrEnroll() },
+            EditorialAction("Flashcard goal", icon: "slider.horizontal.3",
+                            isEnabled: !model.ayahs.isEmpty) {
+                showMemorizeSheet = true
+            },
+        ]
+
+        menu.present(EditorialMenuRequest(
+            eyebrow: "\(surah.englishName) · \(surah.numberOfAyahs) ayahs",
+            groups: [library, memorize]
+        ))
+    }
+
+    /// Begin (or resume) memorizing this whole surah — sets it as the active target,
+    /// resuming at the first un-learned ayah.
+    private func startMemorizingSurah() {
+        targetStore.start(surah: surah.number, surahName: surah.englishName,
+                          totalAyahs: surah.numberOfAyahs)
+        if memorizationStore.manualStatus(for: surah.number) == .notStarted {
+            memorizationStore.set(.inProgress, for: surah.number)
+        }
+        StreakService.shared.recordRead()
+        Haptics.success()
+    }
+
+    /// The first time (no goal set yet) this opens the goal sheet to enroll, then
+    /// drops into review; once a goal exists it goes straight to review.
+    private func reviewOrEnroll() {
+        if srStore.goal(forSurah: surah.number) != nil {
+            startSurahReview()
+        } else {
+            reviewAfterEnroll = true
+            showMemorizeSheet = true
+        }
+    }
+
+    /// Opens a review scoped to this surah — due cards first, falling back to all
+    /// of them so it can be drilled even when nothing is due.
+    private func startSurahReview() {
+        let due = srStore.dueItems(inSurah: surah.number)
+        let all = srStore.cards(inSurah: surah.number)
+        let cards = due.isEmpty ? all : due
+        guard !cards.isEmpty else { return }
+        reviewSession = ReviewSessionConfig(cards: cards, title: surah.englishName)
+    }
+}
+
+// MARK: - Reader top bar
+
+/// The reader's own bar: back, the chapter it's on, and the three controls that
+/// belong to reading. It sits *in the layout*, above the pages, so nothing it
+/// draws can ever land on scripture — which is what the system bar was doing.
+private struct ReaderTopBar: View {
+    let surah: Surah
+    @ObservedObject var model: SurahDetailViewModel
+    let showsTitle: Bool
+    let onBack: () -> Void
+    let onLoop: () -> Void
+    let onType: () -> Void
+    let onMore: () -> Void
+
+    private var type = ReadingType()
+
+    init(surah: Surah, model: SurahDetailViewModel, showsTitle: Bool,
+         onBack: @escaping () -> Void, onLoop: @escaping () -> Void,
+         onType: @escaping () -> Void, onMore: @escaping () -> Void) {
+        self.surah = surah
+        _model = ObservedObject(wrappedValue: model)
+        self.showsTitle = showsTitle
+        self.onBack = onBack
+        self.onLoop = onLoop
+        self.onType = onType
+        self.onMore = onMore
+    }
+
+    private var loopOn: Bool {
+        model.loopSettings.mode != .off || model.loopSettings.listenAndRepeat
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            BarButton(icon: "chevron.left", label: "Back", action: onBack)
+
+            Spacer(minLength: 4)
+
+            // The number is enough while the chapter title is still on screen;
+            // once it scrolls away the bar takes over as the title.
+            ZStack {
+                Eyebrow("Surah \(surah.number)")
+                    .opacity(showsTitle ? 0 : 1)
+                Text(surah.englishName)
+                    .font(type.serif(17, weight: .medium))
+                    .foregroundStyle(Color(.label))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .opacity(showsTitle ? 1 : 0)
+            }
+            .animation(.easeInOut(duration: 0.2), value: showsTitle)
+
+            Spacer(minLength: 4)
+
+            BarButton(icon: "repeat", label: "Repeat", on: loopOn, action: onLoop)
+            BarButton(icon: "textformat.size", label: "Reading type", action: onType)
+            BarButton(icon: "ellipsis", label: "More", action: onMore)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 46)
+        .background(Color(.systemBackground))
+        .overlay(alignment: .bottom) { Hairline() }
+    }
+}
+
+// `BarButton` — the glyph both this bar and the surah list's use — lives in
+// DesignSystem.swift.
+
+// MARK: - One surah
+
+struct SurahDetailView: View {
+    let surah: Surah
+    @ObservedObject var viewModel: SurahDetailViewModel
+    /// Whether this page is the one currently shown in the paged surah browser.
+    /// Only the active page reports its scroll position up to the bar.
+    let isActivePage: Bool
+    @Binding var headerPassed: Bool
+    /// The reader's menu, presented above the pager.
+    let menu: EditorialMenuPresenter
+
+    @EnvironmentObject private var audioService: AudioService
+    @EnvironmentObject private var bookmarkStore: BookmarkStore
+    @EnvironmentObject private var srStore: MemorizationSRStore
+    @EnvironmentObject private var memorizationStore: MemorizationStore
+    @EnvironmentObject private var targetStore: MemorizationTargetStore
+
+    @AppStorage("selectedTranslationId") private var translationId = Translation.fallbackId
+
+    @State private var showSurahComplete = false
+    @State private var precedingPrompt: PrecedingEnrollPrompt? = nil
+    @State private var scrollTarget: Int? = nil
+    @State private var showResumeBar = false
+    @State private var resumeAyah = 0
+    @State private var resumeProxy: ScrollViewProxy? = nil
+    /// Sheets raised from an ayah — owned here rather than by the row, so the
+    /// long-press menu and the tap-revealed strip open the same one.
+    @State private var wordPickerAyah: Ayah? = nil
+    @State private var tafsirAyah: Ayah? = nil
+
+    private var type = ReadingType()
+
+    init(surah: Surah, viewModel: SurahDetailViewModel, initialAyah: Int? = nil,
+         isActivePage: Bool, headerPassed: Binding<Bool>, menu: EditorialMenuPresenter) {
+        self.surah = surah
+        _viewModel = ObservedObject(wrappedValue: viewModel)
+        self.isActivePage = isActivePage
+        _headerPassed = headerPassed
+        self.menu = menu
+        _scrollTarget = State(initialValue: initialAyah)
+    }
+
+    private var isThisSurahActive: Bool {
+        audioService.currentSurah == surah.number
     }
 
     // MARK: - Memorization target (loop-based acquisition)
@@ -74,18 +399,6 @@ struct SurahDetailView: View {
             targetStore.start(surah: surah.number, surahName: surah.englishName,
                               totalAyahs: surah.numberOfAyahs, at: ayah)
         }
-        if memorizationStore.manualStatus(for: surah.number) == .notStarted {
-            memorizationStore.set(.inProgress, for: surah.number)
-        }
-        StreakService.shared.recordRead()
-        Haptics.success()
-    }
-
-    /// Begin (or resume) memorizing this whole surah — sets it as the active target,
-    /// resuming at the first un-learned ayah.
-    private func startMemorizingSurah() {
-        targetStore.start(surah: surah.number, surahName: surah.englishName,
-                          totalAyahs: surah.numberOfAyahs)
         if memorizationStore.manualStatus(for: surah.number) == .notStarted {
             memorizationStore.set(.inProgress, for: surah.number)
         }
@@ -174,316 +487,252 @@ struct SurahDetailView: View {
         Haptics.success()
     }
 
-    // MARK: - Memorize banner
+    // MARK: - Playback
 
-    /// A standing entry into this surah's spaced-repetition review. The first time
-    /// (no goal set yet) it opens the goal sheet to enroll, then drops into review;
-    /// once a goal exists it goes straight to review. The goal stays editable from
-    /// the ⋯ menu's "Memorize Surah…".
-    @ViewBuilder
-    private var memorizeBanner: some View {
-        let enrolled = srStore.goal(forSurah: surah.number) != nil
-        let due = srStore.dueItems(inSurah: surah.number).count
-        Button {
-            Haptics.tap()
-            if enrolled {
-                startSurahReview()
-            } else {
-                reviewAfterEnroll = true
-                showMemorizeSheet = true
-            }
-        } label: {
-            if enrolled && due > 0 {
-                bannerContent(title: "Review this surah",
-                              subtitle: "\(due) ayah\(due == 1 ? "" : "s") due now",
-                              filled: true)
-            } else if enrolled {
-                bannerContent(title: "Review this surah",
-                              subtitle: "Drill its ayahs anytime",
-                              filled: false)
-            } else {
-                bannerContent(title: "Memorize this surah",
-                              subtitle: "Spaced-repetition review, tailored to your goal",
-                              filled: false)
-            }
-        }
-        .buttonStyle(.plain)
+    /// Loop the given ayah on its own — the reader's "Repeat this ayah".
+    private func repeatAyah(_ ayah: Int) {
+        Haptics.tap()
+        let preset = LoopSettings.listen(ayah: ayah)
+        viewModel.applyLoopSettings(preset, audioService: audioService)
+        audioService.playLoop(surah: surah.number, settings: preset,
+                              totalAyahs: surah.numberOfAyahs, surahName: surah.englishName)
     }
 
-    private func bannerContent(title: String, subtitle: String, filled: Bool) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "graduationcap.fill")
-                .font(.system(size: 20))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.bold())
-                Text(subtitle).font(.caption2).opacity(0.9)
-            }
-            Spacer()
-            Image(systemName: "arrow.right.circle.fill")
-                .font(.system(size: 20))
-        }
-        .foregroundStyle(filled ? Color.white : Color.brand)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(filled ? Color.brand : Color.brand.opacity(0.12))
+    private func playFrom(_ ayah: Int) {
+        audioService.stopWordLoop()
+        viewModel.playAyah(ayah, audioService: audioService)
+    }
+
+    private func toggleBookmark(_ ayah: Ayah) {
+        bookmarkStore.toggle(
+            surahNumber: surah.number,
+            surahName: surah.englishName,
+            surahArabicName: surah.name,
+            ayahNumber: ayah.numberInSurah,
+            arabic: ayah.arabic,
+            translation: ayah.translation
         )
     }
 
-    /// Opens a review scoped to this surah — due cards first, falling back to all
-    /// of them so it can be drilled even when nothing is due.
-    private func startSurahReview() {
-        let due = srStore.dueItems(inSurah: surah.number)
-        let all = srStore.cards(inSurah: surah.number)
-        let cards = due.isEmpty ? all : due
-        guard !cards.isEmpty else { return }
-        reviewSession = ReviewSessionConfig(cards: cards, title: surah.englishName)
+    private func openWordByWord(_ ayah: Ayah) {
+        Task { await viewModel.loadWordTimingsIfNeeded() }
+        wordPickerAyah = ayah
     }
+
+    // MARK: - Ayah menu
+    //
+    // Everything an ayah can do, raised as the app's own panel. It's built here
+    // (rather than in the row) so it can be drawn above the pager and the player,
+    // and so the actions read against the reader's stores.
+
+    private func presentAyahMenu(_ ayah: Ayah) {
+        let n = ayah.numberInSurah
+        let isMemorizing = srStore.isScheduled(surah: surah.number, ayah: n)
+        let isBookmarked = bookmarkStore.isBookmarked(surah: surah.number, ayah: n)
+        let isWorking = targetStore.target?.surah == surah.number
+            && targetStore.target?.workingAyah == n
+
+        var playback: [EditorialAction] = [
+            EditorialAction("Play from here", icon: "play.fill", kind: .accent) { playFrom(n) },
+            EditorialAction("Repeat this ayah", icon: "repeat") { repeatAyah(n) },
+            EditorialAction("Word by word", icon: "text.word.spacing") { openWordByWord(ayah) },
+        ]
+        if viewModel.tafsirByAyah[n] != nil {
+            playback.append(EditorialAction("Tafsir", icon: "text.book.closed") { tafsirAyah = ayah })
+        }
+
+        var memorize: [EditorialAction] = []
+        if isWorking {
+            memorize.append(EditorialAction("Mark learned → next ayah",
+                                            icon: "checkmark.circle", kind: .accent) {
+                markWorkingLearned()
+            })
+        } else {
+            memorize.append(EditorialAction("Memorize from here", icon: "target") {
+                setWorkingAyah(n)
+            })
+        }
+        memorize.append(EditorialAction(
+            isMemorizing ? "Remove from review" : "Add to review",
+            icon: isMemorizing ? "graduationcap.fill" : "graduationcap"
+        ) { toggleMemorize(ayah) })
+        memorize.append(EditorialAction(
+            isBookmarked ? "Remove bookmark" : "Bookmark",
+            icon: isBookmarked ? "bookmark.slash" : "bookmark"
+        ) { toggleBookmark(ayah) })
+
+        let share: [EditorialAction] = [
+            EditorialAction(share: "Share ayah", icon: "square.and.arrow.up",
+                            text: ayahShareText(ayah, surahName: surah.englishName)),
+            EditorialAction(share: "Share with translation", icon: "doc.text",
+                            text: ayahShareTextWithTranslation(ayah, surahName: surah.englishName)),
+        ]
+
+        menu.present(EditorialMenuRequest(
+            eyebrow: "\(surah.englishName) · Ayah \(n)",
+            arabic: ayah.arabic,
+            translation: ayah.translation,
+            groups: [playback, memorize, share]
+        ))
+    }
+
+    // MARK: - Rows
+
+    /// Broken out of `body`: inline, the row's twenty arguments took the type
+    /// checker past its budget.
+    private func row(for ayah: Ayah) -> some View {
+        let n = ayah.numberInSurah
+        let isCurrent = isThisSurahActive && audioService.currentAyah == n
+        let target = targetStore.target
+
+        return AyahRowView(
+            ayah: ayah,
+            surahNumber: surah.number,
+            isPlaying: isCurrent && audioService.isPlaying,
+            isWordLooping: isCurrent && audioService.isWordLooping,
+            isLoadingTimings: viewModel.isLoadingWordTimings,
+            wordDetails: viewModel.wordDetailsByAyah[n],
+            isBookmarked: bookmarkStore.isBookmarked(surah: surah.number, ayah: n),
+            isMemorizing: srStore.isScheduled(surah: surah.number, ayah: n),
+            isWorkingAyah: target?.surah == surah.number && target?.workingAyah == n,
+            hasTafsir: viewModel.tafsirByAyah[n] != nil,
+            onBookmark: { toggleBookmark(ayah) },
+            onToggleMemorize: { toggleMemorize(ayah) },
+            onPlay: { playFrom(n) },
+            onRepeat: { repeatAyah(n) },
+            onWordByWord: { openWordByWord(ayah) },
+            onTafsir: { tafsirAyah = ayah },
+            onLongPress: { presentAyahMenu(ayah) }
+        )
+    }
+
+    // MARK: - Body
 
     var body: some View {
         VStack(spacing: 0) {
-            // Resume bar sits in the layout flow — cannot be covered by the nav bar.
+            // Resume bar sits in the layout flow — cannot be covered by the bar.
             if showResumeBar {
                 HStack(spacing: 12) {
-                    Image(systemName: "bookmark.fill").foregroundStyle(.brand)
-                    Text("Continue from Ayah \(resumeAyah)")
-                        .font(.subheadline.bold())
-                    Spacer()
+                    Image(systemName: "bookmark.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.brand)
+                    Text("Continue from ayah \(resumeAyah)")
+                        .font(type.serif(15))
+                    Spacer(minLength: 8)
                     Button {
                         withAnimation(.easeInOut(duration: 0.4)) {
                             resumeProxy?.scrollTo(resumeAyah, anchor: .top)
                         }
                         withAnimation { showResumeBar = false }
                     } label: {
-                        Text("Resume")
-                            .font(.subheadline.bold())
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(Color.brand).clipShape(Capsule())
+                        Text("RESUME")
+                            .font(.system(size: 10, weight: .semibold))
+                            .kerning(1.2)
+                            .foregroundStyle(.brand)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .overlay(Rectangle().strokeBorder(Color.brand.opacity(0.55), lineWidth: 1))
                     }
+                    .buttonStyle(.plain)
                     Button { withAnimation { showResumeBar = false } } label: {
-                        Image(systemName: "xmark").foregroundStyle(.secondary)
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color(.label).opacity(0.45))
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 16).padding(.vertical, 12)
+                .padding(.horizontal, 24).padding(.vertical, 12)
                 .background(.regularMaterial)
-                .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
+                .overlay(alignment: .bottom) { Hairline() }
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            ZStack(alignment: .bottom) {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            // Non-lazy so its scroll tracker keeps reporting even
-                            // after it scrolls off, keeping the inline title stable.
-                            SurahHeaderView(
-                                surah: surah,
-                                isPlaying: isThisSurahActive && audioService.isPlaying,
-                                onPlay: {
-                                    if isThisSurahActive {
-                                        audioService.togglePlayPause()
-                                    } else {
-                                        audioService.stopWordLoop()
-                                        viewModel.playAyah(1, audioService: audioService)
-                                    }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // Non-lazy so its scroll tracker keeps reporting even
+                        // after it scrolls off, keeping the inline title stable.
+                        SurahHeaderView(
+                            surah: surah,
+                            isPlaying: isThisSurahActive && audioService.isPlaying,
+                            onPlay: {
+                                if isThisSurahActive {
+                                    audioService.togglePlayPause()
+                                } else {
+                                    playFrom(1)
                                 }
-                            )
-
-                            if !viewModel.ayahs.isEmpty {
-                                memorizeBanner
-                                    .padding(.horizontal, 16)
-                                    .padding(.top, 14)
-                                    .padding(.bottom, 4)
                             }
+                        )
 
-                            LazyVStack(spacing: 0) {
-                            if viewModel.isLoading {
+                        LazyVStack(spacing: 0) {
+                            if viewModel.isLoading && viewModel.ayahs.isEmpty {
                                 ProgressView("Loading ayahs…")
                                     .frame(maxWidth: .infinity, minHeight: 200)
-                            } else if let err = viewModel.error {
+                            } else if let err = viewModel.error, viewModel.ayahs.isEmpty {
                                 ErrorView(message: err) { Task { await viewModel.loadAyahs() } }
                             } else {
                                 ForEach(viewModel.ayahs) { ayah in
-                                    AyahRowView(
-                                        ayah: ayah,
-                                        surahName: surah.englishName,
-                                        surahNumber: surah.number,
-                                        isPlaying: audioService.isPlaying
-                                            && isThisSurahActive
-                                            && audioService.currentAyah == ayah.numberInSurah,
-                                        isWordLooping: audioService.isWordLooping
-                                            && isThisSurahActive
-                                            && audioService.currentAyah == ayah.numberInSurah,
-                                        wordTimings: viewModel.wordTimingsByAyah.isEmpty
-                                            ? nil
-                                            : (viewModel.wordTimingsByAyah[ayah.numberInSurah] ?? []),
-                                        isLoadingTimings: viewModel.isLoadingWordTimings,
-                                        wordTimingsError: viewModel.wordTimingsError,
-                                        wordDetails: viewModel.wordDetailsByAyah[ayah.numberInSurah],
-                                        tafsir: viewModel.tafsirByAyah[ayah.numberInSurah],
-                                        isBookmarked: bookmarkStore.isBookmarked(surah: surah.number, ayah: ayah.numberInSurah),
-                                        isMemorizing: srStore.isScheduled(surah: surah.number, ayah: ayah.numberInSurah),
-                                        isWorkingAyah: targetStore.target?.surah == surah.number
-                                            && targetStore.target?.workingAyah == ayah.numberInSurah,
-                                        onBookmark: {
-                                            bookmarkStore.toggle(
-                                                surahNumber: surah.number,
-                                                surahName: surah.englishName,
-                                                surahArabicName: surah.name,
-                                                ayahNumber: ayah.numberInSurah,
-                                                arabic: ayah.arabic,
-                                                translation: ayah.translation
-                                            )
-                                        },
-                                        onToggleMemorize: { toggleMemorize(ayah) },
-                                        onPlay: {
-                                            audioService.stopWordLoop()
-                                            viewModel.playAyah(ayah.numberInSurah, audioService: audioService)
-                                        },
-                                        onWordLoop: { start, end in
-                                            guard let chapterUrl = viewModel.chapterAudioUrl() else { return }
-                                            audioService.startWordLoop(
-                                                surah: surah.number,
-                                                ayah: ayah.numberInSurah,
-                                                chapterUrl: chapterUrl,
-                                                wordStartMs: start.startMs,
-                                                wordEndMs: end.endMs
-                                            )
-                                        },
-                                        onRequestTimings: {
-                                            Task { await viewModel.loadWordTimingsIfNeeded() }
-                                        },
-                                        onSetWorking: { setWorkingAyah(ayah.numberInSurah) },
-                                        onMarkLearned: { markWorkingLearned() }
-                                    )
-                                    .id(ayah.numberInSurah)
-                                    Divider().padding(.horizontal, 16)
+                                    row(for: ayah)
+                                        .id(ayah.numberInSurah)
+                                    Hairline().padding(.horizontal, 28)
                                 }
                             }
-                            }
-                        }
-                        // Clear the floating tab bar (and the audio player bar
-                        // when it's showing) so the last ayah isn't covered.
-                        .padding(.bottom, isThisSurahActive ? 140 : 90)
-                    }
-                    .coordinateSpace(.named("surahScroll"))
-                    .onPreferenceChange(HeaderVisibilityKey.self) { maxY in
-                        // maxY is the transliteration's bottom edge relative to the
-                        // scroll viewport's top. Once it slips under the floating
-                        // toolbar, reveal the transliteration title inline.
-                        let passed = maxY < 50
-                        if passed != headerPassed {
-                            withAnimation(.easeInOut(duration: 0.2)) { headerPassed = passed }
                         }
                     }
-                    .onChange(of: audioService.currentAyah) { _, newAyah in
-                        guard let ayah = newAyah, isThisSurahActive else { return }
-                        withAnimation(.easeInOut(duration: 0.5)) {
-                            proxy.scrollTo(ayah, anchor: .top)
-                        }
-                    }
-                    .onChange(of: viewModel.ayahs.isEmpty) { _, isEmpty in
-                        guard !isEmpty else { return }
-                        if let target = scrollTarget {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                withAnimation(.easeInOut(duration: 0.4)) {
-                                    proxy.scrollTo(target, anchor: .top)
-                                }
-                                scrollTarget = nil
-                            }
-                        }
-                    }
-                    .onAppear { resumeProxy = proxy }
+                    // Breathing room only: the player and the bar reserve their
+                    // own space as insets now.
+                    .padding(.bottom, 28)
                 }
-
-                if isThisSurahActive {
-                    QuranPlayerView(surah: surah, viewModel: viewModel)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                .coordinateSpace(.named("surahScroll"))
+                .onPreferenceChange(HeaderVisibilityKey.self) { maxY in
+                    // maxY is the chapter title's bottom edge relative to the
+                    // scroll viewport's top. Once it slips away, the reader bar
+                    // takes over as the title.
+                    guard isActivePage else { return }
+                    let passed = maxY < 8
+                    if passed != headerPassed { headerPassed = passed }
                 }
+                .onChange(of: audioService.currentAyah) { _, newAyah in
+                    guard let ayah = newAyah, isThisSurahActive else { return }
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        proxy.scrollTo(ayah, anchor: .top)
+                    }
+                }
+                .onChange(of: viewModel.ayahs.isEmpty) { _, isEmpty in
+                    guard !isEmpty else { return }
+                    if let target = scrollTarget {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            withAnimation(.easeInOut(duration: 0.4)) {
+                                proxy.scrollTo(target, anchor: .top)
+                            }
+                            scrollTarget = nil
+                        }
+                    }
+                }
+                .onAppear { resumeProxy = proxy }
             }
-            .animation(.spring(duration: 0.3), value: isThisSurahActive)
         }
         .animation(.spring(duration: 0.35), value: showResumeBar)
-        .navigationTitle((isActivePage && headerPassed) ? surah.englishName : "")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if isActivePage {
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 10) {
-                    DownloadButton(surahNumber: surah.number, ayahCount: surah.numberOfAyahs)
-
-                    Button { viewModel.showLoopSheet = true } label: {
-                        Image(systemName: "repeat")
-                            .symbolVariant(
-                                (viewModel.loopSettings.mode != .off || viewModel.loopSettings.listenAndRepeat)
-                                ? .fill : .none
-                            )
-                            .foregroundStyle(
-                                (viewModel.loopSettings.mode != .off || viewModel.loopSettings.listenAndRepeat)
-                                ? .brand : .primary
-                            )
-                    }
-
-                    // Reading options + Mushaf in one menu
-                    Menu {
-                        // Mushaf view
-                        Button { showMushaf = true } label: {
-                            Label("Mushaf View", systemImage: "book.pages.fill")
-                        }
-
-                        Divider()
-
-                        // Translation toggle
-                        Button { showTranslation.toggle() } label: {
-                            Label(
-                                showTranslation ? "Hide Translation" : "Show Translation",
-                                systemImage: showTranslation ? "eye.slash" : "eye"
-                            )
-                        }
-
-                        // Transliteration toggle
-                        Button { showTransliteration.toggle() } label: {
-                            Label(
-                                showTransliteration ? "Hide Transliteration" : "Show Transliteration",
-                                systemImage: showTransliteration ? "character.cursor.ibeam" : "character"
-                            )
-                        }
-
-                        Divider()
-
-                        // Loop-based acquisition: make this the active target.
-                        Button { Haptics.tap(); startMemorizingSurah() } label: {
-                            Label("Memorize this Surah", systemImage: "target")
-                        }
-
-                        // Meaning-flashcard review (stage 5 / retention).
-                        Button { Haptics.tap(); showMemorizeSheet = true } label: {
-                            Label("Flashcard Review…", systemImage: "graduationcap")
-                        }
-                        .disabled(viewModel.ayahs.isEmpty)
-                    } label: {
-                        Image(systemName: "textformat")
-                            .foregroundStyle(.primary)
-                    }
-                }
-            }
+        .sheet(item: $wordPickerAyah) { ayah in
+            WordLoopPickerView(
+                ayah: ayah,
+                timings: viewModel.wordTimingsByAyah[ayah.numberInSurah] ?? [],
+                isLoading: viewModel.isLoadingWordTimings,
+                errorMessage: viewModel.wordTimingsError
+            ) { start, end in
+                guard let chapterUrl = viewModel.chapterAudioUrl() else { return }
+                audioService.startWordLoop(
+                    surah: surah.number,
+                    ayah: ayah.numberInSurah,
+                    chapterUrl: chapterUrl,
+                    wordStartMs: start.startMs,
+                    wordEndMs: end.endMs
+                )
             }
         }
-        .sheet(isPresented: $showMushaf) {
-            MushafView(surah: surah, ayahs: viewModel.ayahs)
-        }
-        .sheet(isPresented: $showMemorizeSheet, onDismiss: { reviewAfterEnroll = false }) {
-            MemorizeSurahSheet(surah: surah, ayahs: viewModel.ayahs) {
-                // First-time flow: once enrolled, start a focused review. The delay
-                // lets the sheet finish dismissing before the cover presents.
-                guard reviewAfterEnroll else { return }
-                reviewAfterEnroll = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { startSurahReview() }
+        .sheet(item: $tafsirAyah) { ayah in
+            if let text = viewModel.tafsirByAyah[ayah.numberInSurah] {
+                TafsirSheet(ayah: ayah, surahName: surah.englishName, text: text)
             }
-        }
-        .fullScreenCover(item: $reviewSession) { cfg in
-            ReviewSessionView(store: srStore, initialCards: cfg.cards, title: cfg.title)
         }
         .confirmationDialog(
             "Add earlier ayahs?",
@@ -509,34 +758,21 @@ struct SurahDetailView: View {
         } message: {
             Text("You've memorized the whole surah. Go back through it with meaning flashcards to lock in the gist of each ayah?")
         }
-        .sheet(isPresented: $viewModel.showLoopSheet) {
-            LoopSettingsSheet(
-                settings: viewModel.loopSettings,
-                totalAyahs: surah.numberOfAyahs,
-                ayahs: viewModel.ayahs,
-                focusAyah: loopFocusAyah,
-                onApply: { newSettings in
-                    viewModel.applyLoopSettings(newSettings, audioService: audioService)
-                },
-                onStartPreset: { preset in
-                    viewModel.applyLoopSettings(preset, audioService: audioService)
-                    audioService.playLoop(surah: surah.number, settings: preset,
-                                          totalAyahs: surah.numberOfAyahs,
-                                          surahName: surah.englishName)
-                }
-            )
-        }
         .onChange(of: translationId) {
             Task { await viewModel.loadAyahs() }
         }
         .task {
             StreakService.shared.recordRead()
-            await viewModel.loadAyahs()
+            // The model outlives the page now, so a surah swiped back to is
+            // already loaded and doesn't re-fetch.
+            if viewModel.ayahs.isEmpty {
+                await viewModel.loadAyahs()
+            }
             await viewModel.loadWordTimingsIfNeeded()
             await viewModel.loadWordDetails()
             await viewModel.loadTafsir()
             // Resume tracking (Feature 6)
-            if let last = viewModel.lastPlayedAyah() {
+            if let last = viewModel.lastPlayedAyah(), scrollTarget == nil, !showResumeBar {
                 resumeAyah = last
                 showResumeBar = true
             }
@@ -549,62 +785,10 @@ struct SurahDetailView: View {
     }
 }
 
-// MARK: - Download button
-
-private struct DownloadButton: View {
-    let surahNumber: Int
-    let ayahCount: Int
-    @ObservedObject private var dm = DownloadManager.shared
-
-    private var reciterSubfolder: String { Reciter.selected.subfolder }
-
-    var body: some View {
-        let prog = dm.progress[surahNumber]
-        let isDownloaded = prog == 1.0
-        let isDownloading = prog != nil && prog! < 1.0
-
-        Button {
-            if isDownloaded {
-                dm.deleteSurah(surahNumber, reciterSubfolder: reciterSubfolder)
-            } else if !isDownloading {
-                dm.downloadSurah(surahNumber, ayahCount: ayahCount, reciterSubfolder: reciterSubfolder)
-            }
-        } label: {
-            if isDownloading {
-                ZStack {
-                    CircularProgressView(progress: prog ?? 0)
-                        .frame(width: 20, height: 20)
-                }
-                .transition(.scale.combined(with: .opacity))
-            } else {
-                Image(systemName: isDownloaded ? "arrow.down.circle.fill" : "arrow.down.circle")
-                    .foregroundStyle(isDownloaded ? Color.brand : Color.primary)
-                    .contentTransition(.symbolEffect(.replace))
-                    .animation(AppAnim.spring, value: isDownloaded)
-            }
-        }
-        .buttonStyle(.plain)
-        .animation(AppAnim.spring, value: isDownloading)
-    }
-}
-
-private struct CircularProgressView: View {
-    let progress: Double
-    var body: some View {
-        ZStack {
-            Circle().stroke(Color.secondary.opacity(0.3), lineWidth: 2)
-            Circle()
-                .trim(from: 0, to: progress)
-                .stroke(Color.brand, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-        }
-    }
-}
-
 // MARK: - Scroll tracking
 
 /// Reports the surah header's bottom edge (in scroll-viewport space) so the
-/// detail view can reveal the inline title once the header scrolls away.
+/// reader bar can take over as the title once the chapter title scrolls away.
 private struct HeaderVisibilityKey: PreferenceKey {
     static let defaultValue: CGFloat = .greatestFiniteMagnitude
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -612,58 +796,36 @@ private struct HeaderVisibilityKey: PreferenceKey {
     }
 }
 
-// MARK: - Surah page browser (swipe between surahs)
-
-/// Wraps multiple SurahDetailViews in a horizontally-paged TabView so the user
-/// can swipe left/right to move between surahs. Navigation title and toolbar
-/// items come from the active SurahDetailView and propagate to the nav bar.
-struct SurahPageView: View {
-    let surahs: [Surah]
-    let startIndex: Int
-    var initialAyah: Int? = nil
-
-    @State private var currentIndex: Int
-
-    init(surahs: [Surah], startIndex: Int, initialAyah: Int? = nil) {
-        self.surahs    = surahs
-        self.startIndex = startIndex
-        self.initialAyah = initialAyah
-        _currentIndex = State(initialValue: max(0, min(startIndex, surahs.count - 1)))
-    }
-
-    var body: some View {
-        TabView(selection: $currentIndex) {
-            ForEach(surahs.indices, id: \.self) { idx in
-                SurahDetailView(
-                    surah: surahs[idx],
-                    initialAyah: idx == startIndex ? initialAyah : nil,
-                    isActivePage: idx == currentIndex
-                )
-                .tag(idx)
-            }
-        }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        // Allow the audio player bar and surah content to extend to the
-        // bottom of the screen without the safe-area cutting things off.
-        .ignoresSafeArea(edges: .bottom)
-    }
-}
-
 // MARK: - Surah header
 
+/// The title page of a surah: number, name, meaning, provenance, an ornamental
+/// rule, then the Basmala. Centred and unfilled — the reader opens on something
+/// that looks like the top of a chapter rather than the top of a screen.
 struct SurahHeaderView: View {
     let surah: Surah
     var isPlaying: Bool = false
     var onPlay: () -> Void = {}
     @State private var appeared = false
+    /// Read during body, so a change of face or script repaints the title page.
+    private var type = ReadingType()
+
+    init(surah: Surah, isPlaying: Bool = false, onPlay: @escaping () -> Void = {}) {
+        self.surah = surah
+        self.isPlaying = isPlaying
+        self.onPlay = onPlay
+    }
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
+            Eyebrow("Surah \(surah.number)")
+                .opacity(appeared ? 1 : 0)
+
             // Primary: transliteration
             Text(surah.englishName)
-                .font(.system(size: 30, weight: .bold))
+                .font(type.serif(34, weight: .medium))
                 .multilineTextAlignment(.center)
-                .scaleEffect(appeared ? 1.0 : 0.92)
+                .padding(.top, 8)
+                .scaleEffect(appeared ? 1.0 : 0.94)
                 .opacity(appeared ? 1 : 0)
                 .background(
                     GeometryReader { geo in
@@ -674,69 +836,51 @@ struct SurahHeaderView: View {
                     }
                 )
 
-            // Secondary: Arabic script
-            Text(surah.name)
-                .font(.system(size: 24, weight: .regular))
-                .foregroundStyle(.secondary)
-                .environment(\.layoutDirection, .rightToLeft)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 6)
-
-            // Secondary: English translation
+            // Secondary: what the name means
             Text(surah.englishNameTranslation)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(type.serif(16, italic: true))
+                .foregroundStyle(Color(.label).opacity(0.5))
+                .multilineTextAlignment(.center)
+                .padding(.top, 2)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 6)
 
-            HStack(spacing: 16) {
-                Label("\(surah.numberOfAyahs) ayahs", systemImage: "text.alignright")
-                Label(surah.revelationType,
-                      systemImage: surah.revelationType == "Meccan" ? "sun.horizon" : "building.2")
-            }
-            .font(.caption)
-            .foregroundStyle(Color(.tertiaryLabel))
-            .padding(.top, 2)
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 8)
+            Eyebrow("\(surah.revelationType) · \(surah.numberOfAyahs) ayahs")
+                .padding(.top, 12)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 8)
 
-            // Play the whole surah from ayah 1 (toggles when already playing it)
-            Button(action: onPlay) {
-                ZStack {
-                    Circle()
-                        .fill(Color.brand)
-                        .frame(width: 60, height: 60)
-                        .shadow(color: .brand.opacity(0.35), radius: 8, y: 4)
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundStyle(.white)
-                        .contentTransition(.symbolEffect(.replace))
-                        .offset(x: isPlaying ? 0 : 2)   // optically center the play glyph
-                }
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 14)
-            .opacity(appeared ? 1 : 0)
-            .scaleEffect(appeared ? 1 : 0.8)
+            DiamondRule()
+                .padding(.vertical, 22)
+                .opacity(appeared ? 1 : 0)
 
             if surah.number != 1 && surah.number != 9 {
                 Text("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ")
-                    .font(.system(size: 20))
+                    .font(type.arabic(22))
+                    .lineSpacing(10)
                     .multilineTextAlignment(.center)
                     .environment(\.layoutDirection, .rightToLeft)
-                    .padding(.top, 10)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.label).opacity(0.6))
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 10)
             }
+
+            // Play the whole surah from ayah 1 (toggles when already playing it)
+            Button(action: onPlay) {
+                PlayCircle(playing: isPlaying, size: 48)
+            }
+            .buttonStyle(CardButtonStyle(scale: 0.9))
+            .padding(.top, 22)
+            .opacity(appeared ? 1 : 0)
+            .scaleEffect(appeared ? 1 : 0.85)
+            .accessibilityLabel(isPlaying ? "Pause surah" : "Play surah")
         }
-        .padding(.horizontal, 20)
-        // Extra top padding so the transliteration title clears the floating
-        // navigation toolbar (which overlays scroll content on iOS 26).
-        .padding(.top, 56)
-        .padding(.bottom, 18)
+        .padding(.horizontal, 28)
+        // The reader's bar is in the layout now, not floating over the page, so
+        // the chapter title needs an opening margin rather than a clearance.
+        .padding(.top, 26)
+        .padding(.bottom, 30)
         .frame(maxWidth: .infinity)
-        .background(Color.brand.opacity(0.05))
         .onAppear {
             guard !appeared else { return }
             withAnimation(AppAnim.spring.delay(0.05)) { appeared = true }
@@ -769,24 +913,23 @@ private struct MemorizeSurahSheet: View {
                 VStack(spacing: 22) {
                     VStack(spacing: 6) {
                         Text(surah.englishName)
-                            .font(.title2.bold())
+                            .font(.appSerif(24, weight: .medium))
                         Text("\(ayahs.count) ayahs"
                              + (enrolledCount > 0 ? " · \(enrolledCount) already in review" : ""))
-                            .font(.subheadline)
+                            .font(.appSerif(14))
                             .foregroundStyle(.secondary)
                     }
                     .padding(.top, 8)
 
                     Text("Adds every ayah to spaced-repetition review, so a few resurface for you to recall each day until the whole surah sticks.")
-                        .font(.caption)
+                        .font(.appSerif(13, italic: true))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 4)
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("What are you memorizing for?")
-                            .font(.subheadline.weight(.semibold))
+                        Eyebrow("What are you memorizing for?")
                             .frame(maxWidth: .infinity, alignment: .leading)
                         ForEach(MemorizationGoal.allCases) { g in
                             GoalOptionRow(goal: g, selected: g == goal) {
@@ -814,11 +957,11 @@ private struct MemorizeSurahSheet: View {
                     } label: {
                         Text(allEnrolled ? "Update goal for all ayahs" : "Memorize all \(ayahs.count) ayahs")
                             .font(.headline)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color(.systemBackground))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
                             .background(Color.brand)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .clipShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .disabled(ayahs.isEmpty)
@@ -830,7 +973,7 @@ private struct MemorizeSurahSheet: View {
                             dismiss()
                         } label: {
                             Text("Remove surah from memorization")
-                                .font(.subheadline.weight(.medium))
+                                .font(.appSerif(15))
                         }
                     }
                 }
@@ -858,35 +1001,35 @@ private struct GoalOptionRow: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: goal.icon)
-                    .font(.system(size: 20))
-                    .foregroundStyle(selected ? .white : .brand)
-                    .frame(width: 42, height: 42)
-                    .background(selected ? Color.brand : Color.brand.opacity(0.12), in: Circle())
+                    .font(.system(size: 16))
+                    .foregroundStyle(selected ? Color.brand : Color(.label).opacity(0.5))
+                    .frame(width: 30)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(goal.title)
-                        .font(.body.weight(.semibold))
+                        .font(.appSerif(17))
                         .foregroundStyle(.primary)
                     Text(goal.caption)
-                        .font(.caption)
+                        .font(.appSerif(13, italic: true))
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(selected ? .brand : Color(.tertiaryLabel))
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.brand)
+                }
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color(.secondarySystemBackground))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .strokeBorder(selected ? Color.brand : .clear, lineWidth: 1.5)
-                    )
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .overlay(
+                Rectangle()
+                    .strokeBorder(selected ? Color.brand : Color(.label).opacity(0.18),
+                                  lineWidth: 1)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
