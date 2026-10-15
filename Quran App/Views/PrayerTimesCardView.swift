@@ -19,11 +19,11 @@ struct PrayerTimesCardView: View {
         case .denied:
             HStack(spacing: 9) {
                 Image(systemName: "location.slash.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color(.label).opacity(0.4))
+                    .font(.label(11))
+                    .foregroundStyle(Color.secondary)
                 Text("Location access denied — enable in Settings")
                     .font(.appSerif(15))
-                    .foregroundStyle(Color(.label).opacity(0.5))
+                    .foregroundStyle(Color.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -32,7 +32,7 @@ struct PrayerTimesCardView: View {
                 ProgressView().scaleEffect(0.7)
                 Text("Getting prayer times…")
                     .font(.appSerif(15))
-                    .foregroundStyle(Color(.label).opacity(0.5))
+                    .foregroundStyle(Color.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -132,8 +132,8 @@ private struct PrayerRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: accented ? .semibold : .regular))
-                .foregroundStyle(accented ? Color.brand : Color(.label).opacity(0.35))
+                .font(.label(12, weight: accented ? .semibold : .regular))
+                .foregroundStyle(accented ? Color.brand : Color.secondary)
                 .frame(width: 18)
 
             Text(name)
@@ -148,7 +148,7 @@ private struct PrayerRow: View {
 
             Text(Self.fmt.string(from: time))
                 .font(.appSerif(16).monospacedDigit())
-                .foregroundStyle(accented ? Color(.label) : Color(.label).opacity(0.5))
+                .foregroundStyle(accented ? Color(.label) : Color.secondary)
         }
         .padding(.vertical, 11)
         // Prayers already prayed step back so the eye lands on what's next.
@@ -200,9 +200,9 @@ private struct DayPickerStrip: View {
                             withAnimation(AppAnim.smooth) { selectedOffset = offset }
                         } label: {
                             Text(label(for: offset).uppercased())
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.label(10, weight: .semibold))
                                 .kerning(1.1)
-                                .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.5))
+                                .foregroundStyle(on ? Color.brand : Color.secondary)
                                 .padding(.horizontal, 11)
                                 .padding(.vertical, 8)
                                 .overlay(

@@ -122,7 +122,7 @@ private struct MoreRow: View {
         NavigationLink(value: route) {
             HStack(spacing: 14) {
                 Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.label(15, weight: .medium))
                     .foregroundStyle(.brand)
                     .frame(width: 24)
 
@@ -132,15 +132,15 @@ private struct MoreRow: View {
                         .foregroundStyle(Color(.label))
                     Text(caption)
                         .font(.appSerif(13.5, italic: true))
-                        .foregroundStyle(Color(.label).opacity(0.45))
+                        .foregroundStyle(Color.secondary)
                         .multilineTextAlignment(.leading)
                 }
 
                 Spacer(minLength: 8)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color(.label).opacity(0.3))
+                    .font(.label(10, weight: .bold))
+                    .foregroundStyle(Color(.tertiaryLabel))
             }
             .contentShape(Rectangle())
         }

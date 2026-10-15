@@ -42,6 +42,9 @@ struct EditorialTabBar: View {
                 }
             }
             .frame(height: Self.barHeight)
+            // Like the system tab bar: the labels grow with Dynamic Type up to the largest
+            // non-accessibility size, then a long press shows them in the Large Content Viewer.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             // Extend the fill under the home indicator, or the strip below the
             // bar shows as a seam against a dark page.
             .background(Color(.systemBackground), ignoresSafeAreaEdges: .bottom)
@@ -58,21 +61,26 @@ struct EditorialTabBar: View {
         } label: {
             VStack(spacing: 4) {
                 Text(tab.title.uppercased())
-                    .font(.system(size: 10, weight: on ? .bold : .semibold))
+                    .font(.label(11, weight: on ? .bold : .semibold))
                     .kerning(1.5)
-                    .foregroundStyle(on ? Color(.label) : Color(.label).opacity(0.4))
+                    .foregroundStyle(on ? Color(.label) : .secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 // The rule is always laid out so switching tabs doesn't shift
                 // the labels by a pixel and a half.
                 Rectangle()
                     .fill(on ? Color.brand : .clear)
                     .frame(width: 26, height: 1.5)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .animation(AppAnim.smooth, value: on)
         .accessibilityLabel(tab.accessibilityName)
+        .accessibilityShowsLargeContentViewer {
+            Text(tab.title)
+        }
         .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
     }
 }

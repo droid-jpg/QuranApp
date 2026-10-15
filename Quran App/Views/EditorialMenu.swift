@@ -153,7 +153,7 @@ struct EditorialMenuOverlay: View {
                 if let translation = request.translation {
                     Text(translation)
                         .font(type.serif(14))
-                        .foregroundStyle(Color(.label).opacity(0.5))
+                        .foregroundStyle(Color.secondary)
                         .lineLimit(2)
                 }
             }
@@ -184,7 +184,7 @@ struct EditorialMenuOverlay: View {
     private func rowLabel(_ action: EditorialAction) -> some View {
         HStack(spacing: 14) {
             Image(systemName: action.icon)
-                .font(.system(size: 14, weight: .medium))
+                .font(.label(14, weight: .medium))
                 .foregroundStyle(tint(action))
                 .frame(width: 22)
             Text(action.title)
@@ -205,7 +205,7 @@ struct EditorialMenuOverlay: View {
 
     private func tint(_ action: EditorialAction) -> Color {
         switch action.kind {
-        case .normal:      Color(.label).opacity(0.55)
+        case .normal:      Color.secondary
         case .accent:      Color.brand
         case .destructive: Color.red
         }

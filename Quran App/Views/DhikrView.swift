@@ -55,9 +55,9 @@ struct DhikrView: View {
                         withAnimation(AppAnim.smooth) { store.select(preset) }
                     } label: {
                         Text(preset.name.uppercased())
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.label(10, weight: .semibold))
                             .kerning(1.1)
-                            .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.5))
+                            .foregroundStyle(on ? Color.brand : Color.secondary)
                             .padding(.horizontal, 11)
                             .padding(.vertical, 8)
                             .overlay(
@@ -145,9 +145,9 @@ struct DhikrView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.label(10, weight: .bold))
                         Text("RESET")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.label(10, weight: .semibold))
                             .kerning(1.2)
                     }
                     .foregroundStyle(.brand)
@@ -186,7 +186,7 @@ struct GoalEditorSheet: View {
                             .contentTransition(.numericText())
                         Text("repetitions")
                             .font(.appSerif(16, italic: true))
-                            .foregroundStyle(Color(.label).opacity(0.45))
+                            .foregroundStyle(Color.secondary)
                         Spacer(minLength: 0)
                         Stepper("", value: $draftGoal, in: 1...1000)
                             .labelsHidden()
@@ -203,8 +203,8 @@ struct GoalEditorSheet: View {
                                 draftGoal = n
                             } label: {
                                 Text("\(n)")
-                                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                                    .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.55))
+                                    .font(.label(13, weight: .semibold).monospacedDigit())
+                                    .foregroundStyle(on ? Color.brand : Color.secondary)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 11)
                                     .overlay(

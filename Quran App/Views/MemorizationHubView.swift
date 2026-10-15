@@ -40,7 +40,7 @@ struct MemorizationHubView: View {
 
                 if hasContent {
                     EditorialSection(title: "Everything", icon: "square.grid.3x3.fill",
-                                     iconTint: Color(.label).opacity(0.4)) {
+                                     iconTint: Color.secondary) {
                         EditorialNavRow(title: "Full progress grid",
                                         caption: "All 114 surahs as a heat map") {
                             Haptics.tap()
@@ -105,7 +105,7 @@ struct MemorizationHubView: View {
                         .padding(.bottom, 5)
                     Text("Ayahs you enrol from the reader are drilled here on a schedule.")
                         .font(.appSerif(15))
-                        .foregroundStyle(Color(.label).opacity(0.5))
+                        .foregroundStyle(Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -115,7 +115,7 @@ struct MemorizationHubView: View {
                             .contentTransition(.numericText())
                         Text("mastered")
                             .font(.appSerif(17, italic: true))
-                            .foregroundStyle(Color(.label).opacity(0.45))
+                            .foregroundStyle(Color.secondary)
                     }
                     .padding(.bottom, 14)
 
@@ -124,7 +124,7 @@ struct MemorizationHubView: View {
                     HStack(spacing: 18) {
                         StatDot(color: .orange, value: enrolled, label: "In review")
                         StatDot(color: .brand,  value: mature,   label: "Mastered")
-                        StatDot(color: Color(.label).opacity(0.4), value: due, label: "Due")
+                        StatDot(color: Color.secondary, value: due, label: "Due")
                         Spacer(minLength: 0)
                     }
                     .padding(.top, 14)
@@ -159,7 +159,7 @@ struct MemorizationHubView: View {
                     if let next = nextDueText {
                         Text(next)
                             .font(.appSerif(15, italic: true))
-                            .foregroundStyle(Color(.label).opacity(0.45))
+                            .foregroundStyle(Color.secondary)
                     }
                 }
             }
@@ -206,12 +206,12 @@ struct MemorizationHubView: View {
                                 .foregroundStyle(Color(.label))
                             Text("On its own, ahead of the queue")
                                 .font(.appSerif(13.5, italic: true))
-                                .foregroundStyle(Color(.label).opacity(0.45))
+                                .foregroundStyle(Color.secondary)
                         }
                         Spacer(minLength: 8)
                         Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Color(.label).opacity(0.3))
+                            .font(.label(9, weight: .bold))
+                            .foregroundStyle(Color(.tertiaryLabel))
                     }
                     .contentShape(Rectangle())
                 }
@@ -317,7 +317,7 @@ private struct TrackedSurahRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(tracked.number)")
-                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                .font(.label(11, weight: .bold).monospacedDigit())
                 .kerning(0.6)
                 .foregroundStyle(.brand)
                 .frame(minWidth: 22, alignment: .leading)
@@ -339,8 +339,8 @@ private struct TrackedSurahRow: View {
                         MetaText("\(tracked.progress.due) DUE", tint: .brand, size: 9)
                     }
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color(.label).opacity(0.3))
+                        .font(.label(9, weight: .bold))
+                        .foregroundStyle(Color(.tertiaryLabel))
                 }
 
                 if tracked.isEnrolled {
@@ -350,7 +350,7 @@ private struct TrackedSurahRow: View {
 
                 Text(subtitle)
                     .font(.appSerif(13.5, italic: true))
-                    .foregroundStyle(Color(.label).opacity(0.45))
+                    .foregroundStyle(Color.secondary)
                     .padding(.top, tracked.isEnrolled ? 8 : 2)
             }
         }
@@ -370,7 +370,7 @@ private struct HubEmptyState: View {
                 .padding(.bottom, 5)
             Text("Pick a few ayahs and let spaced repetition do the remembering for you.")
                 .font(.appSerif(15))
-                .foregroundStyle(Color(.label).opacity(0.55))
+                .foregroundStyle(Color.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 20)
 
@@ -392,7 +392,7 @@ private struct EmptyStep: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(number)")
-                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                .font(.label(11, weight: .bold).monospacedDigit())
                 .foregroundStyle(.brand)
                 .frame(minWidth: 22, alignment: .leading)
                 .padding(.top, 3)
@@ -417,9 +417,9 @@ struct GoalBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: goal.icon)
-                .font(.system(size: 8, weight: .bold))
+                .font(.label(8, weight: .bold))
             Text(goal.shortTitle.uppercased())
-                .font(.system(size: 8.5, weight: .semibold))
+                .font(.label(8.5, weight: .semibold))
                 .kerning(0.8)
         }
         .foregroundStyle(.brand)
@@ -574,13 +574,13 @@ struct SurahReviewDetailView: View {
                 // how to bring it into spaced-repetition review.
                 HStack(spacing: 9) {
                     Image(systemName: manualStatus.icon)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.label(11, weight: .semibold))
                         .foregroundStyle(manualStatus.color)
                     Text(manualStatus == .memorized
                          ? "Marked memorized. Enroll its ayahs from the reader to review them."
                          : "Marked in progress. Enroll its ayahs from the reader to start review.")
                         .font(.appSerif(15))
-                        .foregroundStyle(Color(.label).opacity(0.55))
+                        .foregroundStyle(Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
@@ -588,7 +588,7 @@ struct SurahReviewDetailView: View {
                 HStack {
                     Text("\(progress.mature) of \(progress.enrolled) ayahs mastered")
                         .font(.appSerif(15))
-                        .foregroundStyle(Color(.label).opacity(0.55))
+                        .foregroundStyle(Color.secondary)
                     Spacer()
                     if progress.due > 0 {
                         MetaText("\(progress.due) DUE", tint: .brand, size: 9.5)
@@ -615,8 +615,8 @@ private struct AyahReviewRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(card.ayah)")
-                .font(.system(size: 11, weight: .bold).monospacedDigit())
-                .foregroundStyle(card.isDue() ? .brand : Color(.label).opacity(0.35))
+                .font(.label(11, weight: .bold).monospacedDigit())
+                .foregroundStyle(card.isDue() ? .brand : Color.secondary)
                 .frame(minWidth: 22, alignment: .leading)
                 .padding(.top, 6)
 
@@ -630,11 +630,11 @@ private struct AyahReviewRow: View {
                 HStack(spacing: 8) {
                     if card.isMature {
                         Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 9))
+                            .font(.label(9))
                             .foregroundStyle(.brand)
                     }
                     MetaText(dueText.uppercased(),
-                             tint: card.isDue() ? .brand : Color(.label).opacity(0.4),
+                             tint: card.isDue() ? .brand : Color.secondary,
                              size: 9)
                 }
             }

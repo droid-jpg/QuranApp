@@ -121,14 +121,14 @@ struct QuranPlayerBar: View {
     private var scope: PlayerScope { engine.scope }
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 2) {
             Button { onExpand() } label: {
                 HStack(spacing: 12) {
                     if playing {
                         PlayingIndicatorView(color: .brand)
                     } else {
                         Image(systemName: "waveform")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.label(14, weight: .semibold))
                             .foregroundStyle(.brand)
                             .frame(width: 20, height: 14)
                     }
@@ -149,13 +149,16 @@ struct QuranPlayerBar: View {
                                 a: engine.loop.startAyah, b: engine.loop.endAyah)
             } label: {
                 Image(systemName: "repeat")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(scope == .off ? Color(.label).opacity(0.4) : .brand)
-                    .frame(width: 22, height: 22)
+                    .font(.label(15, weight: .semibold))
+                    .foregroundStyle(scope == .off ? Color.secondary : .brand)
+                    // The HIG's minimum hit target, without making the bar taller.
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
+                    .padding(.vertical, -11)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Loop scope")
+            .accessibilityLabel("Loop")
+            .accessibilityValue(scope == .off ? "Off" : scope == .ayah ? "This ayah" : "Range")
 
             Button { Haptics.tap(); engine.playPause() } label: {
                 PlayCircle(playing: playing, size: 38)
@@ -163,8 +166,9 @@ struct QuranPlayerBar: View {
             .buttonStyle(.plain)
             .accessibilityLabel(playing ? "Pause" : "Play")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 11)
+        .padding(.leading, 16)
+        .padding(.trailing, 13)
+        .padding(.vertical, 8)
         .background(.regularMaterial)
         .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.16), lineWidth: 1))
         .padding(.horizontal, 16)
@@ -259,7 +263,7 @@ struct QuranExpandedPlayer: View {
             VStack(spacing: 15) {
                 HStack(spacing: 7) {
                     Image(systemName: "graduationcap.fill")
-                        .font(.system(size: 10.5, weight: .semibold))
+                        .font(.label(10.5, weight: .semibold))
                         .foregroundStyle(.brand)
                     Eyebrow("Memorize ayah \(currentAyah)")
                     Spacer(minLength: 8)
@@ -302,7 +306,7 @@ struct QuranExpandedPlayer: View {
                     TransportButton(system: "forward.end.fill", size: 24) { Haptics.tap(); engine.next() }
                     Spacer()
                     TransportButton(system: "stop.fill", size: 18,
-                                    tint: Color(.label).opacity(0.45)) {
+                                    tint: Color.secondary) {
                         Haptics.tap(); engine.stop(); onCollapse()
                     }
                 }
@@ -349,10 +353,10 @@ struct QuranExpandedPlayer: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "hand.tap")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.label(9, weight: .bold))
                 MetaText("TAP TO CHOOSE AYAHS", size: 9)
             }
-            .foregroundStyle(Color(.label).opacity(0.4))
+            .foregroundStyle(Color.secondary)
             .padding(.top, 9)
         }
         .padding(.horizontal, 14)
@@ -407,7 +411,7 @@ private struct RangeEndRow: View {
     var body: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Eyebrow(tag, tint: Color(.label).opacity(0.4), size: 8.5)
+                Eyebrow(tag, tint: Color.secondary, size: 8.5)
                 MetaText("\(number)", tint: .brand, size: 13)
             }
             .frame(width: 34, alignment: .leading)
@@ -423,13 +427,13 @@ private struct RangeEndRow: View {
             } else {
                 Text("Ayah \(number)")
                     .font(.appSerif(15))
-                    .foregroundStyle(Color(.label).opacity(0.5))
+                    .foregroundStyle(Color.secondary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(Color(.label).opacity(0.3))
+                .font(.label(9, weight: .bold))
+                .foregroundStyle(Color(.tertiaryLabel))
         }
         .padding(.vertical, 9)
     }
@@ -500,9 +504,9 @@ private struct ScopeSegmented: View {
     private func item(_ label: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label.uppercased())
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(.label(9.5, weight: .semibold))
                 .kerning(1)
-                .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.55))
+                .foregroundStyle(on ? Color.brand : Color.secondary)
                 .lineLimit(1).minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 9)
@@ -528,8 +532,8 @@ private struct RepsControl: View {
             ForEach(options, id: \.self) { n in
                 Button { onPick(n) } label: {
                     Text(n == 0 ? "∞" : "\(n)×")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(current == n ? Color.brand : Color(.label).opacity(0.55))
+                        .font(.label(10.5, weight: .semibold))
+                        .foregroundStyle(current == n ? Color.brand : Color.secondary)
                         .frame(minWidth: 34)
                         .padding(.vertical, 9)
                         .overlay(
@@ -552,7 +556,7 @@ private struct SpeedPill: View {
     var body: some View {
         Button(action: action) {
             Text(speedLabel(rate))
-                .font(.system(size: 10.5, weight: .semibold))
+                .font(.label(10.5, weight: .semibold))
                 .kerning(0.8)
                 .foregroundStyle(.brand)
                 .padding(.horizontal, 11).padding(.vertical, 8)

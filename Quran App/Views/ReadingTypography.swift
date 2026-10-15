@@ -57,17 +57,25 @@ enum ReadingFace: String, CaseIterable, Identifiable {
         ReadingFace(rawValue: UserDefaults.standard.string(forKey: "readingFace") ?? "") ?? .newYork
     }
 
-    func font(size: CGFloat, weight: Font.Weight = .regular, italic: Bool = false) -> Font {
+    /// `scales` follows Dynamic Type, relative to the text style nearest `size`. Iowan and Charter
+    /// keep their exact size at the default setting; New York and SF are system designs, which
+    /// can only scale as a text style, so they take that style's size. Pass `false` for sizes the
+    /// reader's own sliders chose: those are the person's explicit choice and shouldn't compound.
+    func font(size: CGFloat, weight: Font.Weight = .regular, italic: Bool = false, scales: Bool = true) -> Font {
+        let style = scales ? Font.TextStyle.nearest(to: size) : nil
         guard let names = faceNames else {
-            let base = Font.system(size: size, weight: weight, design: isSerif ? .serif : .default)
+            let design: Font.Design = isSerif ? .serif : .default
+            let base = style.map { Font.system($0, design: design, weight: weight) }
+                ?? Font.system(size: size, weight: weight, design: design)
             return italic ? base.italic() : base
         }
         let wanted = italic ? names.italic : (Self.isBoldish(weight) ? names.bold : names.roman)
         if UIFont(name: wanted, size: size) != nil {
-            return .custom(wanted, size: size)
+            return style.map { .custom(wanted, size: size, relativeTo: $0) } ?? .custom(wanted, fixedSize: size)
         }
         // The face isn't on this device — keep the serif intent, drop the face.
-        let base = Font.system(size: size, weight: weight, design: .serif)
+        let base = style.map { Font.system($0, design: .serif, weight: weight) }
+            ?? Font.system(size: size, weight: weight, design: .serif)
         return italic ? base.italic() : base
     }
 
@@ -130,12 +138,15 @@ enum ArabicScript: String, CaseIterable, Identifiable {
         return stored.isAvailable ? stored : .system
     }
 
-    func font(size: CGFloat) -> Font {
+    /// `scales` works as it does for `ReadingFace.font`: SF Arabic takes the nearest text style,
+    /// the named faces keep their size relative to it, and slider-chosen sizes pass `false`.
+    func font(size: CGFloat, scales: Bool = true) -> Font {
         let scaled = size * sizeScale
+        let style = scales ? Font.TextStyle.nearest(to: size) : nil
         guard let name = faceName, UIFont(name: name, size: scaled) != nil else {
-            return .system(size: scaled)
+            return style.map { Font.system($0) } ?? .system(size: scaled)
         }
-        return .custom(name, size: scaled)
+        return style.map { .custom(name, size: scaled, relativeTo: $0) } ?? .custom(name, fixedSize: scaled)
     }
 }
 
@@ -173,11 +184,11 @@ struct ReadingType: DynamicProperty {
         return stored.isAvailable ? stored : .system
     }
 
-    func serif(_ size: CGFloat, weight: Font.Weight = .regular, italic: Bool = false) -> Font {
-        face.font(size: size, weight: weight, italic: italic)
+    func serif(_ size: CGFloat, weight: Font.Weight = .regular, italic: Bool = false, scales: Bool = true) -> Font {
+        face.font(size: size, weight: weight, italic: italic, scales: scales)
     }
 
-    func arabic(_ size: CGFloat) -> Font { script.font(size: size) }
+    func arabic(_ size: CGFloat, scales: Bool = true) -> Font { script.font(size: size, scales: scales) }
 }
 
 // MARK: - Convenience
@@ -185,12 +196,36 @@ struct ReadingType: DynamicProperty {
 extension Font {
     /// The app's reading serif at an explicit size. Used for prose and for the
     /// editorial headings, so the chrome and the scripture share one voice.
-    static func appSerif(_ size: CGFloat, weight: Font.Weight = .regular, italic: Bool = false) -> Font {
-        ReadingFace.current.font(size: size, weight: weight, italic: italic)
+    static func appSerif(_ size: CGFloat, weight: Font.Weight = .regular, italic: Bool = false,
+                         scales: Bool = true) -> Font {
+        ReadingFace.current.font(size: size, weight: weight, italic: italic, scales: scales)
     }
 
     /// The Arabic face at an explicit size.
-    static func appArabic(_ size: CGFloat) -> Font {
-        ArabicScript.current.font(size: size)
+    static func appArabic(_ size: CGFloat, scales: Bool = true) -> Font {
+        ArabicScript.current.font(size: size, scales: scales)
+    }
+}
+
+// MARK: - Dynamic Type
+
+extension Font.TextStyle {
+    /// The text style whose default size (at the Large setting) is nearest `size`, so a size set
+    /// by eye can scale with Dynamic Type. `nil` above 34 pt: display type like the dhikr counter
+    /// is already large, and scaling it further would push it off the screen.
+    static func nearest(to size: CGFloat) -> Font.TextStyle? {
+        switch size {
+        case ..<11.5: .caption2      // 11
+        case ..<12.5: .caption       // 12
+        case ..<14:   .footnote      // 13
+        case ..<15.5: .subheadline   // 15
+        case ..<16.5: .callout       // 16
+        case ..<18.5: .body          // 17
+        case ..<21:   .title3        // 20
+        case ..<25:   .title2        // 22
+        case ..<31:   .title         // 28
+        case ...34:   .largeTitle    // 34
+        default:      nil
+        }
     }
 }

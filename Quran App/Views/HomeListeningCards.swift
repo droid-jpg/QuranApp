@@ -76,7 +76,7 @@ struct ResumeListeningSection: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: eyebrowIcon)
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(.label(10.5, weight: .semibold))
                     .foregroundStyle(.brand)
                     .frame(width: 14, alignment: .leading)
                 Eyebrow(eyebrow, tint: .brand)
@@ -217,7 +217,7 @@ struct HomeMiniPlayer: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 6) {
             Group {
                 if let idx = startIndex {
                     NavigationLink {
@@ -243,17 +243,19 @@ struct HomeMiniPlayer: View {
                 audioService.stop()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color(.label).opacity(0.45))
-                    .frame(width: 24, height: 24)
+                    .font(.label(12, weight: .bold))
+                    .foregroundStyle(Color.secondary)
+                    // The HIG's minimum hit target, without making the bar taller.
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
+                    .padding(.vertical, -10)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Stop playback")
         }
         .padding(.leading, 16)
-        .padding(.trailing, 12)
-        .padding(.vertical, 10)
+        .padding(.trailing, 2)
+        .padding(.vertical, 7)
         .background(.regularMaterial)
         .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.16), lineWidth: 1))
         .padding(.horizontal, 16)
@@ -265,12 +267,12 @@ struct HomeMiniPlayer: View {
                 PlayingIndicatorView(color: .brand)
             } else {
                 Image(systemName: "waveform")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.label(14, weight: .semibold))
                     .foregroundStyle(.brand)
                     .frame(width: 20, height: 14)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Eyebrow(surahName, tint: .brand, size: 9)
+                Eyebrow(surahName, tint: .brand)
                 Text(subtitle)
                     .font(.appSerif(14))
                     .foregroundStyle(Color(.label).opacity(0.75))

@@ -46,7 +46,7 @@ struct AyahRowView: View {
     private var numeralTint: Color {
         if isPlaying { return .brand }
         if isWorkingAyah { return .orange }
-        return Color(.label).opacity(0.35)
+        return Color.secondary
     }
 
     var body: some View {
@@ -65,7 +65,7 @@ struct AyahRowView: View {
             if showTransliteration || showTranslation {
                 HStack(alignment: .top, spacing: 12) {
                     Text("\(ayah.numberInSurah)")
-                        .font(.system(size: 11, weight: .bold).monospacedDigit())
+                        .font(.label(11, weight: .bold).monospacedDigit())
                         .kerning(0.6)
                         .foregroundStyle(numeralTint)
                         .frame(minWidth: 20, alignment: .leading)
@@ -74,14 +74,14 @@ struct AyahRowView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         if showTransliteration {
                             Text(ayah.transliteration)
-                                .font(type.serif(transliterationFontSize, weight: .light, italic: true))
-                                .foregroundStyle(Color(.label).opacity(0.44))
+                                .font(type.serif(transliterationFontSize, italic: true, scales: false))
+                                .foregroundStyle(Color.secondary)
                                 .lineSpacing(2)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         if showTranslation {
                             Text(ayah.translation)
-                                .font(type.serif(translationFontSize))
+                                .font(type.serif(translationFontSize, scales: false))
                                 .foregroundStyle(Color(.label).opacity(0.86))
                                 .lineSpacing(3)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -93,7 +93,7 @@ struct AyahRowView: View {
             } else {
                 // Nothing beneath the Arabic, so the numeral carries the line.
                 Text("\(ayah.numberInSurah)")
-                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .font(.label(11, weight: .bold).monospacedDigit())
                     .kerning(0.6)
                     .foregroundStyle(numeralTint)
                     .padding(.horizontal, 28)
@@ -102,8 +102,8 @@ struct AyahRowView: View {
 
             if revealed && !immersiveReading {
                 controlStrip
-                    .padding(.horizontal, 28)
-                    .padding(.top, 16)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 6)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -118,6 +118,12 @@ struct AyahRowView: View {
         // The app's own panel, raised by the reader, instead of `.contextMenu` —
         // the last piece of UIKit chrome the restyle hadn't reached.
         .onLongPressGesture(minimumDuration: 0.32) { onLongPress() }
+        // Tap and long press are gestures VoiceOver can't perform, so both are actions too.
+        .accessibilityAction(named: revealed ? "Hide actions" : "Show actions") {
+            guard !immersiveReading else { return }
+            withAnimation(AppAnim.springFast) { revealed.toggle() }
+        }
+        .accessibilityAction(named: "More actions") { onLongPress() }
         // The one accent on the page: a rule down the margin of the ayah being
         // recited. Replaces the old tinted background wash.
         .overlay(alignment: .leading) {
@@ -137,7 +143,8 @@ struct AyahRowView: View {
     /// The compact strip a tap reveals. Everything here is also in the long-press
     /// menu — this exists so the common actions cost one tap instead of a press.
     private var controlStrip: some View {
-        HStack(spacing: 18) {
+        // 44 pt buttons with no spacing land the glyphs about where 24 pt buttons 18 apart did.
+        HStack(spacing: 0) {
             GlyphButton(icon: isPlaying ? "pause.fill" : "play.fill",
                         on: isPlaying, label: isPlaying ? "Pause" : "Play from here",
                         action: onPlay)
@@ -153,10 +160,12 @@ struct AyahRowView: View {
             }
 
             GlyphButton(icon: isMemorizing ? "checkmark.circle.fill" : "plus.circle",
-                        on: isMemorizing, label: "Add to review", action: onToggleMemorize)
+                        on: isMemorizing, label: isMemorizing ? "Remove from review" : "Add to review",
+                        action: onToggleMemorize)
 
             GlyphButton(icon: isBookmarked ? "bookmark.fill" : "bookmark",
-                        on: isBookmarked, label: "Bookmark", action: onBookmark)
+                        on: isBookmarked, label: isBookmarked ? "Remove bookmark" : "Bookmark",
+                        action: onBookmark)
 
             Spacer(minLength: 0)
         }
@@ -205,16 +214,18 @@ private struct GlyphButton: View {
                     ProgressView().scaleEffect(0.6)
                 } else {
                     Image(systemName: icon)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.5))
+                        .font(.label(15, weight: .medium))
+                        .foregroundStyle(on ? Color.brand : Color.secondary)
                         .contentTransition(.symbolEffect(.replace))
                 }
             }
-            .frame(width: 24, height: 22)
+            // The HIG's minimum hit target; the glyph itself stays small.
+            .frame(width: 44, height: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
@@ -272,7 +283,7 @@ private struct ArabicWordChip: View {
 
     var body: some View {
         Text(word)
-            .font(script.font(size: fontSize))
+            .font(script.font(size: fontSize, scales: false))
             .padding(.horizontal, 3)
             .padding(.vertical, 2)
             .background(Rectangle().fill(Color.brand.opacity(flash ? 0.18 : 0)))
@@ -302,11 +313,6 @@ private struct WordDefinitionSheet: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Capsule()
-                .fill(Color(.tertiaryLabel))
-                .frame(width: 36, height: 5)
-                .padding(.top, 8)
-
             Text(detail.arabic)
                 .font(.appArabic(40))
                 .environment(\.layoutDirection, .rightToLeft)
@@ -330,13 +336,14 @@ private struct WordDefinitionSheet: View {
                 } label: {
                     HStack(spacing: 7) {
                         Image(systemName: isPlaying ? "stop.fill" : "play.fill")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.label(11, weight: .bold))
                         Text(isPlaying ? "STOP" : "PLAY")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.label(11, weight: .semibold))
                             .kerning(1.2)
                     }
                     .foregroundStyle(Color.brand)
-                    .padding(.horizontal, 22).padding(.vertical, 10)
+                    .padding(.horizontal, 22).padding(.vertical, 6)
+                    .frame(minHeight: 44)
                     .overlay(Rectangle().strokeBorder(Color.brand.opacity(0.55), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
@@ -346,7 +353,10 @@ private struct WordDefinitionSheet: View {
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity)
-        .presentationDetents([.height(280)])
+        .padding(.top, 24)
+        // The system grabber; .large is there for when Dynamic Type outgrows 280 pt.
+        .presentationDetents([.height(280), .large])
+        .presentationDragIndicator(.visible)
         .onDisappear { clip.stop() }
     }
 }

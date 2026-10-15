@@ -198,7 +198,7 @@ private struct PresetRow: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: icon)
-                    .font(.system(size: 18))
+                    .font(.label(18))
                     .foregroundStyle(.brand)
                     .frame(width: 30)
                 VStack(alignment: .leading, spacing: 2) {
@@ -211,7 +211,7 @@ private struct PresetRow: View {
                 }
                 Spacer()
                 Image(systemName: "play.circle.fill")
-                    .font(.system(size: 22))
+                    .font(.label(22))
                     .foregroundStyle(.brand)
             }
             .contentShape(Rectangle())
@@ -277,7 +277,7 @@ struct AyahRangePickerSheet: View {
                                 start = 1; end = totalAyahs; awaitingEnd = false
                                 Haptics.selection()
                             }
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(.label(9.5, weight: .semibold))
                             .kerning(1)
                             .textCase(.uppercase)
                             .foregroundStyle(.brand)
@@ -386,7 +386,7 @@ private struct AyahSelectRow: View {
             HStack(spacing: 8) {
                 if let endpointLabel {
                     Text(endpointLabel.uppercased())
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.label(9, weight: .bold))
                         .kerning(1.2)
                         .foregroundStyle(Color(.systemBackground))
                         .padding(.horizontal, 7)
@@ -394,7 +394,7 @@ private struct AyahSelectRow: View {
                         .background(Rectangle().fill(Color.brand))
                 }
                 Spacer()
-                MetaText("\(number)", tint: isSelected ? .brand : Color(.label).opacity(0.4), size: 11)
+                MetaText("\(number)", tint: isSelected ? .brand : Color.secondary, size: 11)
             }
 
             if let ayah {
@@ -407,7 +407,7 @@ private struct AyahSelectRow: View {
                 if !ayah.transliteration.isEmpty {
                     Text(ayah.transliteration)
                         .font(.appSerif(13, weight: .light, italic: true))
-                        .foregroundStyle(Color(.label).opacity(0.44))
+                        .foregroundStyle(Color.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if !ayah.translation.isEmpty {

@@ -43,7 +43,7 @@ struct MushafView: View {
                             .foregroundStyle(.secondary)
                         if surah.number != 1 && surah.number != 9 {
                             Text("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ")
-                                .font(.system(size: 24, weight: .regular))
+                                .font(.label(24, weight: .regular))
                                 .multilineTextAlignment(.center)
                                 .padding(.top, 4)
                         }

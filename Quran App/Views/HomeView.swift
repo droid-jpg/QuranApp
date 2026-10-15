@@ -53,6 +53,11 @@ struct HomeView: View {
                               totalAyahs: t.totalAyahs, surahName: t.surahName)
     }
 
+    private func isPlaying(_ verse: DailyVerse) -> Bool {
+        audioService.isPlaying && audioService.currentSurah == verse.surahNumber
+            && audioService.currentAyah == verse.ayahNumber
+    }
+
     private func ayahCount(of surah: Int) -> Int? {
         listVM.surahs.first { $0.number == surah }?.numberOfAyahs
     }
@@ -138,7 +143,7 @@ struct HomeView: View {
                         Text(greeting)
                             .font(.appSerif(27))
                             .foregroundStyle(.primary)
-                        Eyebrow(HomeDates.today, size: 10)
+                        Eyebrow(HomeDates.today)
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 20)
@@ -204,7 +209,16 @@ struct HomeView: View {
                     if dailyVerse.verse != nil || dailyVerse.isLoading {
                         VerseOfDaySection(
                             surahs: listVM.surahs,
+                            isPlaying: isPlaying,
                             onPlay: { verse in
+                                // The button shows pause while the verse plays, so it pauses (and
+                                // resumes) it rather than starting it over.
+                                if audioService.currentSurah == verse.surahNumber
+                                    && audioService.currentAyah == verse.ayahNumber {
+                                    Haptics.tap()
+                                    audioService.togglePlayPause()
+                                    return
+                                }
                                 guard let total = ayahCount(of: verse.surahNumber) else { return }
                                 Haptics.tap()
                                 activeDrill = nil
@@ -324,13 +338,17 @@ private struct Masthead: View {
                 .font(.appSerif(32, weight: .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
+                .minimumScaleFactor(0.7)
+                // The rule gives way first; the wordmark only shrinks when there's no rule left.
+                .layoutPriority(1)
+                .accessibilityAddTraits(.isHeader)
             Rectangle()
                 .fill(Color.rule)
                 .frame(height: 1)
                 .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 5 }
             if streak > 0 {
-                MetaText("\(streak) DAY\(streak == 1 ? "" : "S")", size: 10)
+                MetaText("\(streak) DAY\(streak == 1 ? "" : "S")")
+                    .fixedSize()
                     .accessibilityLabel("\(streak) day streak")
             }
         }
@@ -349,7 +367,7 @@ private struct HolidayLine: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: occurrence.event.kind.icon)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.label(11, weight: .bold))
                     .foregroundStyle(occurrence.event.kind.color)
                 Text(occurrence.event.name)
                     .font(.appSerif(16))
@@ -357,10 +375,10 @@ private struct HolidayLine: View {
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 MetaText(isToday ? "TODAY" : "TOMORROW",
-                         tint: occurrence.event.kind.color, size: 9.5)
+                         tint: occurrence.event.kind.color)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Color(.label).opacity(0.3))
+                    .font(.label(9, weight: .bold))
+                    .foregroundStyle(Color(.tertiaryLabel))
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
@@ -401,11 +419,11 @@ private struct MemorizingSection: View {
                              ? "memorized"
                              : "ayah \(target.workingAyah) of \(target.totalAyahs)")
                             .font(.appSerif(16))
-                            .foregroundStyle(Color(.label).opacity(0.5))
+                            .foregroundStyle(Color.secondary)
                         Spacer(minLength: 4)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Color(.label).opacity(0.3))
+                            .font(.label(9, weight: .bold))
+                            .foregroundStyle(Color(.tertiaryLabel))
                     }
                     .contentShape(Rectangle())
                 }
@@ -461,13 +479,13 @@ struct NextPrayerSection: View {
                                 .font(.appSerif(21, weight: .medium))
                             Text(Self.timeFmt.string(from: entry.time))
                                 .font(.appSerif(17).monospacedDigit())
-                                .foregroundStyle(Color(.label).opacity(0.5))
+                                .foregroundStyle(Color.secondary)
                         }
 
                         Text(restOfDay(t, excluding: entry.name))
-                            .font(.system(size: 9.5, weight: .semibold).monospacedDigit())
+                            .font(.label(9.5, weight: .semibold).monospacedDigit())
                             .kerning(0.9)
-                            .foregroundStyle(Color(.label).opacity(0.38))
+                            .foregroundStyle(Color.secondary)
                             .padding(.top, 11)
                     }
                 }
@@ -527,6 +545,7 @@ struct NextPrayerSection: View {
 /// reader; the play button is a sibling, because nested buttons swallow taps.
 private struct VerseOfDaySection: View {
     let surahs: [Surah]
+    let isPlaying: (DailyVerse) -> Bool
     let onPlay: (DailyVerse) -> Void
 
     @ObservedObject private var service = DailyVerseService.shared
@@ -560,11 +579,12 @@ private struct VerseOfDaySection: View {
                             }
                         }
 
+                        let playing = isPlaying(v)
                         Button { onPlay(v) } label: {
-                            PlayCircle(playing: false, size: 34)
+                            PlayCircle(playing: playing, size: 34)
                         }
                         .buttonStyle(CardButtonStyle(scale: 0.92))
-                        .accessibilityLabel("Play verse of the day")
+                        .accessibilityLabel(playing ? "Pause verse of the day" : "Play verse of the day")
                     }
                 }
             }
@@ -680,7 +700,7 @@ private struct ProgressSection: View {
         Button { Haptics.tap(); showOverview = true } label: {
             EditorialSection(title: "Memorization",
                              icon: "square.grid.3x3.fill",
-                             iconTint: Color(.label).opacity(0.4),
+                             iconTint: Color.secondary,
                              trailing: "\(st.memorized)/\(st.total) surahs") {
                 VStack(alignment: .leading, spacing: 0) {
                     GeometryReader { geo in
@@ -699,8 +719,8 @@ private struct ProgressSection: View {
                         StatDot(color: .orange, value: st.inProgress, label: "In progress")
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Color(.label).opacity(0.3))
+                            .font(.label(9, weight: .bold))
+                            .foregroundStyle(Color(.tertiaryLabel))
                     }
                     .padding(.top, 13)
                 }

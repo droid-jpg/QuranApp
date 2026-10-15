@@ -74,9 +74,9 @@ struct QiblaView: View {
 
                 ForEach([("N", 0.0), ("E", 90.0), ("S", 180.0), ("W", 270.0)], id: \.0) { label, angle in
                     Text(label)
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.label(10, weight: .bold))
                         .kerning(1)
-                        .foregroundStyle(label == "N" ? Color.brand : Color(.label).opacity(0.4))
+                        .foregroundStyle(label == "N" ? Color.brand : Color.secondary)
                         .rotationEffect(.degrees(qibla.displayHeading - angle))
                         .offset(y: -105)
                         .rotationEffect(.degrees(angle))
@@ -140,11 +140,11 @@ struct InfoBanner: View {
     var body: some View {
         HStack(spacing: 11) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.label(12, weight: .semibold))
                 .foregroundStyle(color)
             Text(message)
                 .font(.appSerif(15))
-                .foregroundStyle(Color(.label).opacity(0.6))
+                .foregroundStyle(Color.secondary)
                 .multilineTextAlignment(.leading)
             Spacer(minLength: 0)
         }

@@ -42,11 +42,11 @@ struct ReadingTypeSheet: View {
                                         .foregroundStyle(.primary)
                                     Text("— \(f.caption)")
                                         .font(f.font(size: 14, italic: f.isSerif))
-                                        .foregroundStyle(Color(.label).opacity(0.45))
+                                        .foregroundStyle(Color.secondary)
                                     Spacer(minLength: 8)
                                     if f == face {
                                         Image(systemName: "checkmark")
-                                            .font(.system(size: 12, weight: .bold))
+                                            .font(.label(12, weight: .bold))
                                             .foregroundStyle(.brand)
                                     }
                                 }
@@ -76,7 +76,7 @@ struct ReadingTypeSheet: View {
                                         .foregroundStyle(s == script ? Color(.label) : Color(.label).opacity(0.75))
                                         .environment(\.layoutDirection, .rightToLeft)
                                     Eyebrow(s.displayName,
-                                            tint: s == script ? .brand : Color(.label).opacity(0.45),
+                                            tint: s == script ? .brand : Color.secondary,
                                             size: 9)
                                 }
                                 .frame(maxWidth: .infinity)
@@ -151,7 +151,7 @@ struct ReadingTypeSheet: View {
     private var specimen: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("هُوَ ٱلَّذِى جَعَلَ لَكُمُ ٱلْأَرْضَ ذَلُولًۭا فَٱمْشُوا۟ فِى مَنَاكِبِهَا")
-                .font(.appArabic(arabicFontSize))
+                .font(.appArabic(arabicFontSize, scales: false))
                 .lineSpacing(arabicFontSize * 0.62)
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -159,7 +159,7 @@ struct ReadingTypeSheet: View {
 
             HStack(alignment: .top, spacing: 12) {
                 Text("15")
-                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .font(.label(11, weight: .bold).monospacedDigit())
                     .foregroundStyle(.brand)
                     .frame(minWidth: 20, alignment: .leading)
                     .padding(.top, 4)
@@ -167,12 +167,12 @@ struct ReadingTypeSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     if showTransliteration {
                         Text("Huwal lazee ja‘ala lakumul arda zaloolan famshoo fee manaakibihaa")
-                            .font(face.font(size: transliterationFontSize, weight: .light, italic: true))
-                            .foregroundStyle(Color(.label).opacity(0.44))
+                            .font(face.font(size: transliterationFontSize, italic: true, scales: false))
+                            .foregroundStyle(Color.secondary)
                     }
                     if showTranslation {
                         Text("It is He who made the earth tame for you — so walk among its slopes and eat of His provision.")
-                            .font(face.font(size: translationFontSize))
+                            .font(face.font(size: translationFontSize, scales: false))
                             .foregroundStyle(Color(.label).opacity(0.86))
                             .lineSpacing(3)
                     }
@@ -196,7 +196,7 @@ private struct TypeSlider: View {
         HStack(spacing: 14) {
             Text(label)
                 .font(.appSerif(14))
-                .foregroundStyle(Color(.label).opacity(0.55))
+                .foregroundStyle(Color.secondary)
                 .frame(width: 82, alignment: .leading)
             Slider(value: $value, in: range, step: 1)
                 .tint(.brand)
@@ -218,7 +218,7 @@ private struct ToggleRow: View {
             if let caption {
                 Text("— \(caption)")
                     .font(.appSerif(14, italic: true))
-                    .foregroundStyle(Color(.label).opacity(0.45))
+                    .foregroundStyle(Color.secondary)
             }
             Spacer(minLength: 8)
             Toggle("", isOn: $isOn)

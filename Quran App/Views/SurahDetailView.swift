@@ -332,7 +332,9 @@ private struct ReaderTopBar: View {
             BarButton(icon: "ellipsis", label: "More", action: onMore)
         }
         .padding(.horizontal, 10)
-        .frame(height: 46)
+        .frame(minHeight: 46)
+        // Bar chrome stops growing at the largest non-accessibility size, as system bars do.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .background(Color(.systemBackground))
         .overlay(alignment: .bottom) { Hairline() }
     }
@@ -614,7 +616,7 @@ struct SurahDetailView: View {
             if showResumeBar {
                 HStack(spacing: 12) {
                     Image(systemName: "bookmark.fill")
-                        .font(.system(size: 11))
+                        .font(.label(11))
                         .foregroundStyle(.brand)
                     Text("Continue from ayah \(resumeAyah)")
                         .font(type.serif(15))
@@ -626,7 +628,7 @@ struct SurahDetailView: View {
                         withAnimation { showResumeBar = false }
                     } label: {
                         Text("RESUME")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.label(10, weight: .semibold))
                             .kerning(1.2)
                             .foregroundStyle(.brand)
                             .padding(.horizontal, 12).padding(.vertical, 7)
@@ -635,8 +637,8 @@ struct SurahDetailView: View {
                     .buttonStyle(.plain)
                     Button { withAnimation { showResumeBar = false } } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(Color(.label).opacity(0.45))
+                            .font(.label(12, weight: .bold))
+                            .foregroundStyle(Color.secondary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -839,7 +841,7 @@ struct SurahHeaderView: View {
             // Secondary: what the name means
             Text(surah.englishNameTranslation)
                 .font(type.serif(16, italic: true))
-                .foregroundStyle(Color(.label).opacity(0.5))
+                .foregroundStyle(Color.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.top, 2)
                 .opacity(appeared ? 1 : 0)
@@ -860,7 +862,7 @@ struct SurahHeaderView: View {
                     .lineSpacing(10)
                     .multilineTextAlignment(.center)
                     .environment(\.layoutDirection, .rightToLeft)
-                    .foregroundStyle(Color(.label).opacity(0.6))
+                    .foregroundStyle(Color.secondary)
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 10)
             }
@@ -1001,8 +1003,8 @@ private struct GoalOptionRow: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: goal.icon)
-                    .font(.system(size: 16))
-                    .foregroundStyle(selected ? Color.brand : Color(.label).opacity(0.5))
+                    .font(.label(16))
+                    .foregroundStyle(selected ? Color.brand : Color.secondary)
                     .frame(width: 30)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -1018,7 +1020,7 @@ private struct GoalOptionRow: View {
 
                 if selected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.label(12, weight: .bold))
                         .foregroundStyle(.brand)
                 }
             }

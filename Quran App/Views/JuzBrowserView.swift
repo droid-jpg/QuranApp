@@ -22,7 +22,7 @@ struct JuzBrowserView: View {
                             Rectangle()
                                 .fill(Color.brand.opacity(0.12))
                             Text("\(boundary.juz)")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.label(14, weight: .bold))
                                 .foregroundStyle(.brand)
                         }
                         .frame(width: 40, height: 40)
@@ -41,7 +41,7 @@ struct JuzBrowserView: View {
 
                         if let s = startSurah {
                             Text(s.name)
-                                .font(.system(size: 18))
+                                .font(.label(18))
                                 .foregroundStyle(.secondary)
                         }
                     }

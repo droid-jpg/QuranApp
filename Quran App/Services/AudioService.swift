@@ -89,11 +89,15 @@ class AudioService: ObservableObject {
     /// `resume(_:)` so a saved listening session picks up mid-ayah.
     private var pendingSeekFraction: Double?
 
+    /// Set when a call or another app interrupts playback, so it can pick up again afterwards.
+    private var resumeAfterInterruption = false
+
     init() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(true)
         setupPlayerTimeObserver()
         setupRemoteCommandCenter()
+        observeAudioSession()
     }
 
     // MARK: - Normal per-ayah playback
@@ -515,6 +519,50 @@ class AudioService: ObservableObject {
     private func stopWordLoopInternal() {
         isWordLooping = false
         teardownChapterPlayer()
+    }
+
+    // MARK: - Interruptions and route changes
+
+    /// The HIG's "Playing audio" guidance: when a call or another app interrupts, stop showing
+    /// playback as running and resume afterwards only if the system says it should; when
+    /// headphones are unplugged, stay paused. AVPlayer pauses itself in both cases, but nothing
+    /// told `isPlaying`, so the app kept showing a pause button over silence.
+    private func observeAudioSession() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil,
+                           queue: .main) { [weak self] note in
+            let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
+                .flatMap(AVAudioSession.InterruptionType.init)
+            let options = AVAudioSession.InterruptionOptions(
+                rawValue: note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+            MainActor.assumeIsolated {
+                guard let self, let type else { return }
+                switch type {
+                case .began:
+                    guard self.isPlaying else { return }
+                    self.resumeAfterInterruption = true
+                    self.togglePlayPause()
+                case .ended:
+                    defer { self.resumeAfterInterruption = false }
+                    guard self.resumeAfterInterruption, options.contains(.shouldResume), !self.isPlaying
+                    else { return }
+                    try? AVAudioSession.sharedInstance().setActive(true)
+                    self.togglePlayPause()
+                @unknown default:
+                    break
+                }
+            }
+        }
+        center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil,
+                           queue: .main) { [weak self] note in
+            let reason = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt)
+                .flatMap(AVAudioSession.RouteChangeReason.init)
+            MainActor.assumeIsolated {
+                // Headphones or a car disconnected: keep the recitation private by staying paused.
+                guard let self, reason == .oldDeviceUnavailable, self.isPlaying else { return }
+                self.togglePlayPause()
+            }
+        }
     }
 
     // MARK: - Remote Command Center + Now Playing Info

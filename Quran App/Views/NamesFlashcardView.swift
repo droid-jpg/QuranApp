@@ -206,7 +206,7 @@ struct AudioSpeakButton: View {
         } label: {
             Image(systemName: isSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2")
                 .font(.system(size: size))
-                .foregroundStyle(isSpeaking ? Color.brand : Color(.label).opacity(0.35))
+                .foregroundStyle(isSpeaking ? Color.brand : Color.secondary)
                 .symbolEffect(.bounce, value: isSpeaking)
                 .contentShape(Rectangle())
         }

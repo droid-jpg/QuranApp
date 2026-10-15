@@ -258,8 +258,8 @@ struct SettingsView: View {
     private func prayerToggle(_ name: String, _ binding: Binding<Bool>) -> some View {
         HStack(spacing: 11) {
             Image(systemName: NextPrayerSection.prayerIcons[name] ?? "clock")
-                .font(.system(size: 12))
-                .foregroundStyle(binding.wrappedValue ? Color.brand : Color(.label).opacity(0.3))
+                .font(.label(12))
+                .foregroundStyle(binding.wrappedValue ? Color.brand : Color(.tertiaryLabel))
                 .frame(width: 18)
             Text(name)
                 .font(.appSerif(16))
@@ -321,7 +321,7 @@ struct Footnote: View {
     var body: some View {
         Text(text)
             .font(.appSerif(13.5, italic: true))
-            .foregroundStyle(Color(.label).opacity(0.42))
+            .foregroundStyle(Color.secondary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 12)
@@ -356,18 +356,18 @@ private struct ThemePicker: View {
                                     .strokeBorder(theme.swatch, lineWidth: 1.5)
                                     .frame(width: 44, height: 44)
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.label(12, weight: .bold))
                                     .foregroundStyle(.white)
                             }
                         }
                         .frame(height: 46)
 
                         Text(theme.displayName.uppercased())
-                            .font(.system(size: 8.5, weight: theme == selection ? .bold : .semibold))
+                            .font(.label(8.5, weight: theme == selection ? .bold : .semibold))
                             .kerning(0.9)
                             .foregroundStyle(theme == selection
                                              ? Color(.label)
-                                             : Color(.label).opacity(0.45))
+                                             : Color.secondary)
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())

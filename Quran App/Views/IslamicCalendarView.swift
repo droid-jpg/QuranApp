@@ -124,7 +124,7 @@ struct IslamicCalendarView: View {
         HStack(spacing: 12) {
             Button(action: onPrev) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.label(12, weight: .bold))
                     .foregroundStyle(.brand)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
@@ -138,7 +138,7 @@ struct IslamicCalendarView: View {
 
             Button(action: onNext) {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.label(12, weight: .bold))
                     .foregroundStyle(.brand)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
@@ -152,7 +152,7 @@ struct IslamicCalendarView: View {
         .overlay(alignment: .bottom) {
             if !cal.isDate(anchor, equalTo: now, toGranularity: mode == .week ? .weekOfYear : .month) {
                 Button("TODAY") { jumpToToday() }
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.label(9, weight: .bold))
                     .kerning(1.2)
                     .foregroundStyle(.brand)
                     .offset(y: 12)
@@ -165,9 +165,9 @@ struct IslamicCalendarView: View {
         HStack(spacing: 0) {
             ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, s in
                 Text(s.uppercased())
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.label(9, weight: .bold))
                     .kerning(0.8)
-                    .foregroundStyle(Color(.label).opacity(0.35))
+                    .foregroundStyle(Color.secondary)
                     .frame(maxWidth: .infinity)
             }
         }
@@ -374,7 +374,7 @@ private struct DayEventsSection: View {
             if occurrences.isEmpty {
                 Text("Nothing marked on this day.")
                     .font(.appSerif(16, italic: true))
-                    .foregroundStyle(Color(.label).opacity(0.4))
+                    .foregroundStyle(Color.secondary)
                     .padding(.top, 14)
             } else {
                 ForEach(Array(occurrences.enumerated()), id: \.element.id) { index, occ in
@@ -438,12 +438,12 @@ private struct EventKindChip: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(isSelected ? color : Color(.label).opacity(0.4))
+                    .font(.label(9, weight: .bold))
+                    .foregroundStyle(isSelected ? color : Color.secondary)
                 Text(label.uppercased())
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(.label(9.5, weight: .semibold))
                     .kerning(1)
-                    .foregroundStyle(isSelected ? color : Color(.label).opacity(0.5))
+                    .foregroundStyle(isSelected ? color : Color.secondary)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -477,7 +477,7 @@ private struct EventRow: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: event.kind.icon)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.label(13, weight: .medium))
                     .foregroundStyle(event.kind.color)
                     .frame(width: 20)
                     .padding(.top, 3)
@@ -493,7 +493,7 @@ private struct EventRow: View {
 
                     Text(event.arabicName)
                         .font(.appArabic(15))
-                        .foregroundStyle(Color(.label).opacity(0.45))
+                        .foregroundStyle(Color.secondary)
                         .environment(\.layoutDirection, .rightToLeft)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 3)
@@ -511,7 +511,7 @@ private struct EventRow: View {
             if expanded {
                 Text(event.description)
                     .font(.appSerif(15))
-                    .foregroundStyle(Color(.label).opacity(0.6))
+                    .foregroundStyle(Color.secondary)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
@@ -545,13 +545,13 @@ private struct EventRow: View {
 
             if isActive {
                 Text("NOW")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.label(9, weight: .bold))
                     .kerning(1)
                     .foregroundStyle(Color(.systemBackground))
                     .padding(.horizontal, 6).padding(.vertical, 3)
                     .background(event.kind.color)
             } else if isPast {
-                MetaText("PASSED", tint: Color(.label).opacity(0.3), size: 9)
+                MetaText("PASSED", tint: Color(.tertiaryLabel), size: 9)
             } else {
                 MetaText(countdown(to: start).uppercased(), tint: event.kind.color, size: 9.5)
             }

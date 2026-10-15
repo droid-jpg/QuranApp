@@ -95,7 +95,7 @@ struct ReviewSessionView: View {
                  ? "Add ayahs from the reader to start memorizing."
                  : "You reviewed \(reviewedCount) ayah\(reviewedCount == 1 ? "" : "s").")
                 .font(.appSerif(16))
-                .foregroundStyle(Color(.label).opacity(0.5))
+                .foregroundStyle(Color.secondary)
                 .multilineTextAlignment(.center)
 
             OutlineButton(label: "Done", on: true) { dismiss() }
@@ -171,7 +171,7 @@ private struct ReviewCardView: View {
         VStack(spacing: 16) {
             HStack(spacing: 7) {
                 Image(systemName: mode.icon)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.label(10, weight: .bold))
                     .foregroundStyle(.brand)
                 Eyebrow(mode.title, tint: .brand)
             }
@@ -182,7 +182,7 @@ private struct ReviewCardView: View {
 
             Text("\(card.surahName) · Ayah \(card.ayah)")
                 .font(.appSerif(15))
-                .foregroundStyle(Color(.label).opacity(0.45))
+                .foregroundStyle(Color.secondary)
 
             ScrollView {
                 VStack(spacing: 18) {
@@ -229,7 +229,7 @@ private struct ReviewCardView: View {
                 // surface it on reveal as a pronunciation aid.
                 if cardScript == .arabic && !card.transliteration.isEmpty {
                     Text(card.transliteration)
-                        .font(.appSerif(cardTransliterationFontSize, italic: true))
+                        .font(.appSerif(cardTransliterationFontSize, italic: true, scales: false))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -248,14 +248,14 @@ private struct ReviewCardView: View {
         VStack(spacing: 10) {
             if showArabic {
                 Text(card.arabic)
-                    .font(.appArabic(cardArabicFontSize))
+                    .font(.appArabic(cardArabicFontSize, scales: false))
                     .environment(\.layoutDirection, .rightToLeft)
                     .multilineTextAlignment(.center)
                     .lineSpacing(10)
             }
             if showTranslit {
                 Text(card.transliteration)
-                    .font(.appSerif(cardTransliterationFontSize, italic: true))
+                    .font(.appSerif(cardTransliterationFontSize, italic: true, scales: false))
                     .foregroundStyle(showArabic ? .secondary : .primary)
                     .multilineTextAlignment(.center)
             }
@@ -268,7 +268,7 @@ private struct ReviewCardView: View {
         Button { isPlaying ? clip.stop() : clip.play(audioURL) } label: {
             Label(isPlaying ? "Stop" : "Play recitation",
                   systemImage: isPlaying ? "stop.circle.fill" : "play.circle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.label(13, weight: .semibold))
                 .foregroundStyle(.brand)
         }
         .buttonStyle(.plain)
@@ -281,11 +281,11 @@ private struct ReviewCardView: View {
                 ForEach(Array(fillBlankWords.enumerated()), id: \.offset) { idx, word in
                     if idx == blankIndex && !revealed {
                         Text("ـــــ")
-                            .font(fillBlankUsesTranslit ? .appSerif(wordFont, italic: true) : .appArabic(wordFont))
+                            .font(fillBlankUsesTranslit ? .appSerif(wordFont, italic: true, scales: false) : .appArabic(wordFont, scales: false))
                             .foregroundStyle(.brand)
                     } else {
                         Text(word)
-                            .font(fillBlankUsesTranslit ? .appSerif(wordFont, italic: true) : .appArabic(wordFont))
+                            .font(fillBlankUsesTranslit ? .appSerif(wordFont, italic: true, scales: false) : .appArabic(wordFont, scales: false))
                             .foregroundStyle(idx == blankIndex ? .brand : .primary)
                     }
                 }
@@ -300,13 +300,13 @@ private struct ReviewCardView: View {
                 // surface the Arabic (or vice-versa) once the answer is shown.
                 if fillBlankUsesTranslit {
                     Text(card.arabic)
-                        .font(.appArabic(cardArabicFontSize))
+                        .font(.appArabic(cardArabicFontSize, scales: false))
                         .environment(\.layoutDirection, .rightToLeft)
                         .multilineTextAlignment(.center)
                         .lineSpacing(10)
                 } else if cardScript == .both && !card.transliteration.isEmpty {
                     Text(card.transliteration)
-                        .font(.appSerif(cardTransliterationFontSize, italic: true))
+                        .font(.appSerif(cardTransliterationFontSize, italic: true, scales: false))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -348,7 +348,7 @@ private struct ReviewCardView: View {
                 Label(gap.isActive ? "Stop"
                         : (revealed ? "Play full ayah" : "Play with gap"),
                       systemImage: gap.isActive ? "stop.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.label(13, weight: .semibold))
                     .foregroundStyle(.brand)
             }
             .buttonStyle(.plain)
@@ -384,7 +384,7 @@ private struct ReviewCardView: View {
     private func hint(_ text: String) -> some View {
         Text(text)
             .font(.appSerif(14, italic: true))
-            .foregroundStyle(Color(.label).opacity(0.38))
+            .foregroundStyle(Color.secondary)
             .multilineTextAlignment(.center)
     }
 
@@ -421,7 +421,7 @@ private struct ReviewCardView: View {
                          ? Translation.simpleMeaningName
                          : "Simple unavailable offline — showing your translation")
                         .font(.appSerif(12, italic: true))
-                        .foregroundStyle(Color(.label).opacity(0.35))
+                        .foregroundStyle(Color.secondary)
                         .multilineTextAlignment(.center)
                 }
             }
@@ -493,7 +493,7 @@ private struct ReviewCardView: View {
                     onGrade(grade)
                 } label: {
                     Text(grade.label.uppercased())
-                        .font(.system(size: 10.5, weight: .semibold))
+                        .font(.label(10.5, weight: .semibold))
                         .kerning(1.1)
                         .foregroundStyle(grade.tint)
                         .frame(maxWidth: .infinity)

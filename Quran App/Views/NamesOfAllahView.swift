@@ -30,7 +30,7 @@ struct NamesOfAllahView: View {
                         .contentTransition(.numericText())
                     Text("of 99 memorized")
                         .font(.appSerif(16, italic: true))
-                        .foregroundStyle(Color(.label).opacity(0.45))
+                        .foregroundStyle(Color.secondary)
                     Spacer(minLength: 0)
                 }
                 .padding(.bottom, 13)
@@ -87,9 +87,9 @@ struct NamesOfAllahView: View {
             action()
         } label: {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .semibold))
+                .font(.label(10, weight: .semibold))
                 .kerning(1.1)
-                .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.5))
+                .foregroundStyle(on ? Color.brand : Color.secondary)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 8)
                 .overlay(
@@ -112,8 +112,8 @@ private struct NameRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(name.id)")
-                .font(.system(size: 11, weight: .bold).monospacedDigit())
-                .foregroundStyle(isMemorized ? Color.brand : Color(.label).opacity(0.3))
+                .font(.label(11, weight: .bold).monospacedDigit())
+                .foregroundStyle(isMemorized ? Color.brand : Color(.tertiaryLabel))
                 .frame(minWidth: 22, alignment: .leading)
                 .padding(.top, 5)
 
@@ -123,7 +123,7 @@ private struct NameRow: View {
                     .foregroundStyle(Color(.label))
                 Text(name.meaning)
                     .font(.appSerif(14, italic: true))
-                    .foregroundStyle(Color(.label).opacity(0.45))
+                    .foregroundStyle(Color.secondary)
             }
 
             Spacer(minLength: 8)
@@ -135,7 +135,7 @@ private struct NameRow: View {
                 HStack(spacing: 10) {
                     AudioSpeakButton(text: name.arabic, size: 13)
                     Image(systemName: isMemorized ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 13))
+                        .font(.label(13))
                         .foregroundStyle(isMemorized ? Color.brand : Color(.label).opacity(0.22))
                 }
             }

@@ -153,7 +153,7 @@ struct MemorizationProgressBar: View {
 
             Text(p.label)
                 .font(.appSerif(14, italic: true))
-                .foregroundStyle(Color(.label).opacity(0.5))
+                .foregroundStyle(Color.secondary)
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)
@@ -220,7 +220,7 @@ struct MemorizationGrid: View {
                     GridLegend(color: .orange,                       label: "In progress")
                     GridLegend(color: Color(.label).opacity(0.12),   label: "Not started")
                     Spacer(minLength: 0)
-                    MetaText("PINCH TO ZOOM", tint: Color(.label).opacity(0.3), size: 8.5)
+                    MetaText("PINCH TO ZOOM", tint: Color(.tertiaryLabel), size: 8.5)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 14)
@@ -267,7 +267,7 @@ struct GridCell: View {
 
     private var textColor: Color {
         switch status {
-        case .notStarted: return Color(.label).opacity(0.4)
+        case .notStarted: return Color.secondary
         // The accent is dark in light mode and luminous in dark, so the page
         // background is the only fill colour that stays legible on top of it.
         case .inProgress, .memorized: return Color(.systemBackground)
@@ -282,9 +282,9 @@ struct GridCell: View {
             if showName, let name {
                 VStack(spacing: 1) {
                     Text("\(number)")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.label(12, weight: .bold))
                     Text(name)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.label(10, weight: .medium))
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
                         .padding(.horizontal, 3)
@@ -293,7 +293,7 @@ struct GridCell: View {
                 .animation(AppAnim.smooth, value: status)
             } else {
                 Text("\(number)")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.label(8, weight: .bold))
                     .foregroundStyle(textColor)
                     .animation(AppAnim.smooth, value: status)
             }
@@ -318,9 +318,9 @@ struct GridLegend: View {
                 )
                 .frame(width: 9, height: 9)
             Text(label.uppercased())
-                .font(.system(size: 8.5, weight: .semibold))
+                .font(.label(8.5, weight: .semibold))
                 .kerning(0.8)
-                .foregroundStyle(Color(.label).opacity(0.45))
+                .foregroundStyle(Color.secondary)
         }
     }
 }

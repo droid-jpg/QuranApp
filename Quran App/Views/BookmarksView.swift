@@ -87,13 +87,13 @@ private struct BookmarkRow: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: "bookmark.fill")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.label(9, weight: .bold))
                     .foregroundStyle(.brand)
                 Eyebrow("\(bm.surahName) \(bm.ayahNumber)", tint: .brand)
                 Spacer(minLength: 8)
                 Text(bm.surahArabicName)
                     .font(.appArabic(15))
-                    .foregroundStyle(Color(.label).opacity(0.4))
+                    .foregroundStyle(Color.secondary)
             }
             .padding(.bottom, 13)
 
@@ -129,7 +129,7 @@ struct EditorialEmptyState: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Image(systemName: icon)
-                .font(.system(size: 26, weight: .light))
+                .font(.label(26, weight: .light))
                 .foregroundStyle(.brand)
                 .padding(.bottom, 18)
 
@@ -139,7 +139,7 @@ struct EditorialEmptyState: View {
 
             Text(message)
                 .font(.appSerif(16))
-                .foregroundStyle(Color(.label).opacity(0.5))
+                .foregroundStyle(Color.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let action {

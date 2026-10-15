@@ -172,12 +172,12 @@ struct WordChip: View {
     var body: some View {
         VStack(spacing: 2) {
             Text(timing.arabicText.isEmpty ? "—" : timing.arabicText)
-                .font(.system(size: 19))
+                .font(.label(19))
                 .environment(\.layoutDirection, .rightToLeft)
 
             if !timing.transliteration.isEmpty {
                 Text(timing.transliteration)
-                    .font(.system(size: 10))
+                    .font(.label(10))
                     .foregroundStyle(state == .start || state == .end || state == .single
                                      ? .white.opacity(0.85) : .secondary)
             }

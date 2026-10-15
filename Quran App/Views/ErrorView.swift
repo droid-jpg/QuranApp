@@ -7,14 +7,16 @@ struct ErrorView: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 44))
+                .font(.largeTitle)
+                .accessibilityHidden(true)
                 .foregroundStyle(.orange)
             Text("Something went wrong")
                 .font(.appSerif(17, weight: .semibold))
             Text(message)
-                .font(.caption)
+                .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .textSelection(.enabled)
             Button("Try Again", action: retry)
                 .buttonStyle(.bordered)
                 .tint(.brand)

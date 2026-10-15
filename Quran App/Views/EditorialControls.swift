@@ -52,11 +52,11 @@ struct EditorialMenuRow<Value: Hashable>: View {
                 Spacer(minLength: 8)
                 Text(currentLabel)
                     .font(.appSerif(16))
-                    .foregroundStyle(Color(.label).opacity(0.5))
+                    .foregroundStyle(Color.secondary)
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Color(.label).opacity(0.3))
+                    .font(.label(9, weight: .bold))
+                    .foregroundStyle(Color(.tertiaryLabel))
             }
             .contentShape(Rectangle())
         }
@@ -79,7 +79,7 @@ struct EditorialToggle: View {
             if let caption {
                 Text("— \(caption)")
                     .font(.appSerif(14, italic: true))
-                    .foregroundStyle(Color(.label).opacity(0.45))
+                    .foregroundStyle(Color.secondary)
             }
             Spacer(minLength: 8)
             Toggle("", isOn: $isOn)
@@ -105,7 +105,7 @@ struct EditorialNavRow: View {
             HStack(spacing: 13) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.label(14, weight: .medium))
                         .foregroundStyle(iconTint ?? Color.brand)
                         .frame(width: 22)
                 }
@@ -116,7 +116,7 @@ struct EditorialNavRow: View {
                     if let caption {
                         Text(caption)
                             .font(.appSerif(13.5, italic: true))
-                            .foregroundStyle(Color(.label).opacity(0.45))
+                            .foregroundStyle(Color.secondary)
                             .multilineTextAlignment(.leading)
                     }
                 }
@@ -124,12 +124,12 @@ struct EditorialNavRow: View {
                 if let value {
                     Text(value)
                         .font(.appSerif(16))
-                        .foregroundStyle(Color(.label).opacity(0.5))
+                        .foregroundStyle(Color.secondary)
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color(.label).opacity(0.3))
+                    .font(.label(10, weight: .bold))
+                    .foregroundStyle(Color(.tertiaryLabel))
             }
             .contentShape(Rectangle())
         }
@@ -150,7 +150,7 @@ struct EditorialValueRow: View {
             Spacer(minLength: 8)
             Text(value)
                 .font(.appSerif(16))
-                .foregroundStyle(Color(.label).opacity(0.5))
+                .foregroundStyle(Color.secondary)
         }
     }
 }
@@ -172,9 +172,9 @@ struct EditorialSegmented<Value: Hashable>: View {
                     selection = option.value
                 } label: {
                     Text(option.label.uppercased())
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.label(11, weight: .semibold))
                         .kerning(1.1)
-                        .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.55))
+                        .foregroundStyle(on ? Color.brand : Color.secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .frame(maxWidth: .infinity)
@@ -187,8 +187,13 @@ struct EditorialSegmented<Value: Hashable>: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+                .accessibilityShowsLargeContentViewer { Text(option.label) }
             }
         }
+        // Four segments across leave no room to grow past this; the system's segmented control
+        // stops at the same point and shows larger labels in the Large Content Viewer.
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .animation(AppAnim.smooth, value: selection)
     }
 }
@@ -206,7 +211,7 @@ struct EditorialSlider: View {
         HStack(spacing: 14) {
             Text(label)
                 .font(.appSerif(15))
-                .foregroundStyle(Color(.label).opacity(0.6))
+                .foregroundStyle(Color.secondary)
                 .frame(width: labelWidth, alignment: .leading)
             Slider(value: $value, in: range, step: 1)
                 .tint(.brand)
@@ -235,8 +240,8 @@ struct EditorialSpecimenSlider: View {
             EditorialSlider(label: label, value: $value, range: range)
 
             Text(sample)
-                .font(rightToLeft ? .appArabic(value) : .appSerif(value, italic: italic))
-                .foregroundStyle(Color(.label).opacity(0.55))
+                .font(rightToLeft ? .appArabic(value, scales: false) : .appSerif(value, italic: italic, scales: false))
+                .foregroundStyle(Color.secondary)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: rightToLeft ? .trailing : .leading)
                 .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight)

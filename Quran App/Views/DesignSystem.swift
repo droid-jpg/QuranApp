@@ -36,12 +36,16 @@ extension ShapeStyle where Self == Color {
 
 /// The small-caps label that titles every section now that cards are gone.
 /// Always SF (never the reading serif) so it reads as furniture, not prose.
+///
+/// Set as a text style so it follows Dynamic Type, and never below the HIG's 11 pt minimum:
+/// asking for 9.5 or 10 gets Caption 2. The default tint is the secondary label colour rather
+/// than ink at 45%, so it darkens when Increase Contrast is on.
 struct Eyebrow: View {
     let text: String
-    var tint: Color = Color(.label).opacity(0.45)
-    var size: CGFloat = 9.5
+    var tint: Color = .secondary
+    var size: CGFloat = 11
 
-    init(_ text: String, tint: Color = Color(.label).opacity(0.45), size: CGFloat = 9.5) {
+    init(_ text: String, tint: Color = .secondary, size: CGFloat = 11) {
         self.text = text
         self.tint = tint
         self.size = size
@@ -49,7 +53,7 @@ struct Eyebrow: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: size, weight: .bold))
+            .font(.label(size, weight: .bold))
             .kerning(1.5)
             .foregroundStyle(tint)
             .lineLimit(1)
@@ -58,12 +62,13 @@ struct Eyebrow: View {
 
 /// Tabular metadata — times, counts, percentages. Letterspaced SF so numbers
 /// don't jitter as they tick.
+/// Same type rules as `Eyebrow`.
 struct MetaText: View {
     let text: String
-    var tint: Color = Color(.label).opacity(0.45)
-    var size: CGFloat = 10
+    var tint: Color = .secondary
+    var size: CGFloat = 11
 
-    init(_ text: String, tint: Color = Color(.label).opacity(0.45), size: CGFloat = 10) {
+    init(_ text: String, tint: Color = .secondary, size: CGFloat = 11) {
         self.text = text
         self.tint = tint
         self.size = size
@@ -71,9 +76,20 @@ struct MetaText: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: size, weight: .semibold).monospacedDigit())
+            .font(.label(size, weight: .semibold).monospacedDigit())
             .kerning(0.8)
             .foregroundStyle(tint)
+    }
+}
+
+extension Font {
+    /// SF for the app's furniture (eyebrows, metadata, glyphs) at a size set by eye, scaled with
+    /// Dynamic Type as the nearest text style and never below the HIG's 11 pt minimum.
+    static func label(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        guard let style = Font.TextStyle.nearest(to: max(size, 11)) else {
+            return .system(size: size, weight: weight)
+        }
+        return .system(style, weight: weight)
     }
 }
 
@@ -142,17 +158,19 @@ struct EditorialSection<Content: View>: View {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 10.5, weight: .semibold))
+                        .font(.label(10.5, weight: .semibold))
                         .foregroundStyle(iconTint ?? Color.brand)
                         // Symbols sit on their own baseline; pin them to the
                         // eyebrow's so the row doesn't wobble per icon.
                         .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 0.5 }
-                        .frame(width: 14, alignment: .leading)
+                        .frame(minWidth: 14, alignment: .leading)
+                        .accessibilityHidden(true)
                 }
                 Eyebrow(title)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 8)
                 if let trailing {
-                    MetaText(trailing, tint: trailingTint ?? Color(.label).opacity(0.5))
+                    MetaText(trailing, tint: trailingTint ?? .secondary)
                 }
             }
             .padding(.bottom, 7)
@@ -177,15 +195,19 @@ struct OutlineButton: View {
             HStack(spacing: 6) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.label(10, weight: .bold))
                 }
                 Text(label.uppercased())
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(.label(10.5, weight: .semibold))
                     .kerning(1.2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.72))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .padding(.vertical, 6)
+            // The HIG's minimum hit target.
+            .frame(minHeight: 44)
             .overlay(
                 Rectangle()
                     .strokeBorder(on ? Color.brand : Color(.label).opacity(0.18), lineWidth: 1)
@@ -193,6 +215,7 @@ struct OutlineButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
         .animation(AppAnim.smooth, value: on)
     }
 }
@@ -210,18 +233,21 @@ struct OutlineChip: View {
             HStack(spacing: 6) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.label(10, weight: .bold))
                         .foregroundStyle(tint ?? Color.brand)
                 }
                 Text(label.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.label(10, weight: .semibold))
                     .kerning(1.1)
                     .foregroundStyle(Color(.label).opacity(0.72))
                     .lineLimit(1)
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
+            .frame(minHeight: 36)
             .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.18), lineWidth: 1))
+            // Drawn at 36 pt, but the tappable area reaches the HIG's 44.
+            .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(CardButtonStyle(scale: 0.95))
@@ -269,6 +295,9 @@ struct PlayCircle: View {
                 .contentTransition(.symbolEffect(.replace))
         }
         .frame(width: size, height: size)
+        // Smaller circles still get the HIG's 44 pt hit target.
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
     }
 }
 
@@ -278,6 +307,9 @@ struct PlayCircle: View {
 /// thing behind it is on — the same vocabulary as the ayah control strip. Shared
 /// by the reader's bar and the surah list's, so the two can't drift apart.
 struct BarButton: View {
+    /// The HIG's minimum hit target.
+    static let side: CGFloat = 44
+
     let icon: String
     let label: String
     var on: Bool = false
@@ -286,13 +318,14 @@ struct BarButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
+                .font(.label(15, weight: .medium))
                 .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.72))
-                .frame(width: 38, height: 38)
+                .frame(width: Self.side, height: Self.side)
                 .contentShape(Rectangle())
         }
         .buttonStyle(CardButtonStyle(scale: 0.88))
         .accessibilityLabel(label)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
@@ -312,7 +345,7 @@ struct SectionHeader: View {
     var body: some View {
         HStack(spacing: 7) {
             Image(systemName: systemImage)
-                .font(.system(size: 10.5, weight: .semibold))
+                .font(.label(10.5, weight: .semibold))
                 .foregroundStyle(tint)
             Eyebrow(title)
         }
@@ -347,9 +380,9 @@ struct JuzChip: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.label(11, weight: .semibold))
                 .kerning(0.6)
-                .foregroundStyle(isSelected ? Color.brand : Color(.label).opacity(0.5))
+                .foregroundStyle(isSelected ? Color.brand : .secondary)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 7)
                 .overlay(
@@ -358,6 +391,7 @@ struct JuzChip: View {
                 )
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .animation(.easeInOut(duration: 0.15), value: isSelected)
     }
 }
@@ -379,6 +413,7 @@ struct StatDot: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -394,17 +429,17 @@ struct MemorizationStatusCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Image(systemName: icon)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.label(10, weight: .bold))
                     .foregroundStyle(accent)
                 Spacer()
-                MetaText("\(surah.number)", tint: accent, size: 10)
+                MetaText("\(surah.number)", tint: accent)
             }
             .padding(.bottom, 12)
 
             Spacer()
 
             Text(surah.name)
-                .font(.system(size: 24, weight: .regular))
+                .font(.appArabic(24))
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .environment(\.layoutDirection, .rightToLeft)
                 .padding(.bottom, 8)
@@ -413,12 +448,14 @@ struct MemorizationStatusCard: View {
                 .font(.appSerif(17, weight: .medium))
                 .foregroundStyle(.primary)
             Text(subtitle)
-                .font(.system(size: 10.5))
+                .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
         .padding(14)
-        .frame(width: 176, height: 132)
+        // Grows with Dynamic Type rather than clipping the names.
+        .frame(width: 176)
+        .frame(minHeight: 132)
         .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.16), lineWidth: 1))
     }
 }

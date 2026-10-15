@@ -232,7 +232,7 @@ private struct FeatureLine: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 16))
+                .font(.label(16))
                 .foregroundStyle(.brand)
                 .frame(width: 26)
             Text(text)

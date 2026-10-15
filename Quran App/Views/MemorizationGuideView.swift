@@ -222,7 +222,7 @@ private struct GuideStep: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(number)")
-                .font(.system(size: 15, weight: .bold))
+                .font(.label(15, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 28, height: 28)
                 .background(Color.brand, in: Circle())
@@ -248,7 +248,7 @@ private struct GuideRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 18))
+                .font(.label(18))
                 .foregroundStyle(tint)
                 .frame(width: 40, height: 40)
                 .background(tint.opacity(0.12), in: Circle())
@@ -295,7 +295,7 @@ private struct ConceptCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 17))
+                .font(.label(17))
                 .foregroundStyle(tint)
                 .frame(width: 38, height: 38)
                 .background(tint.opacity(0.14), in: Rectangle())

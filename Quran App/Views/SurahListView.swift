@@ -152,7 +152,8 @@ private struct SurahListTopBar: View {
                     .font(type.serif(32, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+                    .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
                     .accessibilityAddTraits(.isHeader)
 
                 Rectangle()
@@ -161,15 +162,16 @@ private struct SurahListTopBar: View {
                     .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 5 }
 
                 if !count.isEmpty {
-                    MetaText(count, size: 10)
+                    MetaText(count)
+                        .fixedSize()
                         .contentTransition(.numericText())
                         .animation(AppAnim.smooth, value: count)
                 }
 
                 BarButton(icon: "list.number", label: "Browse by juz", action: onJuz)
-                    // The glyph's own 38pt box would otherwise push the bar's
+                    // The glyph's own 44pt box would otherwise push the bar's
                     // baseline around; pin it to the wordmark's instead.
-                    .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 9 }
+                    .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 12 }
             }
             .padding(.leading, 24)
             .padding(.trailing, 12)
@@ -198,16 +200,18 @@ private struct SurahSearchField: View {
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.label(12, weight: .semibold))
                 .foregroundStyle(focused || !text.isEmpty
                                  ? Color.brand
-                                 : Color(.label).opacity(0.35))
+                                 : Color(.placeholderText))
 
             ZStack(alignment: .leading) {
                 if text.isEmpty {
-                    Text("Search surah…")
+                    // Says what the search matches, as the HIG asks of a placeholder.
+                    Text("Name, meaning or number")
                         .font(.appSerif(15.5, italic: true))
-                        .foregroundStyle(Color(.label).opacity(0.35))
+                        .foregroundStyle(Color(.placeholderText))
+                        .lineLimit(1)
                         .allowsHitTesting(false)
                 }
                 TextField("", text: $text)
@@ -218,7 +222,7 @@ private struct SurahSearchField: View {
                     .submitLabel(.search)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.words)
-                    .accessibilityLabel("Search surah")
+                    .accessibilityLabel("Search surahs by name, meaning or number")
             }
 
             if !text.isEmpty {
@@ -227,10 +231,12 @@ private struct SurahSearchField: View {
                     text = ""
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color(.label).opacity(0.4))
-                        .frame(width: 24, height: 24)
+                        .font(.label(10, weight: .bold))
+                        .foregroundStyle(Color.secondary)
+                        // A 44 pt target that doesn't make the field any taller.
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
+                        .padding(.vertical, -10)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
@@ -269,7 +275,7 @@ struct SurahRowView: View {
             // The numeral carries the index — a seal badge was a lot of
             // furniture for a number the eye only scans.
             Text("\(surah.number)")
-                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                .font(.label(11, weight: .bold).monospacedDigit())
                 .kerning(0.6)
                 .foregroundStyle(.brand)
                 .frame(width: 22, alignment: .leading)
@@ -280,7 +286,7 @@ struct SurahRowView: View {
                     .font(.appSerif(19, weight: .medium))
                 Text(surah.englishNameTranslation)
                     .font(.appSerif(14, italic: true))
-                    .foregroundStyle(Color(.label).opacity(0.5))
+                    .foregroundStyle(Color.secondary)
             }
 
             Spacer(minLength: 8)
@@ -288,20 +294,26 @@ struct SurahRowView: View {
             VStack(alignment: .trailing, spacing: 5) {
                 Text(surah.name)
                     .font(.appArabic(19))
+                    // Shrinks a little at large text sizes rather than breaking the name in two.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                     .environment(\.layoutDirection, .rightToLeft)
 
                 HStack(spacing: 6) {
                     if downloadManager.isDownloaded(surah.number) {
                         Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 10))
+                            .font(.label(10))
                             .foregroundStyle(.brand)
+                            .accessibilityLabel("Downloaded")
                     }
                     if status != .notStarted {
                         Image(systemName: status.icon)
-                            .font(.system(size: 11))
+                            .font(.label(11))
                             .foregroundStyle(status.color)
+                            .accessibilityLabel(status.label)
                     } else {
-                        MetaText("\(surah.numberOfAyahs) AYAHS", size: 9)
+                        MetaText("\(surah.numberOfAyahs) AYAHS")
+                            .accessibilityLabel("\(surah.numberOfAyahs) ayahs")
                     }
                 }
             }
@@ -331,7 +343,8 @@ enum SurahFilter: String, CaseIterable, Identifiable {
     var shortLabel: String {
         switch self {
         case .all:        "All"
-        case .downloaded: "Saved"
+        // "Saved" read as bookmarks, which live in More.
+        case .downloaded: "Offline"
         case .memorized:  "Memorized"
         case .inProgress: "Learning"
         }
@@ -362,7 +375,7 @@ struct FilterEmptyState: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: filter.icon)
-                .font(.system(size: 34))
+                .font(.label(34))
                 .foregroundStyle(.secondary)
             Text(message)
                 .font(.subheadline)
@@ -441,7 +454,7 @@ private struct NumberBadge: View {
 
     var body: some View {
         Text("\(number)")
-            .font(.system(size: 11, weight: .bold).monospacedDigit())
+            .font(.label(11, weight: .bold).monospacedDigit())
             .foregroundStyle(.brand)
             .frame(minWidth: 22, alignment: .leading)
     }
