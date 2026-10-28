@@ -234,6 +234,8 @@ struct SettingsView: View {
 
                 // ── About ─────────────────────────────────────────────────
                 EditorialSection(title: "About", icon: "info.circle.fill") {
+                    EditorialValueRow(title: "Arabic text", value: "Tanzil Project · tanzil.net")
+                    Hairline().padding(.vertical, 13)
                     EditorialValueRow(title: "Data source", value: "alquran.cloud")
                     Hairline().padding(.vertical, 13)
                     EditorialValueRow(title: "Audio source", value: "everyayah.com")
