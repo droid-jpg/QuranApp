@@ -37,13 +37,22 @@ The **QuranTour** scheme is a UI test that walks through every screen and saves 
 runner's Documents folder. The screenshots above came from it.
 
 ## Data sources
-- Qur'an text, translations, word-by-word data and tafsir: [quran.com](https://quran.com) (`api.quran.com`,
-  `api.qurancdn.com`) and [alquran.cloud](https://alquran.cloud). A bundled `quran_offline.json` covers reading offline.
+- Qur'an text: the [Tanzil Project](https://tanzil.net) (CC BY 3.0), via [alquran.cloud](https://alquran.cloud).
+  A bundled `quran_offline.json` covers reading offline.
+- Translations and transliteration: [alquran.cloud](https://alquran.cloud). Each translation remains the copyright of
+  its translator or publisher.
+- Word-by-word data, word timings and tafsir: [quran.com](https://quran.com) (`api.quran.com`, `api.qurancdn.com`).
 - Recitation audio: [everyayah.com](https://everyayah.com) and `audio.qurancdn.com`.
 - Prayer times: [aladhan.com](https://aladhan.com).
+
+Full credits and license notices are in [CREDITS.md](CREDITS.md).
 
 ## Layout
 - `Quran App/Models`, `ViewModels`, `Views`, `Services`: the app. `Services` holds the API clients, audio, downloads,
   memorization and review stores, prayer times, Qibla, CarPlay and Siri intents.
 - `QuranWidget/`: the widgets, the Control Center control and the prayer Live Activity.
 - `QuranTourUITests/`: the screenshot tour.
+
+## License
+The code is released under the [MIT License](LICENSE). The Qur'an text, translations, tafsir and audio are not covered
+by it. They keep their own terms, listed in [CREDITS.md](CREDITS.md).
