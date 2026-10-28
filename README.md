@@ -38,7 +38,7 @@ runner's Documents folder. The screenshots above came from it.
 
 ## Data sources
 - Qur'an text: the [Tanzil Project](https://tanzil.net) (CC BY 3.0), via [alquran.cloud](https://alquran.cloud).
-  A bundled `quran_offline.json` covers reading offline.
+  A bundled `quran_offline.json` covers reading offline, with Pickthall's public-domain English translation.
 - Translations and transliteration: [alquran.cloud](https://alquran.cloud). Each translation remains the copyright of
   its translator or publisher.
 - Word-by-word data, word timings and tafsir: [quran.com](https://quran.com) (`api.quran.com`, `api.qurancdn.com`).
