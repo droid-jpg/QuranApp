@@ -1,10 +1,11 @@
 import Foundation
 
 /// Reads the bundled Quran text (`quran_offline.json`) so the surah list and the
-/// core reading text (Arabic + transliteration + the default English translation)
-/// are always available with no network — the app opens and reads instantly, and
-/// survives a dead API or airplane mode. Network is then only needed for audio and
-/// optional extras (word timings, tafsir, and non-default translations, the latter
+/// core reading text (Arabic + transliteration + Pickthall's English translation,
+/// which is public domain and so safe to bundle) are always available with no
+/// network — the app opens and reads instantly, and survives a dead API or airplane
+/// mode. Network is then only needed for audio and optional extras (word timings,
+/// tafsir, and every other translation, including the default Asad, the latter
 /// backed by an on-disk cache in `QuranAPIService`).
 ///
 /// The bundle stores raw Arabic; the leading Basmala is stripped on load via the
@@ -16,7 +17,7 @@ final class QuranOfflineStore {
     /// The translation edition the bundled `translation` column was built from.
     /// Bundled translation text is only surfaced when the user reads with this
     /// edition; other editions come from the network / disk cache.
-    private(set) var bundledTranslationId = "en.asad"
+    private(set) var bundledTranslationId = "en.pickthall"
 
     private struct Payload: Decodable {
         let translationId: String

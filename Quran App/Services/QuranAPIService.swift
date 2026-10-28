@@ -27,7 +27,8 @@ class QuranAPIService {
     /// The reading text for a surah, resilient to a missing network. Tries the live
     /// API first (and caches the result to disk), then a previously-cached copy for
     /// this translation, then the bundled text (Arabic + transliteration, plus the
-    /// default translation) so the reader is never blank offline.
+    /// translation when the reader uses the bundled Pickthall) so the reader is
+    /// never blank offline.
     func fetchAyahs(surahNumber: Int) async throws -> [Ayah] {
         let translationId = Translation.selected.id
         do {
@@ -53,7 +54,7 @@ class QuranAPIService {
     // Any surah viewed online is written to the caches directory keyed by
     // surah + translation, so re-opening it (or opening it offline) is instant and
     // network-free — including the translation, which the bundle only carries for
-    // the default edition.
+    // Pickthall.
 
     private static func cacheURL(surah: Int, translationId: String) -> URL {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]

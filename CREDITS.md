@@ -23,10 +23,10 @@ Copyright in each translation stays with its translator or publisher.
 
 | Edition | Translator / publisher | Notes |
 |---|---|---|
-| `en.asad` | Muhammad Asad, *The Message of the Qur'an* | Also bundled in `quran_offline.json` |
+| `en.asad` | Muhammad Asad, *The Message of the Qur'an* | |
 | `en.sahih` | Saheeh International | |
 | `en.itani` | Talal Itani, *The Clear Quran* | |
-| `en.pickthall` | Mohammed Marmaduke Pickthall | |
+| `en.pickthall` | Mohammed Marmaduke Pickthall, *The Meaning of the Glorious Koran* (1930) | Public domain in the US; bundled in `quran_offline.json` |
 | `en.yusufali` | Abdullah Yusuf Ali | |
 | `ur.jalandhry` | Fateh Muhammad Jalandhry | |
 | `ur.maududi` | Abul A'la Maududi | |
