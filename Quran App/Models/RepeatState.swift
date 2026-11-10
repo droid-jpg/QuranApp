@@ -219,6 +219,13 @@ extension RepeatState {
         let count = times.count.map { "\($0) times" } ?? "∞"
         return "\(range), \(count)" + (pause == .none ? "" : ", pausing after each")
     }
+
+    /// The player's Repeat button value, e.g. "Ayahs 3–4 · 5 times", "Ayah 3 · ∞" or "Off".
+    var shortSummary: String {
+        guard isOn else { return "Off" }
+        let range = isSingleAyah ? "Ayah \(from)" : "Ayahs \(from)–\(to)"
+        return "\(range) · " + (times.count.map { "\($0) times" } ?? "∞")
+    }
 }
 
 // MARK: - Persistence and migration

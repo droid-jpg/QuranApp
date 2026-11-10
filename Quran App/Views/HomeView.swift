@@ -1,6 +1,9 @@
 import SwiftUI
 import Combine
 
+/// The three acquisition drills on Today (they move into Memorization later).
+enum PlayerDrill { case listen, repeatAfter, chain }
+
 /// The dashboard, rebuilt as a quiet editorial list. Everything that used to be
 /// a tinted card is now a ruled block: a hairline, a small-caps eyebrow, and the
 /// content set in the reading serif. The accent survives as a mark — the scrub

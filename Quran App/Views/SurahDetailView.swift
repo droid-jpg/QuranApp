@@ -59,7 +59,8 @@ struct SurahPageView: View {
     @State private var playerExpanded = false
     @State private var showReadingType = false
     @State private var showMushaf = false
-    @State private var showLoopSheet = false
+    /// The surah the Repeat sheet is open for, or nil.
+    @State private var repeatSheetSurah: Surah?
     @State private var showMemorizeSheet = false
     @State private var reviewAfterEnroll = false
     @State private var reviewSession: ReviewSessionConfig?
@@ -87,7 +88,7 @@ struct SurahPageView: View {
                 model: model,
                 showsTitle: headerPassed,
                 onBack: { Haptics.tap(); dismiss() },
-                onLoop: { Haptics.tap(); showLoopSheet = true },
+                onLoop: { Haptics.tap(); repeatSheetSurah = surah },
                 onType: { Haptics.tap(); showReadingType = true },
                 onMore: { presentReaderMenu() }
             )
@@ -111,10 +112,13 @@ struct SurahPageView: View {
             // and no magic number goes stale when the bar changes.
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if playerActive {
-                    QuranPlayerBar(surah: surah, viewModel: model) {
-                        Haptics.tap()
-                        withAnimation(AppAnim.spring) { playerExpanded = true }
-                    }
+                    QuranPlayerBar(
+                        onExpand: {
+                            Haptics.tap()
+                            withAnimation(AppAnim.spring) { playerExpanded = true }
+                        },
+                        onRepeat: { repeatSheetSurah = playingSurah ?? surah }
+                    )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -124,9 +128,10 @@ struct SurahPageView: View {
         .toolbar(.hidden, for: .navigationBar)
         .overlay {
             if playerExpanded && playerActive {
-                QuranExpandedPlayer(surah: surah, viewModel: model) {
-                    withAnimation(AppAnim.spring) { playerExpanded = false }
-                }
+                QuranExpandedPlayer(
+                    onCollapse: { withAnimation(AppAnim.spring) { playerExpanded = false } },
+                    onRepeat: { repeatSheetSurah = playingSurah ?? surah }
+                )
                 .zIndex(10)
             }
         }
@@ -147,29 +152,9 @@ struct SurahPageView: View {
         .sheet(isPresented: $showMushaf) {
             MushafView(surah: surah, ayahs: model.ayahs)
         }
-        .sheet(isPresented: $showLoopSheet) {
-            LoopSettingsSheet(
-                settings: sheetRepeatState,
-                surah: surah.number,
-                totalAyahs: surah.numberOfAyahs,
-                ayahs: model.ayahs,
-                focusAyah: loopFocusAyah,
-                onApply: { newState in
-                    // With this surah not loaded, Apply starts the repeat (like the
-                    // sheet's "Play ayahs" button); otherwise it changes it in place.
-                    if newState.isOn && (audioService.currentSurah != surah.number
-                                         || audioService.currentAyah == nil) {
-                        audioService.startRepeat(newState, totalAyahs: surah.numberOfAyahs,
-                                                 surahName: surah.englishName)
-                    } else {
-                        audioService.setRepeat(newState)
-                    }
-                },
-                onStartPreset: { preset in
-                    audioService.startRepeat(preset, totalAyahs: surah.numberOfAyahs,
-                                             surahName: surah.englishName)
-                }
-            )
+        .sheet(item: $repeatSheetSurah) { target in
+            RepeatSheet(surah: target, ayahs: models.model(for: target).ayahs,
+                        focusAyah: repeatFocusAyah(in: target))
         }
         .sheet(isPresented: $showMemorizeSheet, onDismiss: { reviewAfterEnroll = false }) {
             MemorizeSurahSheet(surah: surah, ayahs: model.ayahs) {
@@ -187,20 +172,16 @@ struct SurahPageView: View {
 
     // MARK: Bar actions
 
-    /// The ayah the Repeat sheet centers its presets on: the ayah currently playing
-    /// in this surah, else the memorization working ayah when this is the target
-    /// surah, else the first ayah.
-    /// The service's repeat when it is for this surah; otherwise an off state
-    /// centred on the focus ayah.
-    private var sheetRepeatState: RepeatState {
-        let s = audioService.repeatState
-        if s.surah == surah.number { return s }
-        return RepeatState(surah: surah.number, from: loopFocusAyah, to: loopFocusAyah)
+    /// The surah that is loaded in the player, when it is one of this pager's.
+    private var playingSurah: Surah? {
+        surahs.first { $0.number == audioService.currentSurah }
     }
 
-    private var loopFocusAyah: Int {
-        if playerActive, let a = audioService.currentAyah { return a }
-        if let t = targetStore.target, t.surah == surah.number { return t.workingAyah }
+    /// Where a fresh repeat starts: the ayah playing in that surah, else the
+    /// memorization working ayah when it is the target surah, else ayah 1.
+    private func repeatFocusAyah(in target: Surah) -> Int {
+        if audioService.currentSurah == target.number, let a = audioService.currentAyah { return a }
+        if let t = targetStore.target, t.surah == target.number { return t.workingAyah }
         return 1
     }
 

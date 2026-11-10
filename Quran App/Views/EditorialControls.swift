@@ -162,6 +162,10 @@ struct EditorialValueRow: View {
 struct EditorialSegmented<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [EditorialOption<Value>]
+    /// The tracked small-caps look. Off gives sentence-case 13 pt labels that never
+    /// shrink, at least 36 pt tall (the redesign's segmented rule); the caller then
+    /// owns the fallback when they don't fit (see `RepeatSheet`).
+    var capitals: Bool = true
 
     var body: some View {
         HStack(spacing: -1) {
@@ -171,14 +175,15 @@ struct EditorialSegmented<Value: Hashable>: View {
                     Haptics.selection()
                     selection = option.value
                 } label: {
-                    Text(option.label.uppercased())
-                        .font(.label(11, weight: .semibold))
-                        .kerning(1.1)
+                    Text(capitals ? option.label.uppercased() : option.label)
+                        .font(.label(capitals ? 11 : 13, weight: .semibold))
+                        .kerning(capitals ? 1.1 : 0)
                         .foregroundStyle(on ? Color.brand : Color.secondary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .minimumScaleFactor(capitals ? 0.8 : 1)
+                        .padding(.horizontal, capitals ? 0 : 8)
+                        .frame(maxWidth: .infinity, minHeight: capitals ? nil : 36)
+                        .padding(.vertical, capitals ? 10 : 4)
                         .overlay(
                             Rectangle().strokeBorder(on ? Color.brand : Color(.label).opacity(0.18),
                                                      lineWidth: 1)
@@ -193,7 +198,7 @@ struct EditorialSegmented<Value: Hashable>: View {
         }
         // Four segments across leave no room to grow past this; the system's segmented control
         // stops at the same point and shows larger labels in the Large Content Viewer.
-        .dynamicTypeSize(...DynamicTypeSize.xLarge)
+        .dynamicTypeSize(...(capitals ? DynamicTypeSize.xLarge : DynamicTypeSize.accessibility5))
         .animation(AppAnim.smooth, value: selection)
     }
 }

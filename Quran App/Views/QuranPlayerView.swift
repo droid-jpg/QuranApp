@@ -1,60 +1,13 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Shared vocabulary
+// MARK: - Shared wiring
 
-/// View-side shape of the repeat for the old player controls: off, one ayah, or
-/// a range. Derived from `RepeatState`; it holds no state of its own.
-enum PlayerScope { case off, ayah, range }
-enum PlayerDrill { case listen, repeatAfter, chain }
-
-/// Pure logic that maps the player's controls onto the shared `AudioService` +
-/// `RepeatState`. A cheap value type the mini bar and expanded sheet build on
-/// demand, so both surfaces stay in lock-step without duplicating the audio wiring.
+/// The transport actions the mini bar and expanded player share, so both surfaces
+/// stay in lock-step without duplicating the audio wiring. Repeat is not here: both
+/// open the one `RepeatSheet`.
 struct PlayerEngine {
-    let surah: Surah
     let audioService: AudioService
-
-    var total: Int { surah.numberOfAyahs }
-    var currentAyah: Int { audioService.currentAyah ?? 1 }
-    var repeatState: RepeatState { audioService.repeatState }
-    var reps: RepeatState.Times { repeatState.times }
-    var scope: PlayerScope {
-        guard audioService.isRepeating else { return .off }
-        return repeatState.isSingleAyah ? .ayah : .range
-    }
-
-    /// The service's state when it is for this surah, so a change keeps its
-    /// times and pause.
-    private var base: RepeatState {
-        repeatState.surah == surah.number ? repeatState : RepeatState(surah: surah.number)
-    }
-
-    func setScope(_ sc: PlayerScope, a: Int, b: Int) {
-        var s = base
-        switch sc {
-        case .off:
-            s.isOn = false
-        case .ayah:
-            s.isOn = true; s.from = currentAyah; s.to = currentAyah
-        case .range:
-            s.isOn = true; s.from = min(a, b); s.to = max(a, b)
-        }
-        audioService.setRepeat(s)
-    }
-
-    func setReps(_ t: RepeatState.Times) { var s = base; s.times = t; audioService.setRepeat(s) }
-
-    func runDrill(_ d: PlayerDrill) {
-        let ayah = currentAyah
-        let s: RepeatState
-        switch d {
-        case .listen:      s = .repeatThisAyah(surah: surah.number, ayah: ayah)
-        case .repeatAfter: s = .listenThenRecite(surah: surah.number, ayah: ayah)
-        case .chain:       s = .joinWithPrevious2(surah: surah.number, ayah: ayah)
-        }
-        audioService.startRepeat(s, totalAyahs: total, surahName: surah.englishName)
-    }
 
     func cycleSpeed(_ speeds: [Float]) {
         let idx = speeds.firstIndex(of: audioService.playbackRate) ?? 0
@@ -78,25 +31,21 @@ let playerSpeeds: [Float] = [1.0, 1.5, 2.0, 0.75]
 /// The docked bar. The reader hands it to its pager as a bottom safe-area inset,
 /// so every page reserves exactly its height and no ayah is ever drawn under it.
 struct QuranPlayerBar: View {
-    let surah: Surah
-    @ObservedObject var viewModel: SurahDetailViewModel
     let onExpand: () -> Void
+    let onRepeat: () -> Void
 
     @EnvironmentObject private var audioService: AudioService
 
     private var type = ReadingType()
 
-    init(surah: Surah, viewModel: SurahDetailViewModel, onExpand: @escaping () -> Void) {
-        self.surah = surah
-        _viewModel = ObservedObject(wrappedValue: viewModel)
+    init(onExpand: @escaping () -> Void, onRepeat: @escaping () -> Void) {
         self.onExpand = onExpand
+        self.onRepeat = onRepeat
     }
 
-    private var engine: PlayerEngine {
-        PlayerEngine(surah: surah, audioService: audioService)
-    }
+    private var engine: PlayerEngine { PlayerEngine(audioService: audioService) }
     private var playing: Bool { audioService.isPlaying }
-    private var scope: PlayerScope { engine.scope }
+    private var repeating: Bool { audioService.isRepeating }
 
     var body: some View {
         HStack(spacing: 2) {
@@ -122,25 +71,20 @@ struct QuranPlayerBar: View {
             .buttonStyle(.plain)
 
             Button {
-                Haptics.selection()
-                // Off → this ayah → (with more than one ayah) a two-ayah range → off.
-                let a = engine.currentAyah
-                let b = a < engine.total ? a + 1 : max(1, a - 1)
-                let next: PlayerScope = scope == .off ? .ayah
-                    : (scope == .ayah && engine.total > 1) ? .range : .off
-                engine.setScope(next, a: a, b: b)
+                Haptics.tap()
+                onRepeat()
             } label: {
                 Image(systemName: "repeat")
                     .font(.label(15, weight: .semibold))
-                    .foregroundStyle(scope == .off ? Color.secondary : .brand)
+                    .foregroundStyle(repeating ? Color.brand : Color.secondary)
                     // The HIG's minimum hit target, without making the bar taller.
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
                     .padding(.vertical, -11)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Loop")
-            .accessibilityValue(scope == .off ? "Off" : scope == .ayah ? "This ayah" : "Range")
+            .accessibilityLabel("Repeat")
+            .accessibilityValue(repeating ? audioService.statusText : "Off")
 
             Button { Haptics.tap(); engine.playPause() } label: {
                 PlayCircle(playing: playing, size: 38)
@@ -166,37 +110,21 @@ struct QuranPlayerBar: View {
 
 // MARK: - Expanded player
 
-/// The drill surface: presets, scrubber, scope, range, transport. Presented as an
-/// overlay over the whole reader (never a system sheet) so the ayah being drilled
-/// stays on screen behind it.
+/// Scrubber, Repeat, speed and transport. Presented as an overlay over the whole
+/// reader (never a system sheet) so the ayah being heard stays on screen behind it.
 struct QuranExpandedPlayer: View {
-    let surah: Surah
-    @ObservedObject var viewModel: SurahDetailViewModel
     let onCollapse: () -> Void
+    let onRepeat: () -> Void
 
     @EnvironmentObject private var audioService: AudioService
 
-    @State private var rangeA = 1
-    @State private var rangeB = 1
-    @State private var selectedDrill: PlayerDrill? = nil
-    @State private var showRangePicker = false
-
-    private var type = ReadingType()
-
-    init(surah: Surah, viewModel: SurahDetailViewModel, onCollapse: @escaping () -> Void) {
-        self.surah = surah
-        _viewModel = ObservedObject(wrappedValue: viewModel)
-        self.onCollapse = onCollapse
-    }
-
-    private var engine: PlayerEngine {
-        PlayerEngine(surah: surah, audioService: audioService)
-    }
-    private var total: Int { surah.numberOfAyahs }
-    private var currentAyah: Int { audioService.currentAyah ?? 1 }
+    private var engine: PlayerEngine { PlayerEngine(audioService: audioService) }
     private var playing: Bool { audioService.isPlaying }
-    private var scope: PlayerScope { engine.scope }
-    private var repsCount: RepeatState.Times { engine.reps }
+
+    init(onCollapse: @escaping () -> Void, onRepeat: @escaping () -> Void) {
+        self.onCollapse = onCollapse
+        self.onRepeat = onRepeat
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -211,22 +139,6 @@ struct QuranExpandedPlayer: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
         .ignoresSafeArea(edges: .bottom)
-        .onAppear(perform: syncRange)
-        .onChange(of: currentAyah) { _, _ in if scope != .range { syncRange() } }
-        .sheet(isPresented: $showRangePicker) {
-            AyahRangePickerSheet(
-                ayahs: viewModel.ayahs,
-                totalAyahs: total,
-                initialStart: min(rangeA, rangeB),
-                initialEnd: max(rangeA, rangeB)
-            ) { start, end in
-                rangeA = start
-                rangeB = end
-                Haptics.selection()
-                selectedDrill = nil
-                engine.setScope(.range, a: start, b: end)
-            }
-        }
     }
 
     private var sheet: some View {
@@ -243,35 +155,12 @@ struct QuranExpandedPlayer: View {
                 )
 
             VStack(spacing: 15) {
-                HStack(spacing: 7) {
-                    Image(systemName: "graduationcap.fill")
-                        .font(.label(10.5, weight: .semibold))
-                        .foregroundStyle(.brand)
-                    Eyebrow("Memorize ayah \(currentAyah)")
-                    Spacer(minLength: 8)
-                    MetaText("1 TAP · PLAYS NOW", tint: .brand, size: 9)
-                }
-
-                HStack(spacing: 8) {
-                    DrillButton(icon: "repeat", label: "Listen", on: selectedDrill == .listen) { drill(.listen) }
-                    DrillButton(icon: "pause.circle", label: "Repeat", on: selectedDrill == .repeatAfter) { drill(.repeatAfter) }
-                    DrillButton(icon: "link", label: "Chain", on: selectedDrill == .chain) { drill(.chain) }
-                }
-
                 Scrubber(clock: audioService.clock) { engine.seek($0) }
 
-                HStack(spacing: 8) {
-                    ScopeSegmented(scope: scope) { setScope($0) }
-                    RepsControl(options: [.infinite, .three, .five], current: repsCount) { setReps($0) }
-                }
-
-                // The range block only earns its space once "Range" is the chosen
-                // scope. It shows the two ayahs the loop actually runs between —
-                // dragging two unlabelled handles never told anyone what they'd
-                // picked.
-                if scope == .range {
-                    rangeBlock
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                RepeatButton(value: audioService.activeRepeat.shortSummary,
+                             on: audioService.isRepeating) {
+                    Haptics.tap()
+                    onRepeat()
                 }
 
                 Hairline()
@@ -299,129 +188,57 @@ struct QuranExpandedPlayer: View {
             // runs all the way to the screen edge — padding the sheet itself
             // leaves a strip of dimmed page under the home indicator.
             .padding(.bottom, 22 + safeInsets.bottom)
-            .animation(AppAnim.spring, value: scope)
         }
         .background(Color(.systemBackground))
         .overlay(alignment: .top) { Hairline() }
     }
 
-    // MARK: Range
-
-    /// From / to, each with the opening of the ayah itself. Tapping either opens
-    /// the full picker, where every ayah is shown with its text.
-    private var rangeBlock: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Eyebrow("Loop range", tint: .brand)
-                Spacer()
-                MetaText(rangeLabel.uppercased(), tint: .brand, size: 9.5)
-            }
-            .padding(.bottom, 10)
-
-            Button {
-                Haptics.tap()
-                showRangePicker = true
-            } label: {
-                VStack(spacing: 0) {
-                    RangeEndRow(tag: "From", number: min(rangeA, rangeB),
-                                preview: preview(min(rangeA, rangeB)), script: type.script)
-                    Hairline()
-                    RangeEndRow(tag: "To", number: max(rangeA, rangeB),
-                                preview: preview(max(rangeA, rangeB)), script: type.script)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            HStack(spacing: 6) {
-                Image(systemName: "hand.tap")
-                    .font(.label(9, weight: .bold))
-                MetaText("TAP TO CHOOSE AYAHS", size: 9)
-            }
-            .foregroundStyle(Color.secondary)
-            .padding(.top, 9)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 13)
-        .overlay(Rectangle().strokeBorder(Color.brand.opacity(0.4), lineWidth: 1))
-    }
-
-    /// The opening of an ayah — enough to recognise which one it is.
-    private func preview(_ n: Int) -> String? {
-        viewModel.ayahs.first { $0.numberInSurah == n }?.arabic
-    }
-
-    // MARK: Control actions
-
-    private func drill(_ d: PlayerDrill) {
-        Haptics.impact(.light)
-        withAnimation(AppAnim.springFast) { selectedDrill = d }
-        if d == .chain {
-            let r = RepeatState.joinRange(ending: currentAyah)
-            rangeA = r.lowerBound; rangeB = r.upperBound
-        } else { rangeA = currentAyah; rangeB = currentAyah }
-        engine.runDrill(d)
-    }
-    private func setScope(_ sc: PlayerScope) {
-        Haptics.selection()
-        selectedDrill = nil
-        engine.setScope(sc, a: rangeA, b: rangeB)
-    }
-    private func setReps(_ t: RepeatState.Times) { Haptics.selection(); engine.setReps(t) }
     private func cycleSpeed() { Haptics.selection(); engine.cycleSpeed(playerSpeeds) }
-
-    private var rangeLabel: String {
-        let a = min(rangeA, rangeB), b = max(rangeA, rangeB)
-        return a == b ? "Ayah \(a)" : "Ayahs \(a)–\(b) · \(b - a + 1) ayahs"
-    }
-
-    private func syncRange() {
-        if scope == .range { rangeA = engine.repeatState.from; rangeB = engine.repeatState.to }
-        else if currentAyah < total { rangeA = currentAyah; rangeB = currentAyah + 1 }
-        else { rangeA = max(1, currentAyah - 1); rangeB = currentAyah }
-    }
 
     private var safeInsets: UIEdgeInsets { keyWindowInsets() }
 }
 
 // MARK: - Reusable control views
 
-/// One end of the loop range: its tag, its number, and the opening words of the
-/// ayah so the choice can be made by reading rather than by counting.
-private struct RangeEndRow: View {
-    let tag: String
-    let number: Int
-    let preview: String?
-    let script: ArabicScript
+/// "Repeat" with its current value under it; opens the Repeat sheet.
+private struct RepeatButton: View {
+    let value: String
+    let on: Bool
+    let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Eyebrow(tag, tint: Color.secondary, size: 8.5)
-                MetaText("\(number)", tint: .brand, size: 13)
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: "repeat")
+                    .font(.label(17, weight: .semibold))
+                    .foregroundStyle(on ? Color.brand : Color.secondary)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Repeat")
+                        .font(.label(17))
+                        .foregroundStyle(Color.ink)
+                    Text(value)
+                        .font(.label(15).monospacedDigit())
+                        .foregroundStyle(on ? Color.brand : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.label(13, weight: .semibold))
+                    .foregroundStyle(Color(.tertiaryLabel))
             }
-            .frame(width: 34, alignment: .leading)
-
-            if let preview {
-                Text(preview)
-                    .font(script.font(size: 16))
-                    .foregroundStyle(Color(.label).opacity(0.75))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .environment(\.layoutDirection, .rightToLeft)
-            } else {
-                Text("Ayah \(number)")
-                    .font(.appSerif(15))
-                    .foregroundStyle(Color.secondary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-
-            Image(systemName: "chevron.right")
-                .font(.label(9, weight: .bold))
-                .foregroundStyle(Color(.tertiaryLabel))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(minHeight: 56)
+            .overlay(Rectangle().strokeBorder(on ? Color.brand.opacity(0.5) : Color(.label).opacity(0.18),
+                                              lineWidth: 1))
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 9)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Repeat")
+        .accessibilityValue(value)
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -456,81 +273,6 @@ private struct Scrubber: View {
             }
             .frame(height: 18)
             MetaText(fmtTime(dur), size: 10.5)
-        }
-    }
-}
-
-/// One of the three acquisition drills — Listen, Repeat, Chain. Outlined rather
-/// than filled: `OutlineButton` with the drill's glyph, so a drill looks the same
-/// here as it does on the dashboard.
-struct DrillButton: View {
-    let icon: String
-    let label: String
-    let on: Bool
-    let action: () -> Void
-
-    var body: some View {
-        OutlineButton(label: label, icon: icon, on: on, action: action)
-    }
-}
-
-private struct ScopeSegmented: View {
-    let scope: PlayerScope
-    let onPick: (PlayerScope) -> Void
-
-    var body: some View {
-        HStack(spacing: -1) {   // shared borders, one hairline between segments
-            item("Off", scope == .off) { onPick(.off) }
-            item("This ayah", scope == .ayah) { onPick(.ayah) }
-            item("Range", scope == .range) { onPick(.range) }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func item(_ label: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label.uppercased())
-                .font(.label(9.5, weight: .semibold))
-                .kerning(1)
-                .foregroundStyle(on ? Color.brand : Color.secondary)
-                .lineLimit(1).minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
-                .overlay(
-                    Rectangle().strokeBorder(on ? Color.brand : Color(.label).opacity(0.18),
-                                             lineWidth: 1)
-                )
-                // The selected segment's border has to win where they overlap.
-                .zIndex(on ? 1 : 0)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct RepsControl: View {
-    let options: [RepeatState.Times]
-    let current: RepeatState.Times
-    let onPick: (RepeatState.Times) -> Void
-
-    var body: some View {
-        HStack(spacing: -1) {
-            ForEach(options, id: \.self) { n in
-                Button { onPick(n) } label: {
-                    Text(n.count.map { "\($0)×" } ?? "∞")
-                        .font(.label(10.5, weight: .semibold))
-                        .foregroundStyle(current == n ? Color.brand : Color.secondary)
-                        .frame(minWidth: 34)
-                        .padding(.vertical, 9)
-                        .overlay(
-                            Rectangle().strokeBorder(current == n ? Color.brand : Color(.label).opacity(0.18),
-                                                     lineWidth: 1)
-                        )
-                        .zIndex(current == n ? 1 : 0)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
         }
     }
 }
