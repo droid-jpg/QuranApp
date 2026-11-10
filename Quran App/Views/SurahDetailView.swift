@@ -31,6 +31,24 @@ final class SurahModelStore: ObservableObject {
     }
 }
 
+// MARK: - Non-observing audio reference
+
+extension EnvironmentValues {
+    /// `AudioService` as a plain reference. Reading it does not subscribe the
+    /// view to the service's changes, so the pager and the pages can send it
+    /// commands without re-rendering on every ayah advance or play/pause. Views
+    /// that draw playback state observe it themselves (`@EnvironmentObject`).
+    @Entry var audioServiceRef: AudioService? = nil
+}
+
+/// Whether the expanded player is up. Held by the pager as a plain reference
+/// (`@State`, not `@StateObject`), so toggling it re-renders only the bar and the
+/// overlay that observe it, never the pager's pages.
+@MainActor
+final class ReaderPlayerUI: ObservableObject {
+    @Published var expanded = false
+}
+
 // MARK: - Surah page browser (swipe between surahs)
 
 /// Wraps multiple `SurahDetailView`s in a horizontally-paged TabView so the user
@@ -43,20 +61,21 @@ struct SurahPageView: View {
     let startIndex: Int
     var initialAyah: Int? = nil
 
-    @EnvironmentObject private var audioService: AudioService
+    @Environment(\.audioServiceRef) private var audioService
     @EnvironmentObject private var srStore: MemorizationSRStore
     @EnvironmentObject private var memorizationStore: MemorizationStore
     @EnvironmentObject private var targetStore: MemorizationTargetStore
     @Environment(\.dismiss) private var dismiss
 
     @StateObject private var models = SurahModelStore()
+    /// Not `@StateObject`: the pager must not observe it (see `ReaderPlayerUI`).
+    @State private var playerUI = ReaderPlayerUI()
     @StateObject private var menu = EditorialMenuPresenter()
 
     @State private var currentIndex: Int
     /// True once the active page's chapter title has scrolled up behind the bar —
     /// the bar then shows the surah name in its place.
     @State private var headerPassed = false
-    @State private var playerExpanded = false
     @State private var showReadingType = false
     @State private var showMushaf = false
     /// The surah the Repeat sheet is open for, or nil.
@@ -75,12 +94,6 @@ struct SurahPageView: View {
     private var surah: Surah { surahs[max(0, min(currentIndex, surahs.count - 1))] }
     private var model: SurahDetailViewModel { models.model(for: surah) }
 
-    /// The player belongs to the surah on screen, so swiping away from what's
-    /// playing puts the page back to full height.
-    private var playerActive: Bool {
-        audioService.currentAyah != nil && audioService.currentSurah == surah.number
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             ReaderTopBar(
@@ -95,14 +108,24 @@ struct SurahPageView: View {
 
             TabView(selection: $currentIndex) {
                 ForEach(surahs.indices, id: \.self) { idx in
-                    SurahDetailView(
-                        surah: surahs[idx],
-                        viewModel: models.model(for: surahs[idx]),
-                        initialAyah: idx == startIndex ? initialAyah : nil,
-                        isActivePage: idx == currentIndex,
-                        headerPassed: $headerPassed,
-                        menu: menu
-                    )
+                    // Only the page on screen and its neighbours are built; the
+                    // rest stay blank until a swipe brings them next door, so
+                    // opening the reader doesn't make a model and a page for all
+                    // 114 surahs, and re-rendering the pager stays cheap.
+                    Group {
+                        if abs(idx - currentIndex) <= 1 {
+                            SurahDetailView(
+                                surah: surahs[idx],
+                                viewModel: models.model(for: surahs[idx]),
+                                initialAyah: idx == startIndex ? initialAyah : nil,
+                                isActivePage: idx == currentIndex,
+                                headerPassed: $headerPassed,
+                                menu: menu
+                            )
+                        } else {
+                            Color(.systemBackground)
+                        }
+                    }
                     .tag(idx)
                 }
             }
@@ -111,37 +134,31 @@ struct SurahPageView: View {
             // scroll view reserves exactly its height — no ayah ends up under it,
             // and no magic number goes stale when the bar changes.
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if playerActive {
-                    QuranPlayerBar(
-                        onExpand: {
-                            Haptics.tap()
-                            withAnimation(AppAnim.spring) { playerExpanded = true }
-                        },
-                        onRepeat: { repeatSheetSurah = playingSurah ?? surah }
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
+                ReaderPlayerBarSlot(
+                    surahNumber: surah.number,
+                    ui: playerUI,
+                    onExpand: {
+                        Haptics.tap()
+                        withAnimation(AppAnim.spring) { playerUI.expanded = true }
+                    },
+                    onRepeat: { repeatSheetSurah = playingSurah ?? surah }
+                )
             }
-            .animation(AppAnim.spring, value: playerActive)
         }
         // Ours replaces it: see `ReaderTopBar`.
         .toolbar(.hidden, for: .navigationBar)
         .overlay {
-            if playerExpanded && playerActive {
-                QuranExpandedPlayer(
-                    onCollapse: { withAnimation(AppAnim.spring) { playerExpanded = false } },
-                    onRepeat: { repeatSheetSurah = playingSurah ?? surah }
-                )
-                .zIndex(10)
-            }
+            ReaderExpandedPlayerSlot(
+                surahNumber: surah.number,
+                ui: playerUI,
+                onCollapse: { withAnimation(AppAnim.spring) { playerUI.expanded = false } },
+                onRepeat: { repeatSheetSurah = playingSurah ?? surah }
+            )
         }
         .editorialMenu(menu)
         // Reading gets the whole page — the tab bar comes back on the way out.
         .onAppear { Chrome.shared.tabBarHidden = true }
         .onDisappear { Chrome.shared.tabBarHidden = false }
-        .onChange(of: playerActive) { _, active in
-            if !active { playerExpanded = false }
-        }
         .onChange(of: currentIndex) { _, _ in
             headerPassed = false
             menu.dismiss()
@@ -174,13 +191,15 @@ struct SurahPageView: View {
 
     /// The surah that is loaded in the player, when it is one of this pager's.
     private var playingSurah: Surah? {
-        surahs.first { $0.number == audioService.currentSurah }
+        guard let audioService else { return nil }
+        return surahs.first { $0.number == audioService.currentSurah }
     }
 
     /// Where a fresh repeat starts: the ayah playing in that surah, else the
     /// memorization working ayah when it is the target surah, else ayah 1.
     private func repeatFocusAyah(in target: Surah) -> Int {
-        if audioService.currentSurah == target.number, let a = audioService.currentAyah { return a }
+        if let audioService, audioService.currentSurah == target.number,
+           let a = audioService.currentAyah { return a }
         if let t = targetStore.target, t.surah == target.number { return t.workingAyah }
         return 1
     }
@@ -269,6 +288,65 @@ struct SurahPageView: View {
     }
 }
 
+// MARK: - Player slots
+
+/// The player belongs to the surah on screen, so swiping away from what's
+/// playing puts the page back to full height.
+@MainActor
+private func playerIsActive(_ audio: AudioService, surahNumber: Int) -> Bool {
+    audio.currentAyah != nil && audio.currentSurah == surahNumber
+}
+
+/// The mini bar's place under the pages. It observes the audio service itself so
+/// the pager doesn't have to: a play/pause or an ayah advance re-renders this and
+/// the bar, not the pages.
+private struct ReaderPlayerBarSlot: View {
+    let surahNumber: Int
+    @ObservedObject var ui: ReaderPlayerUI
+    let onExpand: () -> Void
+    let onRepeat: () -> Void
+
+    @EnvironmentObject private var audioService: AudioService
+    /// Follows `active` inside an animated transaction, so the pages' inset (and
+    /// with it their height) animates with the bar, as it did when the pager
+    /// carried `.animation(_:value:)` itself. Nil until first shown.
+    @State private var shown: Bool?
+
+    private var active: Bool { playerIsActive(audioService, surahNumber: surahNumber) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if shown ?? active {
+                QuranPlayerBar(onExpand: onExpand, onRepeat: onRepeat)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .onAppear { shown = active }
+        .onChange(of: active) { _, now in
+            withAnimation(AppAnim.spring) { shown = now }
+            if !now { ui.expanded = false }
+        }
+    }
+}
+
+/// The expanded player's place above the reader. Only this re-renders when the
+/// player opens or closes.
+private struct ReaderExpandedPlayerSlot: View {
+    let surahNumber: Int
+    @ObservedObject var ui: ReaderPlayerUI
+    let onCollapse: () -> Void
+    let onRepeat: () -> Void
+
+    @EnvironmentObject private var audioService: AudioService
+
+    var body: some View {
+        if ui.expanded && playerIsActive(audioService, surahNumber: surahNumber) {
+            QuranExpandedPlayer(onCollapse: onCollapse, onRepeat: onRepeat)
+                .zIndex(10)
+        }
+    }
+}
+
 // MARK: - Reader top bar
 
 /// The reader's own bar: back, the chapter it's on, and the three controls that
@@ -352,7 +430,10 @@ struct SurahDetailView: View {
     /// The reader's menu, presented above the pager.
     let menu: EditorialMenuPresenter
 
-    @EnvironmentObject private var audioService: AudioService
+    /// Commands only: playback state is drawn by the leaf views below
+    /// (`AyahRowSlot`, `SurahHeaderSlot`, `PlaybackScrollFollower`), so an ayah
+    /// advance or a play/pause doesn't re-render the page or every row.
+    @Environment(\.audioServiceRef) private var audioService
     @EnvironmentObject private var bookmarkStore: BookmarkStore
     @EnvironmentObject private var srStore: MemorizationSRStore
     @EnvironmentObject private var memorizationStore: MemorizationStore
@@ -381,10 +462,6 @@ struct SurahDetailView: View {
         _headerPassed = headerPassed
         self.menu = menu
         _scrollTarget = State(initialValue: initialAyah)
-    }
-
-    private var isThisSurahActive: Bool {
-        audioService.currentSurah == surah.number
     }
 
     // MARK: - Memorization target (loop-based acquisition)
@@ -491,13 +568,14 @@ struct SurahDetailView: View {
     /// Loop the given ayah on its own — the reader's "Repeat this ayah".
     private func repeatAyah(_ ayah: Int) {
         Haptics.tap()
-        audioService.startRepeat(.repeatThisAyah(surah: surah.number, ayah: ayah),
+        audioService?.startRepeat(.repeatThisAyah(surah: surah.number, ayah: ayah),
                                  totalAyahs: surah.numberOfAyahs, surahName: surah.englishName)
     }
 
     private func playFrom(_ ayah: Int) {
         // Don't resume the main player here: `playAyah` decides what plays next,
         // and a resume followed by its toggle would pause the ayah just asked for.
+        guard let audioService else { return }
         audioService.stopWordLoop(resume: false)
         viewModel.playAyah(ayah, audioService: audioService)
     }
@@ -578,31 +656,37 @@ struct SurahDetailView: View {
     // MARK: - Rows
 
     /// Broken out of `body`: inline, the row's twenty arguments took the type
-    /// checker past its budget.
+    /// checker past its budget. Everything but playback is filled in here; the
+    /// slot adds the playback flags, so only it watches the audio service.
     private func row(for ayah: Ayah) -> some View {
         let n = ayah.numberInSurah
-        let isCurrent = isThisSurahActive && audioService.currentAyah == n
         let target = targetStore.target
 
-        return AyahRowView(
+        return AyahRowSlot(row: AyahRowView(
             ayah: ayah,
             surahNumber: surah.number,
-            isPlaying: isCurrent && audioService.isPlaying,
-            isWordLooping: isCurrent && audioService.isWordLooping,
+            isPlaying: false,
+            isWordLooping: false,
             isLoadingTimings: viewModel.isLoadingWordTimings,
             wordDetails: viewModel.wordDetailsByAyah[n],
             isBookmarked: bookmarkStore.isBookmarked(surah: surah.number, ayah: n),
             isMemorizing: srStore.isScheduled(surah: surah.number, ayah: n),
             isWorkingAyah: target?.surah == surah.number && target?.workingAyah == n,
             hasTafsir: viewModel.tafsirByAyah[n] != nil,
-            onBookmark: { toggleBookmark(ayah) },
-            onToggleMemorize: { toggleMemorize(ayah) },
-            onPlay: { playFrom(n) },
-            onRepeat: { repeatAyah(n) },
-            onWordByWord: { openWordByWord(ayah) },
-            onTafsir: { tafsirAyah = ayah },
-            onLongPress: { presentAyahMenu(ayah) }
-        )
+            onAction: { handle($0, for: ayah) }
+        ))
+    }
+
+    private func handle(_ action: AyahRowAction, for ayah: Ayah) {
+        switch action {
+        case .bookmark:       toggleBookmark(ayah)
+        case .toggleMemorize: toggleMemorize(ayah)
+        case .play:           playFrom(ayah.numberInSurah)
+        case .repeatAyah:     repeatAyah(ayah.numberInSurah)
+        case .wordByWord:     openWordByWord(ayah)
+        case .tafsir:         tafsirAyah = ayah
+        case .longPress:      presentAyahMenu(ayah)
+        }
     }
 
     // MARK: - Body
@@ -650,17 +734,7 @@ struct SurahDetailView: View {
                     VStack(spacing: 0) {
                         // Non-lazy so its scroll tracker keeps reporting even
                         // after it scrolls off, keeping the inline title stable.
-                        SurahHeaderView(
-                            surah: surah,
-                            isPlaying: isThisSurahActive && audioService.isPlaying,
-                            onPlay: {
-                                if isThisSurahActive {
-                                    audioService.togglePlayPause()
-                                } else {
-                                    playFrom(1)
-                                }
-                            }
-                        )
+                        SurahHeaderSlot(surah: surah, onPlayFromStart: { playFrom(1) })
 
                         LazyVStack(spacing: 0) {
                             if viewModel.isLoading && viewModel.ayahs.isEmpty {
@@ -690,12 +764,7 @@ struct SurahDetailView: View {
                     let passed = maxY < 8
                     if passed != headerPassed { headerPassed = passed }
                 }
-                .onChange(of: audioService.currentAyah) { _, newAyah in
-                    guard let ayah = newAyah, isThisSurahActive else { return }
-                    withAnimation(.easeInOut(duration: 0.5)) {
-                        proxy.scrollTo(ayah, anchor: .top)
-                    }
-                }
+                .background(PlaybackScrollFollower(surahNumber: surah.number, proxy: proxy))
                 .onChange(of: viewModel.ayahs.isEmpty) { _, isEmpty in
                     guard !isEmpty else { return }
                     if let target = scrollTarget {
@@ -719,7 +788,7 @@ struct SurahDetailView: View {
                 errorMessage: viewModel.wordTimingsError
             ) { start, end in
                 guard let chapterUrl = viewModel.chapterAudioUrl() else { return }
-                audioService.startWordLoop(
+                audioService?.startWordLoop(
                     surah: surah.number,
                     ayah: ayah.numberInSurah,
                     chapterUrl: chapterUrl,
@@ -786,6 +855,68 @@ struct SurahDetailView: View {
     }
 }
 
+// MARK: - Playback leaves
+//
+// The only parts of a page that observe the audio service. Each is small, so an
+// ayah advance or a play/pause re-runs these and the one or two rows whose
+// playback flags actually changed, not the page and not every row.
+
+/// Adds the playback flags to a row built by the page, then lets SwiftUI skip
+/// the row unless something it draws changed (`AyahRowView` is `Equatable`).
+private struct AyahRowSlot: View {
+    let row: AyahRowView
+    @EnvironmentObject private var audioService: AudioService
+
+    var body: some View {
+        let isCurrent = audioService.currentSurah == row.surahNumber
+            && audioService.currentAyah == row.ayah.numberInSurah
+        var row = row
+        row.isPlaying = isCurrent && audioService.isPlaying
+        row.isWordLooping = isCurrent && audioService.isWordLooping
+        return row.equatable()
+    }
+}
+
+/// The title page, with its play button tied to the player.
+private struct SurahHeaderSlot: View {
+    let surah: Surah
+    let onPlayFromStart: () -> Void
+    @EnvironmentObject private var audioService: AudioService
+
+    var body: some View {
+        let active = audioService.currentSurah == surah.number
+        SurahHeaderView(
+            surah: surah,
+            isPlaying: active && audioService.isPlaying,
+            onPlay: { [audioService, surah] in
+                if audioService.currentSurah == surah.number {
+                    audioService.togglePlayPause()
+                } else {
+                    onPlayFromStart()
+                }
+            }
+        )
+        .equatable()
+    }
+}
+
+/// Keeps the ayah being recited in view as playback advances.
+private struct PlaybackScrollFollower: View {
+    let surahNumber: Int
+    let proxy: ScrollViewProxy
+    @EnvironmentObject private var audioService: AudioService
+
+    var body: some View {
+        Color.clear
+            .onChange(of: audioService.currentAyah) { _, newAyah in
+                guard let ayah = newAyah, audioService.currentSurah == surahNumber else { return }
+                withAnimation(.easeInOut(duration: 0.5)) {
+                    proxy.scrollTo(ayah, anchor: .top)
+                }
+            }
+    }
+}
+
 // MARK: - Scroll tracking
 
 /// Reports the surah header's bottom edge (in scroll-viewport space) so the
@@ -802,7 +933,7 @@ private struct HeaderVisibilityKey: PreferenceKey {
 /// The title page of a surah: number, name, meaning, provenance, an ornamental
 /// rule, then the Basmala. Centred and unfilled — the reader opens on something
 /// that looks like the top of a chapter rather than the top of a screen.
-struct SurahHeaderView: View {
+struct SurahHeaderView: View, Equatable {
     let surah: Surah
     var isPlaying: Bool = false
     var onPlay: () -> Void = {}
@@ -814,6 +945,12 @@ struct SurahHeaderView: View {
         self.surah = surah
         self.isPlaying = isPlaying
         self.onPlay = onPlay
+    }
+
+    /// What the title page draws. `onPlay` is left out: it only ever sends the
+    /// same command, and comparing it would keep the page from being skipped.
+    nonisolated static func == (lhs: SurahHeaderView, rhs: SurahHeaderView) -> Bool {
+        lhs.surah.number == rhs.surah.number && lhs.isPlaying == rhs.isPlaying
     }
 
     var body: some View {

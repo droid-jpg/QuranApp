@@ -156,7 +156,9 @@ struct ScrubLine: View {
                     .offset(x: max(0, geo.size.width * f - 3.25))
             }
             .frame(maxHeight: .infinity)
-            .animation(.linear(duration: 0.25), value: fraction)
+            // No implicit animation: the live clock ticks every 0.1 s, so a
+            // 0.25 s animation per tick stacked two or three at once and kept
+            // the line animating for as long as audio played.
         }
         .frame(height: 7)
     }
@@ -249,7 +251,8 @@ struct HomeMiniPlayer: View {
         .padding(.leading, 16)
         .padding(.trailing, 2)
         .padding(.vertical, 7)
-        .background(.regularMaterial)
+        // Opaque: see `QuranPlayerBar` — no blur under a live indicator.
+        .background(Color(.systemBackground))
         .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.16), lineWidth: 1))
         .padding(.horizontal, 16)
     }

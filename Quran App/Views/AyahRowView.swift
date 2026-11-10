@@ -1,31 +1,38 @@
 import SwiftUI
 
+/// What a row asks the reader to do. One closure carries them all, so the row's
+/// inputs are values the reader can compare (see `AyahRowView.==`).
+enum AyahRowAction {
+    case bookmark, toggleMemorize, play
+    case repeatAyah      // "Repeat this ayah"
+    case wordByWord      // the reader owns the word-by-word sheet
+    case tafsir
+    case longPress       // the reader raises its own menu panel for this ayah
+}
+
 /// One ayah, set as a page of a book rather than a row of a list.
 ///
 /// The control row that used to sit above every ayah is gone: a tap reveals a
 /// compact strip, a long press opens the full menu, and immersive reading turns
 /// even the strip off. What's left on the page is scripture, a numeral, and — on
 /// the ayah being recited — a single accent rule down the left margin.
-struct AyahRowView: View {
+///
+/// `Equatable` so the reader can skip every row whose drawn inputs didn't change
+/// (apply `.equatable()`): an ayah advance then re-renders the two rows whose
+/// playback flags flipped, not every row loaded.
+struct AyahRowView: View, Equatable {
     let ayah: Ayah
     let surahNumber: Int
-    let isPlaying: Bool
-    let isWordLooping: Bool
+    var isPlaying: Bool
+    var isWordLooping: Bool
     let isLoadingTimings: Bool
     let wordDetails: [WordDetail]?   // per-word meaning/audio; nil until loaded
     let isBookmarked: Bool
     let isMemorizing: Bool           // enrolled in spaced-repetition review
     var isWorkingAyah: Bool = false  // the current memorization target ayah
     let hasTafsir: Bool
-    let onBookmark: () -> Void
-    let onToggleMemorize: () -> Void
-    let onPlay: () -> Void
-    var onRepeat: () -> Void = {}       // "Repeat this ayah"
-    /// Opens the word-by-word picker (the reader owns the sheet).
-    var onWordByWord: () -> Void = {}
-    var onTafsir: () -> Void = {}
-    /// Long press — the reader raises its own menu panel for this ayah.
-    var onLongPress: () -> Void = {}
+    /// Left out of `==`: it only forwards to the reader.
+    let onAction: (AyahRowAction) -> Void
 
     @AppStorage("showTranslation")          private var showTranslation     = true
     @AppStorage("showTransliteration")      private var showTransliteration = true
@@ -40,6 +47,26 @@ struct AyahRowView: View {
     var type = ReadingType()
 
     @State private var revealed = false
+
+    /// The row's drawn inputs. Settings it reads (`@AppStorage`, `ReadingType`)
+    /// and its own state re-render it on their own, so they aren't compared.
+    /// Word details load once per surah, so presence and count stand in for
+    /// comparing every word.
+    nonisolated static func == (lhs: AyahRowView, rhs: AyahRowView) -> Bool {
+        lhs.ayah.numberInSurah == rhs.ayah.numberInSurah
+            && lhs.surahNumber == rhs.surahNumber
+            && lhs.isPlaying == rhs.isPlaying
+            && lhs.isWordLooping == rhs.isWordLooping
+            && lhs.isLoadingTimings == rhs.isLoadingTimings
+            && lhs.isBookmarked == rhs.isBookmarked
+            && lhs.isMemorizing == rhs.isMemorizing
+            && lhs.isWorkingAyah == rhs.isWorkingAyah
+            && lhs.hasTafsir == rhs.hasTafsir
+            && lhs.wordDetails?.count == rhs.wordDetails?.count
+            && lhs.ayah.arabic == rhs.ayah.arabic
+            && lhs.ayah.translation == rhs.ayah.translation
+            && lhs.ayah.transliteration == rhs.ayah.transliteration
+    }
 
     /// Brand while reciting, orange while it's the memorization target, otherwise
     /// dim — the numeral is the only status indicator left on the page.
@@ -117,13 +144,13 @@ struct AyahRowView: View {
         }
         // The app's own panel, raised by the reader, instead of `.contextMenu` —
         // the last piece of UIKit chrome the restyle hadn't reached.
-        .onLongPressGesture(minimumDuration: 0.32) { onLongPress() }
+        .onLongPressGesture(minimumDuration: 0.32) { onAction(.longPress) }
         // Tap and long press are gestures VoiceOver can't perform, so both are actions too.
         .accessibilityAction(named: revealed ? "Hide actions" : "Show actions") {
             guard !immersiveReading else { return }
             withAnimation(AppAnim.springFast) { revealed.toggle() }
         }
-        .accessibilityAction(named: "More actions") { onLongPress() }
+        .accessibilityAction(named: "More actions") { onAction(.longPress) }
         // The one accent on the page: a rule down the margin of the ayah being
         // recited. Replaces the old tinted background wash.
         .overlay(alignment: .leading) {
@@ -147,25 +174,27 @@ struct AyahRowView: View {
         HStack(spacing: 0) {
             GlyphButton(icon: isPlaying ? "pause.fill" : "play.fill",
                         on: isPlaying, label: isPlaying ? "Pause" : "Play from here",
-                        action: onPlay)
+                        action: { onAction(.play) })
 
-            GlyphButton(icon: "repeat", on: false, label: "Repeat this ayah", action: onRepeat)
+            GlyphButton(icon: "repeat", on: false, label: "Repeat this ayah",
+                        action: { onAction(.repeatAyah) })
 
             GlyphButton(icon: "text.word.spacing", on: isWordLooping,
                         loading: isLoadingTimings, label: "Word by word",
-                        action: onWordByWord)
+                        action: { onAction(.wordByWord) })
 
             if hasTafsir {
-                GlyphButton(icon: "text.book.closed", on: false, label: "Tafsir", action: onTafsir)
+                GlyphButton(icon: "text.book.closed", on: false, label: "Tafsir",
+                            action: { onAction(.tafsir) })
             }
 
             GlyphButton(icon: isMemorizing ? "checkmark.circle.fill" : "plus.circle",
                         on: isMemorizing, label: isMemorizing ? "Remove from review" : "Add to review",
-                        action: onToggleMemorize)
+                        action: { onAction(.toggleMemorize) })
 
             GlyphButton(icon: isBookmarked ? "bookmark.fill" : "bookmark",
                         on: isBookmarked, label: isBookmarked ? "Remove bookmark" : "Bookmark",
-                        action: onBookmark)
+                        action: { onAction(.bookmark) })
 
             Spacer(minLength: 0)
         }

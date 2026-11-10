@@ -121,6 +121,9 @@ struct QuranAppApp: App {
                 .animation(AppAnim.spring, value: chrome.tabBarHidden)
                 .tint(.brand)
                 .environmentObject(audioService)
+                // The same service as a plain reference, for views that only
+                // send it commands and must not re-render on its changes.
+                .environment(\.audioServiceRef, audioService)
                 .environmentObject(memorizationStore)
                 .environmentObject(srStore)
                 .environmentObject(targetStore)

@@ -95,7 +95,9 @@ struct QuranPlayerBar: View {
         .padding(.leading, 16)
         .padding(.trailing, 13)
         .padding(.vertical, 8)
-        .background(.regularMaterial)
+        // Opaque: a material here re-blurred the scrolling page behind the bar
+        // on every frame, under an indicator that animates while audio plays.
+        .background(Color(.systemBackground))
         .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.16), lineWidth: 1))
         .padding(.horizontal, 16)
         .padding(.bottom, 10)
@@ -135,10 +137,11 @@ struct QuranExpandedPlayer: View {
                 .onTapGesture { onCollapse() }
                 .transition(.opacity)
 
+            // A plain move: fading the whole sheet as a group cost an offscreen
+            // pass on every frame of the open and close.
             sheet
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(.move(edge: .bottom))
         }
-        .ignoresSafeArea(edges: .bottom)
     }
 
     private var sheet: some View {
@@ -184,18 +187,15 @@ struct QuranExpandedPlayer: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 4)
-            // The safe-area allowance lives inside the sheet so its background
-            // runs all the way to the screen edge — padding the sheet itself
-            // leaves a strip of dimmed page under the home indicator.
-            .padding(.bottom, 22 + safeInsets.bottom)
+            .padding(.bottom, 22)
         }
-        .background(Color(.systemBackground))
+        // The controls stay inside the safe area; only the background runs on
+        // under the home indicator, so no strip of dimmed page shows there.
+        .background(Color(.systemBackground).ignoresSafeArea(edges: .bottom))
         .overlay(alignment: .top) { Hairline() }
     }
 
     private func cycleSpeed() { Haptics.selection(); engine.cycleSpeed(playerSpeeds) }
-
-    private var safeInsets: UIEdgeInsets { keyWindowInsets() }
 }
 
 // MARK: - Reusable control views
@@ -264,7 +264,9 @@ private struct Scrubber: View {
                         .offset(x: max(0, min(w - 11, w * frac - 5.5)))
                 }
                 .frame(height: 18)
-                .animation(.linear(duration: 0.12), value: frac)
+                // No implicit animation: the clock ticks every 0.1 s, and a
+                // 0.12 s animation per tick kept the playhead permanently
+                // mid-animation with overlapping animations stacked on it.
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
@@ -329,10 +331,4 @@ private func speedLabel(_ r: Float) -> String {
     case 0.75: return "0.75×"
     default:   return "\(r)×"
     }
-}
-
-private func keyWindowInsets() -> UIEdgeInsets {
-    UIApplication.shared.connectedScenes
-        .compactMap { $0 as? UIWindowScene }
-        .first?.windows.first { $0.isKeyWindow }?.safeAreaInsets ?? .zero
 }
