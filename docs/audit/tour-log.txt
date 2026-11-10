@@ -1,0 +1,132 @@
+2026-11-09 18:31:24.314 appintentsnltrainingprocessor[58773:1990505] error: Could not archive SSU artifacts. Check build log.
+Test Case '-[QuranTourUITests.QuranTourUITests testExplore]' started.
+TOUR ▸ system alert: Allow While Using App
+TOUR ▸ SHOT 01-explore-home.png
+TOUR ▸ TREE tree-home.txt (6057 chars)
+TOUR ▸ SHOT 02-explore-quran.png
+TOUR ▸ TREE tree-quran.txt (14567 chars)
+TOUR ▸ SHOT 03-explore-more.png
+TOUR ▸ TREE tree-more.txt (12396 chars)
+TOUR ▸ explore done
+Test Case '-[QuranTourUITests.QuranTourUITests testExplore]' passed (62.060 seconds).
+Test Case '-[QuranTourUITests.QuranTourUITests testHome]' started.
+TOUR ▸ SHOT 01-home.png
+TOUR ▸ TREE tree-home-loaded.txt (5146 chars)
+TOUR ▸ SHOT 02-home-scroll-1.png
+TOUR ▸ SHOT 03-home-scroll-2.png
+TOUR ▸ SHOT 04-home-scroll-3.png
+TOUR ▸ SHOT 05-home-scroll-4.png
+TOUR ▸ TREE tree-home-bottom.txt (6057 chars)
+TOUR ▸ tapped Play verse
+TOUR ▸ SHOT 06-home-verse-playing.png
+TOUR ▸ TREE tree-home-playing.txt (8110 chars)
+TOUR ▸ tapped Pause
+TOUR ▸ SHOT 07-home-paused.png
+TOUR ▸ tapped Play
+TOUR ▸ SHOT 08-home-resumed.png
+TOUR ▸ SHOT 09-home-after-audio.png
+TOUR ▸ TREE tree-home-after-audio.txt (18600 chars)
+TOUR ▸ MISSING JUZ 30
+Test Case '-[QuranTourUITests.QuranTourUITests testHome]' passed (55.563 seconds).
+Test Case '-[QuranTourUITests.QuranTourUITests testMore]' started.
+TOUR ▸ SHOT 01-more.png
+TOUR ▸ TREE tree-more.txt (9049 chars)
+TOUR ▸ SHOT 02-more-scrolled.png
+TOUR ▸ tapped Memorization
+TOUR ▸ SHOT 03-more-memorization.png
+TOUR ▸ TREE tree-more-memorization.txt (5994 chars)
+TOUR ▸ SHOT 04-more-memorization-scrolled.png
+TOUR ▸ TREE tree-more-memorization-scrolled.txt (5994 chars)
+TOUR ▸ MISSING Back
+TOUR ▸ tapped Qibla compass
+TOUR ▸ SHOT 05-more-qibla-compass.png
+TOUR ▸ TREE tree-more-qibla-compass.txt (3115 chars)
+TOUR ▸ SHOT 06-more-qibla-compass-scrolled.png
+TOUR ▸ TREE tree-more-qibla-compass-scrolled.txt (3115 chars)
+TOUR ▸ MISSING Back
+TOUR ▸ tapped Dhikr counter
+TOUR ▸ SHOT 07-more-dhikr-counter.png
+TOUR ▸ TREE tree-more-dhikr-counter.txt (4421 chars)
+TOUR ▸ SHOT 08-more-dhikr-counter-scrolled.png
+TOUR ▸ TREE tree-more-dhikr-counter-scrolled.txt (4635 chars)
+TOUR ▸ MISSING Back
+TOUR ▸ tapped Bookmarks
+TOUR ▸ SHOT 09-more-bookmarks.png
+TOUR ▸ TREE tree-more-bookmarks.txt (2824 chars)
+TOUR ▸ SHOT 10-more-bookmarks-scrolled.png
+TOUR ▸ TREE tree-more-bookmarks-scrolled.txt (2824 chars)
+TOUR ▸ MISSING Back
+TOUR ▸ tapped 99 Names of Allah
+TOUR ▸ SHOT 11-more-99-names-of-allah.png
+TOUR ▸ TREE tree-more-99-names-of-allah.txt (93540 chars)
+TOUR ▸ SHOT 12-more-99-names-of-allah-scrolled.png
+TOUR ▸ TREE tree-more-99-names-of-allah-scrolled.txt (94456 chars)
+TOUR ▸ MISSING Back
+TOUR ▸ tapped Islamic calendar
+TOUR ▸ SHOT 13-more-islamic-calendar.png
+TOUR ▸ TREE tree-more-islamic-calendar.txt (12398 chars)
+TOUR ▸ SHOT 14-more-islamic-calendar-scrolled.png
+TOUR ▸ TREE tree-more-islamic-calendar-scrolled.txt (13159 chars)
+TOUR ▸ MISSING Back
+/Users/saminukta/Desktop/Quran App/QuranTourUITests/QuranTourUITests.swift:173: error: -[QuranTourUITests.QuranTourUITests testMore] : Failed to tap "More" Button: Find single matching element. Multiple matching elements found for <XCUIElementQuery: 0x107f21c70>.
+Test Case '-[QuranTourUITests.QuranTourUITests testMore]' failed (147.171 seconds).
+Test Case '-[QuranTourUITests.QuranTourUITests testPlayer]' started.
+TOUR ▸ tapped 1, Al-Faatiha
+TOUR ▸ TREE tree-player-reader.txt (11717 chars)
+TOUR ▸ MISSING Play ayah
+TOUR ▸ tapped Play
+TOUR ▸ SHOT 01-playing.png
+TOUR ▸ TREE tree-playing.txt (12090 chars)
+TOUR ▸ expand took 3.18s
+TOUR ▸ SHOT 02-player-expanded.png
+TOUR ▸ TREE tree-player-expanded.txt (14972 chars)
+TOUR ▸ TREE tree-player-after-skip.txt (14972 chars)
+TOUR ▸ tapped Range
+TOUR ▸ SHOT 03-range-picker.png
+TOUR ▸ TREE tree-range-picker.txt (16573 chars)
+TOUR ▸ SHOT 04-range-picker-scrolled.png
+TOUR ▸ MISSING Done
+TOUR ▸ SHOT 05-player-expanded-2.png
+TOUR ▸ TREE tree-player-expanded-2.txt (12118 chars)
+TOUR ▸ SHOT 06-player-collapsed.png
+TOUR ▸ TREE tree-player-collapsed.txt (12111 chars)
+TOUR ▸ SHOT 07-player-stopped.png
+Test Case '-[QuranTourUITests.QuranTourUITests testPlayer]' passed (64.240 seconds).
+Test Case '-[QuranTourUITests.QuranTourUITests testReader]' started.
+TOUR ▸ SHOT 01-list.png
+TOUR ▸ TREE tree-list.txt (14567 chars)
+TOUR ▸ MISSING search field
+TOUR ▸ SHOT 02-list-search-cleared.png
+TOUR ▸ SHOT 03-list-filter-MEMORIZED.png
+TOUR ▸ SHOT 04-list-filter-LEARNING.png
+TOUR ▸ SHOT 05-list-filter-ALL.png
+TOUR ▸ SHOT 06-juz.png
+TOUR ▸ TREE tree-juz.txt (29893 chars)
+TOUR ▸ SHOT 07-juz-scrolled.png
+TOUR ▸ tapped Done
+TOUR ▸ tapped 1, Al-Faatiha
+TOUR ▸ SHOT 08-reader.png
+TOUR ▸ TREE tree-reader.txt (11717 chars)
+TOUR ▸ SHOT 09-reader-scroll-1.png
+TOUR ▸ SHOT 10-reader-scroll-2.png
+TOUR ▸ TREE tree-reader-scrolled.txt (11720 chars)
+TOUR ▸ SHOT 11-ayah-menu.png
+TOUR ▸ TREE tree-ayah-menu.txt (15424 chars)
+TOUR ▸ SHOT 12-ayah-menu-dismissed.png
+TOUR ▸ SHOT 13-type-sheet.png
+TOUR ▸ TREE tree-type-sheet.txt (19475 chars)
+TOUR ▸ tapped Charter
+TOUR ▸ SHOT 14-type-sheet-changed.png
+TOUR ▸ tapped Done
+TOUR ▸ SHOT 15-reader-after-face.png
+TOUR ▸ TREE tree-reader-after-face.txt (11721 chars)
+TOUR ▸ SHOT 16-loop-sheet.png
+TOUR ▸ TREE tree-loop-sheet.txt (21045 chars)
+TOUR ▸ SHOT 17-loop-sheet-scrolled.png
+TOUR ▸ MISSING Done
+TOUR ▸ SHOT 18-reader-more.png
+TOUR ▸ TREE tree-reader-more.txt (11721 chars)
+TOUR ▸ SHOT 19-reader-before-play.png
+TOUR ▸ TREE tree-reader-before-play.txt (11721 chars)
+Test Case '-[QuranTourUITests.QuranTourUITests testReader]' passed (94.846 seconds).
+** TEST FAILED **
