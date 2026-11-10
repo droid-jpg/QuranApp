@@ -1,11 +1,35 @@
 import SwiftUI
+import UIKit
 
-// MARK: - Spring presets
+// MARK: - Motion tokens (REDESIGN §5)
 
+/// The three durations the app animates with. With Reduce Motion on, each becomes a plain
+/// 0.15 s cross-fade: pair them with `Motion.move(_:)` so a transition that slides or scales
+/// falls back to opacity. Read per call (not cached), so a change in Settings applies at once.
+enum Motion {
+    static var reduceMotion: Bool { UIAccessibility.isReduceMotionEnabled }
+
+    /// What every token becomes under Reduce Motion.
+    static let crossFade = Animation.easeInOut(duration: 0.15)
+
+    /// 0.15 s ease-out: play/pause symbol, button press.
+    static var quick: Animation { reduceMotion ? crossFade : .easeOut(duration: 0.15) }
+    /// 0.25 s ease-in-out: highlight moving between ayahs, row state.
+    static var standard: Animation { reduceMotion ? crossFade : .easeInOut(duration: 0.25) }
+    /// Spring, response 0.35, damping 0.85: mini player to Now Playing, sheets.
+    static var sheet: Animation { reduceMotion ? crossFade : .spring(response: 0.35, dampingFraction: 0.85) }
+
+    /// A transition that moves or scales, or just fades when Reduce Motion is on.
+    static func move(_ transition: AnyTransition) -> AnyTransition {
+        reduceMotion ? .opacity : transition
+    }
+}
+
+/// The old preset names, now aliases of the tokens above so nothing else had to change.
 enum AppAnim {
-    static let spring     = Animation.spring(response: 0.42, dampingFraction: 0.76)
-    static let springFast = Animation.spring(response: 0.22, dampingFraction: 0.82)
-    static let smooth     = Animation.easeInOut(duration: 0.22)
+    static var spring: Animation     { Motion.sheet }
+    static var springFast: Animation { Motion.quick }
+    static var smooth: Animation     { Motion.standard }
 }
 
 // MARK: - Staggered fade-up entrance

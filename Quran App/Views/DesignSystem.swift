@@ -6,6 +6,96 @@ import UIKit
 // eyebrows, outlined actions, one accent used as a mark rather than a fill.
 // Animation/interaction primitives live in AnimationKit.swift.
 
+// MARK: - Design tokens (REDESIGN §5)
+//
+// The one place literal sizes, spacings and colour roles live. Screens use these names:
+//   Spacing.*     the 4-8-12-16-24-32-48 scale plus screenMargin / cardPadding / sectionGap
+//   TypeScale.*   Font helpers that scale with Dynamic Type
+//   Palette.*     colour roles for the current theme, light and dark
+//   MinSize.*     hit targets and fixed control heights
+//   Motion.*      in AnimationKit.swift
+
+enum Spacing {
+    static let xxs: CGFloat = 4
+    static let xs: CGFloat  = 8
+    static let sm: CGFloat  = 12
+    static let md: CGFloat  = 16
+    static let lg: CGFloat  = 24
+    static let xl: CGFloat  = 32
+    static let xxl: CGFloat = 48
+
+    static let screenMargin: CGFloat = 20
+    static let cardPadding: CGFloat  = 16
+    static let sectionGap: CGFloat   = 32
+}
+
+enum MinSize {
+    static let hitTarget: CGFloat       = 44
+    static let listPlayButton: CGFloat  = 44
+    static let primaryPlay: CGFloat     = 56
+    static let nowPlayingPlay: CGFloat  = 64
+    static let surahRow: CGFloat        = 64
+    static let moreRow: CGFloat         = 56
+    static let miniPlayer: CGFloat      = 56
+    static let ayahActionButton: CGFloat = 64
+    static let segmentedControl: CGFloat = 36
+}
+
+/// The type scale. Serif tokens follow the reader's chosen serif face (`Font.appSerif`); the rest
+/// are system sans text styles. Every one scales with Dynamic Type. The reader's Arabic stays
+/// with `ReadingTypography`.
+enum TypeScale {
+    /// 34 serif regular — tab screen titles, greeting.
+    static var display: Font   { .appSerif(34) }
+    /// 28 serif — reader and Now Playing surah name.
+    static var title: Font     { .appSerif(28) }
+    /// 22 serif — card titles, prayer name.
+    static var heading: Font   { .appSerif(22) }
+    /// 19 serif — list rows.
+    static var rowTitle: Font  { .appSerif(19) }
+    /// 17 serif — row title inside the mini player.
+    static var rowTitleCompact: Font { .appSerif(17) }
+    /// 17 — translation, sheet rows, buttons.
+    static var body: Font      { .system(.body) }
+    /// 15 — subtitles, metadata, transliteration.
+    static var secondary: Font { .system(.subheadline) }
+    /// 13 semibold — section headings, segmented labels, values.
+    static var caption: Font   { .system(.footnote, weight: .semibold) }
+    /// 11 medium — tab bar labels only.
+    static var tabLabel: Font  { .system(.caption2, weight: .medium) }
+    /// 20 — Arabic in lists (surah names, headers). The reader uses `ReadingTypography`.
+    static var arabicList: Font { .appArabic(20) }
+}
+
+/// Colour roles for the current theme. Resolved on every read like `Color.brand`, so a theme
+/// change is picked up the next time a view renders. Values and contrast ratios: `AppTheme`.
+enum Palette {
+    static var background: Color    { AppTheme.current.background }
+    /// Bars and cards. Opaque.
+    static var surface: Color       { AppTheme.current.surface }
+    /// Sheets and the mini player. Opaque, no material.
+    static var surfaceRaised: Color { AppTheme.current.surfaceRaised }
+    static var textPrimary: Color   { AppTheme.current.textPrimary }
+    static var textSecondary: Color { AppTheme.current.textSecondary }
+    static var textTertiary: Color  { AppTheme.current.textTertiary }
+    static var accent: Color        { AppTheme.current.accent }
+    static var onAccent: Color      { AppTheme.current.onAccent }
+    /// Current-ayah background.
+    static var highlight: Color     { AppTheme.current.highlight }
+    static var separator: Color     { AppTheme.current.separator }
+    static var danger: Color        { AppTheme.current.danger }
+}
+
+extension View {
+    /// An opaque bar/header background with a hairline on its content edge. The replacement for
+    /// every material or translucent header over scrolling content.
+    func opaqueBar(_ fill: Color = Palette.surface, hairline: VerticalEdge = .bottom,
+                   ignoresSafeArea: Edge.Set = []) -> some View {
+        background(fill, ignoresSafeAreaEdges: ignoresSafeArea)
+            .overlay(alignment: hairline == .top ? .top : .bottom) { Hairline() }
+    }
+}
+
 // MARK: - Brand palette
 
 extension Color {
@@ -16,12 +106,11 @@ extension Color {
     /// Darker companion used as the far stop of brand gradients.
     static var brandDeep: Color { AppTheme.current.deep }
 
-    /// The hairline that replaced the app's cards. Ink at low opacity rather
-    /// than `.separator`, which is too faint to carry structure on true black.
-    static var rule: Color { Color(.label).opacity(0.13) }
+    /// The hairline that replaced the app's cards: the palette's opaque `separator`.
+    static var rule: Color { Palette.separator }
 
     /// Page ink for editorial surfaces — full-strength body text.
-    static var ink: Color { Color(.label) }
+    static var ink: Color { Palette.textPrimary }
 }
 
 /// Lets `.brand` be written anywhere a `ShapeStyle` is expected — `.foregroundStyle(.brand)`,
@@ -34,41 +123,16 @@ extension ShapeStyle where Self == Color {
 
 // MARK: - Editorial type
 
-/// The small-caps label that titles every section now that cards are gone.
-/// Always SF (never the reading serif) so it reads as furniture, not prose.
-///
-/// Set as a text style so it follows Dynamic Type, and never below the HIG's 11 pt minimum:
-/// asking for 9.5 or 10 gets Caption 2. The default tint is the secondary label colour rather
-/// than ink at 45%, so it darkens when Increase Contrast is on.
+/// The label that titles every section now that cards are gone: sentence case, 13 pt semibold
+/// (the floor for anything read), no letter-spacing, `textSecondary`. Always SF (never the
+/// reading serif) so it reads as furniture, not prose. `size` is kept for call sites that still
+/// pass one; it can only raise the size above 13, never lower it. Wraps rather than truncates.
 struct Eyebrow: View {
     let text: String
-    var tint: Color = .secondary
-    var size: CGFloat = 11
+    var tint: Color = Palette.textSecondary
+    var size: CGFloat = 13
 
-    init(_ text: String, tint: Color = .secondary, size: CGFloat = 11) {
-        self.text = text
-        self.tint = tint
-        self.size = size
-    }
-
-    var body: some View {
-        Text(text.uppercased())
-            .font(.label(size, weight: .bold))
-            .kerning(1.5)
-            .foregroundStyle(tint)
-            .lineLimit(1)
-    }
-}
-
-/// Tabular metadata — times, counts, percentages. Letterspaced SF so numbers
-/// don't jitter as they tick.
-/// Same type rules as `Eyebrow`.
-struct MetaText: View {
-    let text: String
-    var tint: Color = .secondary
-    var size: CGFloat = 11
-
-    init(_ text: String, tint: Color = .secondary, size: CGFloat = 11) {
+    init(_ text: String, tint: Color = Palette.textSecondary, size: CGFloat = 13) {
         self.text = text
         self.tint = tint
         self.size = size
@@ -76,8 +140,27 @@ struct MetaText: View {
 
     var body: some View {
         Text(text)
-            .font(.label(size, weight: .semibold).monospacedDigit())
-            .kerning(0.8)
+            .font(size > 13 ? .label(size, weight: .semibold) : TypeScale.caption)
+            .foregroundStyle(tint)
+    }
+}
+
+/// Tabular metadata — times, counts, percentages. Monospaced digits so numbers don't jitter as
+/// they tick. Same type rules as `Eyebrow`.
+struct MetaText: View {
+    let text: String
+    var tint: Color = Palette.textSecondary
+    var size: CGFloat = 13
+
+    init(_ text: String, tint: Color = Palette.textSecondary, size: CGFloat = 13) {
+        self.text = text
+        self.tint = tint
+        self.size = size
+    }
+
+    var body: some View {
+        Text(text)
+            .font((size > 13 ? Font.label(size, weight: .semibold) : TypeScale.caption).monospacedDigit())
             .foregroundStyle(tint)
     }
 }
@@ -158,7 +241,7 @@ struct EditorialSection<Content: View>: View {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.label(10.5, weight: .semibold))
+                        .font(.label(13, weight: .semibold))
                         .foregroundStyle(iconTint ?? Color.brand)
                         // Symbols sit on their own baseline; pin them to the
                         // eyebrow's so the row doesn't wobble per icon.
@@ -170,7 +253,7 @@ struct EditorialSection<Content: View>: View {
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 8)
                 if let trailing {
-                    MetaText(trailing, tint: trailingTint ?? .secondary)
+                    MetaText(trailing, tint: trailingTint ?? Palette.textSecondary)
                 }
             }
             .padding(.bottom, 7)
@@ -195,28 +278,25 @@ struct OutlineButton: View {
             HStack(spacing: 6) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.label(10, weight: .bold))
+                        .font(.label(13, weight: .bold))
                 }
-                Text(label.uppercased())
-                    .font(.label(10.5, weight: .semibold))
-                    .kerning(1.2)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                Text(label)
+                    .font(.label(15, weight: .semibold))
+                    .multilineTextAlignment(.center)
             }
-            .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.72))
+            .foregroundStyle(on ? Color.brand : Palette.textSecondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
-            // The HIG's minimum hit target.
-            .frame(minHeight: 44)
+            .frame(minHeight: MinSize.hitTarget)
             .overlay(
                 Rectangle()
-                    .strokeBorder(on ? Color.brand : Color(.label).opacity(0.18), lineWidth: 1)
+                    .strokeBorder(on ? Color.brand : Palette.separator, lineWidth: 1)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])
-        .animation(AppAnim.smooth, value: on)
+        .animation(Motion.standard, value: on)
     }
 }
 
@@ -233,21 +313,20 @@ struct OutlineChip: View {
             HStack(spacing: 6) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.label(10, weight: .bold))
+                        .font(.label(13, weight: .bold))
                         .foregroundStyle(tint ?? Color.brand)
                 }
-                Text(label.uppercased())
-                    .font(.label(10, weight: .semibold))
-                    .kerning(1.1)
-                    .foregroundStyle(Color(.label).opacity(0.72))
-                    .lineLimit(1)
+                Text(label)
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 8)
-            .frame(minHeight: 36)
-            .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.18), lineWidth: 1))
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
+            .frame(minHeight: MinSize.segmentedControl)
+            .overlay(Rectangle().strokeBorder(Palette.separator, lineWidth: 1))
             // Drawn at 36 pt, but the tappable area reaches the HIG's 44.
-            .padding(.vertical, 4)
+            .padding(.vertical, (MinSize.hitTarget - MinSize.segmentedControl) / 2)
             .contentShape(Rectangle())
         }
         .buttonStyle(CardButtonStyle(scale: 0.95))
@@ -290,13 +369,13 @@ struct PlayCircle: View {
                 .overlay(Circle().strokeBorder(Color.brand.opacity(filled ? 0 : 0.55), lineWidth: 1))
             Image(systemName: playing ? "pause.fill" : "play.fill")
                 .font(.system(size: size * 0.30, weight: .semibold))
-                .foregroundStyle(filled ? Color(.systemBackground) : Color.brand)
+                .foregroundStyle(filled ? Palette.onAccent : Color.brand)
                 .offset(x: playing ? 0 : size * 0.035)
                 .contentTransition(.symbolEffect(.replace))
         }
         .frame(width: size, height: size)
         // Smaller circles still get the HIG's 44 pt hit target.
-        .frame(minWidth: 44, minHeight: 44)
+        .frame(minWidth: MinSize.hitTarget, minHeight: MinSize.hitTarget)
         .contentShape(Rectangle())
     }
 }
@@ -308,7 +387,7 @@ struct PlayCircle: View {
 /// by the reader's bar and the surah list's, so the two can't drift apart.
 struct BarButton: View {
     /// The HIG's minimum hit target.
-    static let side: CGFloat = 44
+    static let side: CGFloat = MinSize.hitTarget
 
     let icon: String
     let label: String
@@ -319,7 +398,7 @@ struct BarButton: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.label(15, weight: .medium))
-                .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.72))
+                .foregroundStyle(on ? Color.brand : Palette.textSecondary)
                 .frame(width: Self.side, height: Self.side)
                 .contentShape(Rectangle())
         }
@@ -345,7 +424,7 @@ struct SectionHeader: View {
     var body: some View {
         HStack(spacing: 7) {
             Image(systemName: systemImage)
-                .font(.label(10.5, weight: .semibold))
+                .font(.label(13, weight: .semibold))
                 .foregroundStyle(tint)
             Eyebrow(title)
         }
@@ -380,19 +459,23 @@ struct JuzChip: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.label(11, weight: .semibold))
-                .kerning(0.6)
-                .foregroundStyle(isSelected ? Color.brand : .secondary)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 7)
+                .font(TypeScale.caption)
+                .foregroundStyle(isSelected ? Color.brand : Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
+                .frame(minHeight: MinSize.segmentedControl)
                 .overlay(
-                    Rectangle().strokeBorder(isSelected ? Color.brand : Color(.label).opacity(0.18),
+                    Rectangle().strokeBorder(isSelected ? Color.brand : Palette.separator,
                                              lineWidth: 1)
                 )
+                // Drawn at 36 pt; the tappable area reaches 44.
+                .padding(.vertical, (MinSize.hitTarget - MinSize.segmentedControl) / 2)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .animation(.easeInOut(duration: 0.15), value: isSelected)
+        .animation(Motion.quick, value: isSelected)
     }
 }
 

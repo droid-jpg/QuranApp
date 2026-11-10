@@ -186,8 +186,7 @@ private struct SurahListTopBar: View {
                 .padding(.top, 10)
                 .padding(.bottom, 14)
         }
-        .background(Color(.systemBackground))
-        .overlay(alignment: .bottom) { Hairline() }
+        .opaqueBar()
     }
 }
 

@@ -9,22 +9,22 @@ enum AppTab: String, Hashable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Set in the tab bar's own letterspaced caps.
+    /// The visible label, and the accessibility label.
     var title: String {
-        switch self {
-        case .home:  "Today"
-        case .quran: "Qur’an"
-        case .more:  "More"
-        }
-    }
-
-    /// VoiceOver reads the curly apostrophe badly, and "Today" alone is vague
-    /// out of context.
-    var accessibilityName: String {
         switch self {
         case .home:  "Today"
         case .quran: "Quran"
         case .more:  "More"
+        }
+    }
+
+    var accessibilityName: String { title }
+
+    var symbol: String {
+        switch self {
+        case .home:  "sun.max"
+        case .quran: "book"
+        case .more:  "ellipsis"
         }
     }
 }
@@ -69,7 +69,10 @@ struct QuranAppApp: App {
         }
 
         let appearance = UINavigationBarAppearance()
-        appearance.configureWithDefaultBackground()
+        // Opaque: content must not ghost through the bar while it scrolls (AUDIT #20).
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = UIColor { UIColor(Palette.surface).resolvedColor(with: $0) }
+        appearance.shadowColor = UIColor { UIColor(Palette.separator).resolvedColor(with: $0) }
         appearance.largeTitleTextAttributes = [.font: serif(34, .bold)]
         appearance.titleTextAttributes = [.font: serif(17, .semibold)]
 

@@ -48,15 +48,15 @@ struct EditorialMenuRow<Value: Hashable>: View {
             HStack(spacing: 10) {
                 Text(title)
                     .font(.appSerif(17))
-                    .foregroundStyle(Color(.label))
+                    .foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: 8)
                 Text(currentLabel)
                     .font(.appSerif(16))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.label(9, weight: .bold))
-                    .foregroundStyle(Color(.tertiaryLabel))
+                    .foregroundStyle(Palette.textTertiary)
             }
             .contentShape(Rectangle())
         }
@@ -75,11 +75,11 @@ struct EditorialToggle: View {
         HStack(spacing: 8) {
             Text(title)
                 .font(.appSerif(17))
-                .foregroundStyle(Color(.label))
+                .foregroundStyle(Palette.textPrimary)
             if let caption {
                 Text("— \(caption)")
                     .font(.appSerif(14, italic: true))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Palette.textSecondary)
             }
             Spacer(minLength: 8)
             Toggle("", isOn: $isOn)
@@ -112,11 +112,11 @@ struct EditorialNavRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
                         .font(.appSerif(17))
-                        .foregroundStyle(Color(.label))
+                        .foregroundStyle(Palette.textPrimary)
                     if let caption {
                         Text(caption)
                             .font(.appSerif(13.5, italic: true))
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Palette.textSecondary)
                             .multilineTextAlignment(.leading)
                     }
                 }
@@ -124,12 +124,12 @@ struct EditorialNavRow: View {
                 if let value {
                     Text(value)
                         .font(.appSerif(16))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Palette.textSecondary)
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.right")
                     .font(.label(10, weight: .bold))
-                    .foregroundStyle(Color(.tertiaryLabel))
+                    .foregroundStyle(Palette.textTertiary)
             }
             .contentShape(Rectangle())
         }
@@ -146,11 +146,11 @@ struct EditorialValueRow: View {
         HStack(spacing: 10) {
             Text(title)
                 .font(.appSerif(17))
-                .foregroundStyle(Color(.label))
+                .foregroundStyle(Palette.textPrimary)
             Spacer(minLength: 8)
             Text(value)
                 .font(.appSerif(16))
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Palette.textSecondary)
         }
     }
 }
@@ -158,14 +158,13 @@ struct EditorialValueRow: View {
 // MARK: - Segmented
 
 /// The outlined segmented control. Segments share one hairline between them, and
-/// the selected one's border wins where they overlap.
+/// the selected one's border wins where they overlap. Callers whose labels cannot fit
+/// at the current size fall back to a menu (see `RepeatSheet`).
 struct EditorialSegmented<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [EditorialOption<Value>]
-    /// The tracked small-caps look. Off gives sentence-case 13 pt labels that never
-    /// shrink, at least 36 pt tall (the redesign's segmented rule); the caller then
-    /// owns the fallback when they don't fit (see `RepeatSheet`).
-    var capitals: Bool = true
+    /// Retained so existing call sites compile; the control is always sentence case now.
+    var capitals: Bool = false
 
     var body: some View {
         HStack(spacing: -1) {
@@ -175,20 +174,19 @@ struct EditorialSegmented<Value: Hashable>: View {
                     Haptics.selection()
                     selection = option.value
                 } label: {
-                    Text(capitals ? option.label.uppercased() : option.label)
-                        .font(.label(capitals ? 11 : 13, weight: .semibold))
-                        .kerning(capitals ? 1.1 : 0)
-                        .foregroundStyle(on ? Color.brand : Color.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(capitals ? 0.8 : 1)
-                        .padding(.horizontal, capitals ? 0 : 8)
-                        .frame(maxWidth: .infinity, minHeight: capitals ? nil : 36)
-                        .padding(.vertical, capitals ? 10 : 4)
+                    // Sentence case, 13 pt, never shrunk or truncated. 36 pt tall drawn, 44 pt tappable.
+                    Text(option.label)
+                        .font(TypeScale.caption)
+                        .foregroundStyle(on ? Color.brand : Palette.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, Spacing.xs)
+                        .frame(maxWidth: .infinity, minHeight: MinSize.segmentedControl)
                         .overlay(
-                            Rectangle().strokeBorder(on ? Color.brand : Color(.label).opacity(0.18),
+                            Rectangle().strokeBorder(on ? Color.brand : Palette.separator,
                                                      lineWidth: 1)
                         )
                         .zIndex(on ? 1 : 0)
+                        .padding(.vertical, (MinSize.hitTarget - MinSize.segmentedControl) / 2)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -196,10 +194,8 @@ struct EditorialSegmented<Value: Hashable>: View {
                 .accessibilityShowsLargeContentViewer { Text(option.label) }
             }
         }
-        // Four segments across leave no room to grow past this; the system's segmented control
-        // stops at the same point and shows larger labels in the Large Content Viewer.
-        .dynamicTypeSize(...(capitals ? DynamicTypeSize.xLarge : DynamicTypeSize.accessibility5))
-        .animation(AppAnim.smooth, value: selection)
+        .dynamicTypeSize(...DynamicTypeSize.accessibility5)
+        .animation(Motion.standard, value: selection)
     }
 }
 
@@ -216,7 +212,7 @@ struct EditorialSlider: View {
         HStack(spacing: 14) {
             Text(label)
                 .font(.appSerif(15))
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Palette.textSecondary)
                 .frame(width: labelWidth, alignment: .leading)
             Slider(value: $value, in: range, step: 1)
                 .tint(.brand)
@@ -246,7 +242,7 @@ struct EditorialSpecimenSlider: View {
 
             Text(sample)
                 .font(rightToLeft ? .appArabic(value, scales: false) : .appSerif(value, italic: italic, scales: false))
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Palette.textSecondary)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: rightToLeft ? .trailing : .leading)
                 .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight)

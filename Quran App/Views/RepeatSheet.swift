@@ -155,7 +155,7 @@ struct RepeatSheet: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
-        .background(Color(.systemBackground))
+        .background(Palette.surfaceRaised)
         .tint(.brand)
         // Sized to the content (the detent height excludes the bottom safe area);
         // large stays available for big Dynamic Type, where the content scrolls.
@@ -165,7 +165,7 @@ struct RepeatSheet: View {
             if !new.contains(detent) { detent = new.first { $0 != .large } ?? .large }
         }
         // Opaque: the reader must not show through (AUDIT #21).
-        .presentationBackground(Color(.systemBackground))
+        .presentationBackground(Palette.surfaceRaised)
     }
 
     @State private var detent: PresentationDetent = .medium
@@ -280,7 +280,7 @@ struct RepeatSheet: View {
         .pickerStyle(.wheel)
         .frame(width: 240, height: 200)
         .presentationCompactAdaptation(.popover)
-        .presentationBackground(Color(.systemBackground))
+        .presentationBackground(Palette.surfaceRaised)
     }
 
     private var shortcuts: some View {
@@ -339,7 +339,7 @@ struct RepeatSheet: View {
         } label: {
             Text(playLabel)
                 .font(.label(17, weight: .semibold))
-                .foregroundStyle(Color(.systemBackground))
+                .foregroundStyle(Palette.onAccent)
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 50)
                 .background(Rectangle().fill(Color.brand))

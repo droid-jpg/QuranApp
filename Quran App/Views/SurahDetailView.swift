@@ -410,8 +410,7 @@ private struct ReaderTopBar: View {
         .frame(minHeight: 46)
         // Bar chrome stops growing at the largest non-accessibility size, as system bars do.
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        .background(Color(.systemBackground))
-        .overlay(alignment: .bottom) { Hairline() }
+        .opaqueBar()
     }
 }
 
@@ -724,8 +723,7 @@ struct SurahDetailView: View {
                     .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 24).padding(.vertical, 12)
-                .background(.regularMaterial)
-                .overlay(alignment: .bottom) { Hairline() }
+                .opaqueBar()
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 

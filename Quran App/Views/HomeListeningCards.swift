@@ -252,7 +252,7 @@ struct HomeMiniPlayer: View {
         .padding(.trailing, 2)
         .padding(.vertical, 7)
         // Opaque: see `QuranPlayerBar` — no blur under a live indicator.
-        .background(Color(.systemBackground))
+        .background(Palette.surfaceRaised)
         .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.16), lineWidth: 1))
         .padding(.horizontal, 16)
     }

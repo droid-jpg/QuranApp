@@ -97,7 +97,7 @@ struct QuranPlayerBar: View {
         .padding(.vertical, 8)
         // Opaque: a material here re-blurred the scrolling page behind the bar
         // on every frame, under an indicator that animates while audio plays.
-        .background(Color(.systemBackground))
+        .background(Palette.surfaceRaised)
         .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.16), lineWidth: 1))
         .padding(.horizontal, 16)
         .padding(.bottom, 10)
@@ -191,7 +191,7 @@ struct QuranExpandedPlayer: View {
         }
         // The controls stay inside the safe area; only the background runs on
         // under the home indicator, so no strip of dimmed page shows there.
-        .background(Color(.systemBackground).ignoresSafeArea(edges: .bottom))
+        .background(Palette.surfaceRaised, ignoresSafeAreaEdges: .bottom)
         .overlay(alignment: .top) { Hairline() }
     }
 

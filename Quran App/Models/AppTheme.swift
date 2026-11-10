@@ -31,6 +31,18 @@ struct ThemeInk {
     }
 }
 
+extension ThemeInk {
+    /// From two `0xRRGGBB` literals — the colour-role tables below are written in hex so they
+    /// can be checked against the contrast script one for one.
+    init(light: UInt32, dark: UInt32) {
+        func rgb(_ v: UInt32) -> (r: Double, g: Double, b: Double) {
+            (Double((v >> 16) & 0xFF) / 255, Double((v >> 8) & 0xFF) / 255, Double(v & 0xFF) / 255)
+        }
+        self.light = rgb(light)
+        self.dark = rgb(dark)
+    }
+}
+
 enum AppTheme: String, CaseIterable, Identifiable, Codable, Sendable {
     case teal, brass, indigo, plum, rose, sage, slate
 
@@ -66,7 +78,7 @@ enum AppTheme: String, CaseIterable, Identifiable, Codable, Sendable {
     private var ink: ThemeInk {
         switch self {
         case .teal:   ThemeInk(light: (0.03, 0.47, 0.44), dark: (0.32, 0.80, 0.75))
-        case .brass:  ThemeInk(light: (0.55, 0.42, 0.15), dark: (0.82, 0.70, 0.45))
+        case .brass:  ThemeInk(light: (0.52, 0.39, 0.13), dark: (0.82, 0.70, 0.45))
         case .indigo: ThemeInk(light: (0.24, 0.28, 0.62), dark: (0.60, 0.64, 0.96))
         case .plum:   ThemeInk(light: (0.45, 0.20, 0.48), dark: (0.81, 0.58, 0.86))
         case .rose:   ThemeInk(light: (0.66, 0.20, 0.32), dark: (0.94, 0.57, 0.64))
@@ -90,6 +102,45 @@ enum AppTheme: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var accent: Color { ink.color }
     var deep: Color { deepInk.color }
+
+    // MARK: - Colour roles
+    //
+    // Every palette supplies every role in light and dark (REDESIGN §5). Surfaces and text are
+    // shared neutrals; accent, onAccent and highlight are per palette. Contrast (WCAG) is
+    // measured against background, surface and surfaceRaised:
+    //   textPrimary >= 7:1 (15.6 min)  textSecondary >= 4.5:1 (7.0 min)  textTertiary >= 3:1 (3.7 min)
+    //   accent >= 4.5:1 as text (4.9 min)  textPrimary on highlight >= 7:1 (12.4 min)  danger >= 4.5:1
+
+    var background: Color    { Self.neutral(light: 0xFFFFFF, dark: 0x000000) }
+    /// Bars and cards. Opaque.
+    var surface: Color       { Self.neutral(light: 0xFFFFFF, dark: 0x000000) }
+    /// Sheets and the mini player. Opaque, never a material.
+    var surfaceRaised: Color { Self.neutral(light: 0xFFFFFF, dark: 0x1C1C1E) }
+    var textPrimary: Color   { Self.neutral(light: 0x111113, dark: 0xF5F5F7) }
+    var textSecondary: Color { Self.neutral(light: 0x58585E, dark: 0xA6A6AC) }
+    /// Disabled and decorative only.
+    var textTertiary: Color  { Self.neutral(light: 0x85858B, dark: 0x7E7E85) }
+    var separator: Color     { Self.neutral(light: 0xDCDCDE, dark: 0x3A3A3D) }
+    var danger: Color        { Self.neutral(light: 0xB3261E, dark: 0xFF8F86) }
+    /// Text and glyphs on an accent fill: white on the deep light accents, black on the luminous dark ones.
+    var onAccent: Color      { Self.neutral(light: 0xFFFFFF, dark: 0x000000) }
+
+    /// Current-ayah background: the accent washed into the page (10% light, 24% dark), opaque.
+    var highlight: Color {
+        switch self {
+        case .teal:   Self.neutral(light: 0xE6F1F1, dark: 0x14312E)
+        case .brass:  Self.neutral(light: 0xF3EFE9, dark: 0x322B1C)
+        case .indigo: Self.neutral(light: 0xECEDF5, dark: 0x25273B)
+        case .plum:   Self.neutral(light: 0xF1EBF2, dark: 0x322335)
+        case .rose:   Self.neutral(light: 0xF6EBEE, dark: 0x3A2327)
+        case .sage:   Self.neutral(light: 0xEDF1ED, dark: 0x273222)
+        case .slate:  Self.neutral(light: 0xECEEF0, dark: 0x272D33)
+        }
+    }
+
+    private static func neutral(light: UInt32, dark: UInt32) -> Color {
+        ThemeInk(light: light, dark: dark).color
+    }
 
     /// Fixed light-mode swatch, for the settings picker — every theme has to be
     /// distinguishable in the same row regardless of the current appearance.

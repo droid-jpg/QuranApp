@@ -129,7 +129,7 @@ struct EditorialMenuOverlay: View {
         // leaves a strip of dimmed page below itself.
         .padding(.bottom, safeBottom)
         .frame(maxWidth: .infinity)
-        .background(Color(.systemBackground))
+        .background(Palette.surfaceRaised)
         .overlay(alignment: .top) { Hairline() }
         .accessibilityAddTraits(.isModal)
     }
