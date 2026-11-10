@@ -1,7 +1,7 @@
 import WidgetKit
 import SwiftUI
 
-private let appGroup = "group.sami.Quran-App"
+private let appGroup = "group.com.saminukta.Quran-App"
 
 // The 7 daily events the widget can surface as "next". Order only breaks ties
 // between events sharing a minute (effectively never); the actual next event is

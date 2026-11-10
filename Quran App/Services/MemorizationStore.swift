@@ -3,7 +3,7 @@ import Combine
 import WidgetKit
 
 // Shared between the app and the widget extension via App Groups.
-let sharedAppGroup = "group.sami.Quran-App"
+let sharedAppGroup = "group.com.saminukta.Quran-App"
 
 private var sharedDefaults: UserDefaults {
     UserDefaults(suiteName: sharedAppGroup) ?? .standard

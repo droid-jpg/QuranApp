@@ -9,7 +9,7 @@ import UIKit
 // exceptions in project.pbxproj) and persisted in the App Group, so a widget
 // can paint itself in the same theme without launching the app.
 
-private let themeAppGroup = "group.sami.Quran-App"
+private let themeAppGroup = "group.com.saminukta.Quran-App"
 private let themeStorageKey = "appTheme"
 
 extension Notification.Name {

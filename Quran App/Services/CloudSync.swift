@@ -31,7 +31,7 @@ final class CloudSync {
 
     private let cloud = NSUbiquitousKeyValueStore.default
     private let standard = UserDefaults.standard
-    private let group = UserDefaults(suiteName: "group.sami.Quran-App")
+    private let group = UserDefaults(suiteName: "group.com.saminukta.Quran-App")
 
     /// Keys stored in `UserDefaults.standard` (settings + the stores that use it).
     private let standardKeys: [String] = [

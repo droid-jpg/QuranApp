@@ -106,7 +106,7 @@ class PrayerTimesService: NSObject, ObservableObject {
                 "Midnight": fmt.string(from: islamicMidnight)
             ]
             if let data = try? JSONEncoder().encode(prayerDict) {
-                UserDefaults(suiteName: "group.sami.Quran-App")?.set(data, forKey: "prayerTimesDict")
+                UserDefaults(suiteName: "group.com.saminukta.Quran-App")?.set(data, forKey: "prayerTimesDict")
             }
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
