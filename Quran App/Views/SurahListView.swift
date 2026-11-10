@@ -415,7 +415,6 @@ struct SurahQuickActions: View {
             audioService.play(
                 surah: surah.number,
                 startAyah: 1,
-                loop: LoopSettings(),
                 totalAyahs: surah.numberOfAyahs,
                 surahName: surah.englishName
             )

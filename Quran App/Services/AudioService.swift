@@ -37,8 +37,36 @@ class AudioService: ObservableObject {
     @Published var currentAyah: Int? = nil
     @Published var currentSurah: Int = 0
     @Published var currentSurahName: String = ""
-    @Published var isWordLooping = false
     @Published var playbackRate: Float = 1.0
+
+    /// The one repeat state. Set only through `setRepeat`, `startRepeat`,
+    /// `setRepeatFromSystem` and playback itself. It may name a surah other than
+    /// the one loaded (chosen in that surah's reader before playing); it is then
+    /// inert until playback starts in that surah, and a start anywhere else turns
+    /// it off.
+    @Published private(set) var repeatState = RepeatState()
+
+    /// Set while a word range loops. Suspends `repeatState` without changing it.
+    @Published private(set) var wordRepeat: WordRepeat?
+    var isWordLooping: Bool { wordRepeat != nil }
+
+    /// Repeat is on for the surah that is loaded.
+    var isRepeating: Bool {
+        repeatState.isOn && currentSurah > 0 && repeatState.surah == currentSurah
+    }
+
+    /// `repeatState` as it applies to the loaded surah (off when it names another).
+    var activeRepeat: RepeatState {
+        var s = repeatState
+        if !isRepeating { s.isOn = false }
+        return s
+    }
+
+    /// The playback status line, from the one status function.
+    var statusText: String {
+        activeRepeat.status(currentAyah: currentAyah ?? 1, reciterName: Reciter.selected.name,
+                            wordRepeat: wordRepeat)
+    }
 
     /// Playhead + ayah length. Deliberately *not* `@Published` on this object:
     /// see `PlaybackClock`. Views that draw a scrubber observe `clock` directly.
@@ -62,6 +90,7 @@ class AudioService: ObservableObject {
     private let player = AVQueuePlayer()
     private var playerItem: AVPlayerItem?       // currently playing item
     private var preloadedItem: AVPlayerItem?    // pre-queued item (strong ref so we can observe it)
+    private var preloadedAyah: Int?             // which ayah `preloadedItem` holds
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
 
@@ -71,9 +100,7 @@ class AudioService: ObservableObject {
     private var chapterTimeObserver: Any?
     private var loadedChapterUrl: URL?
 
-    @Published private(set) var loopSettings = LoopSettings()
     private var totalAyahs: Int = 0
-    private var repeatCounter = 0
 
     // Word-loop boundaries — global seconds into the chapter audio file.
     private var wordLoopStart: Double = 0
@@ -112,34 +139,83 @@ class AudioService: ObservableObject {
 
     // MARK: - Normal per-ayah playback
 
-    func play(surah: Int, startAyah: Int, loop: LoopSettings, totalAyahs: Int, surahName: String = "") {
+    /// Play from `startAyah`. Takes no repeat argument: the service's own
+    /// `repeatState` is kept when it is for this surah and the ayah is inside its
+    /// range, and turned off otherwise.
+    func play(surah: Int, startAyah: Int, totalAyahs: Int, surahName: String = "") {
         cancelRepeatGap()
         pendingSeekFraction = nil
         stopWordLoopInternal()
         currentSurah = surah
-        currentSurahName = surahName
-        loopSettings = loop
+        currentSurahName = surahName.isEmpty ? Self.surahName(surah) : surahName
         self.totalAyahs = totalAyahs
-        repeatCounter = 0
+        repeatState = repeatState.keptWhenPlaying(surah: surah, ayah: startAyah)
         loadItem(ayah: startAyah)
     }
 
-    /// Start playback for a memorization preset (`.listen` / `.repeatAfter` /
-    /// `.chain`), beginning at the loop's natural first ayah.
-    func playLoop(surah: Int, settings: LoopSettings, totalAyahs: Int, surahName: String = "") {
-        let start = settings.mode == .off ? 1 : settings.startAyah
-        play(surah: surah, startAyah: start, loop: settings, totalAyahs: totalAyahs, surahName: surahName)
+    /// Set `state` and play it from its first ayah (presets, the Repeat sheet).
+    func startRepeat(_ state: RepeatState, totalAyahs: Int, surahName: String = "") {
+        repeatState = state.clamped(ayahCount: totalAyahs)
+        play(surah: state.surah, startAyah: repeatState.from, totalAyahs: totalAyahs, surahName: surahName)
     }
 
     /// Pick up a saved listening session exactly where it stopped — same ayah, same
-    /// loop shape, and (once the ayah has loaded and reported a duration) the same
+    /// repeat, and (once the ayah has loaded and reported a duration) the same
     /// position inside it. Positions at the very edges are ignored: restoring to the
     /// last sliver of an ayah would just trip the end handler immediately.
     func resume(_ session: ListeningSession) {
-        play(surah: session.surah, startAyah: session.ayah, loop: session.loop,
+        repeatState = session.repeatState
+        play(surah: session.surah, startAyah: session.ayah,
              totalAyahs: session.totalAyahs, surahName: session.surahName)
         if session.fraction > 0.02 && session.fraction < 0.95 {
             pendingSeekFraction = session.fraction
+        }
+    }
+
+    // MARK: - Repeat changes
+
+    /// Any change to the repeat. Applies at once: while playing, an ayah outside
+    /// the new range jumps to its first ayah; while paused only the state changes
+    /// and the jump happens on the next play.
+    func setRepeat(_ new: RepeatState) {
+        var s = new
+        if s.surah == currentSurah, totalAyahs > 0 { s = s.clamped(ayahCount: totalAyahs) }
+        let old = repeatState
+        // A new range, count or on/off starts counting passes again; a pause
+        // change alone does not.
+        let shapeChanged = (s.isOn, s.surah, s.from, s.to, s.times)
+            != (old.isOn, old.surah, old.from, old.to, old.times)
+        if shapeChanged { s.completed = 0 }
+        repeatState = s
+
+        // In a pause the finished item has left the queue, so `currentItem` is nil.
+        let inGap = pendingRepeatWork != nil
+        guard currentSurah > 0, s.surah == currentSurah, !isWordLooping,
+              let ayah = currentAyah, player.currentItem != nil || inGap else { return }
+        if let target = activeRepeat.jumpTarget(current: ayah) {
+            if isPlaying || pausedForRepeat { loadItem(ayah: target) }
+            return
+        }
+        if inGap {
+            // The gap's next step was decided by the old shape; redecide it.
+            if shapeChanged {
+                let adv = activeRepeat.advance(after: ayah, ayahCount: totalAyahs)
+                repeatState = adv.state
+                pendingRepeatWork = work(for: adv.step)
+            }
+        } else {
+            refreshQueuedFollower()
+        }
+    }
+
+    /// Lock screen and CarPlay: off ↔ the current ayah forever.
+    func setRepeatFromSystem(_ on: Bool) {
+        if on {
+            setRepeat(.repeatThisAyah(surah: currentSurah, ayah: currentAyah ?? 1))
+        } else {
+            var s = repeatState
+            s.isOn = false
+            setRepeat(s)
         }
     }
 
@@ -147,29 +223,26 @@ class AudioService: ObservableObject {
 
     func skipToNextAyah() {
         stopWordLoopInternal()
-        guard let ayah = currentAyah, ayah < totalAyahs else { return }
-        repeatCounter = 0
-        loadItem(ayah: ayah + 1)
+        guard let ayah = currentAyah,
+              let next = activeRepeat.nextAyah(after: ayah, ayahCount: totalAyahs) else { return }
+        loadItem(ayah: next)
     }
 
     func skipToPreviousAyah() {
         stopWordLoopInternal()
-        guard let ayah = currentAyah, ayah > 1 else { return }
-        repeatCounter = 0
-        loadItem(ayah: ayah - 1)
-    }
-
-    func setLoopSingleAyah(_ on: Bool) {
-        loopSettings = on
-            ? LoopSettings(mode: .single, startAyah: currentAyah ?? 1,
-                           endAyah: currentAyah ?? 1, repeatCount: 0)
-            : LoopSettings(mode: .off, startAyah: 1, endAyah: 1, repeatCount: 0)
+        guard let ayah = currentAyah,
+              let prev = activeRepeat.previousAyah(before: ayah) else { return }
+        loadItem(ayah: prev)
     }
 
     func togglePlayPause() {
         if isWordLooping {
             if isPlaying { chapterPlayer?.pause(); isPlaying = false }
             else         { chapterPlayer?.play();  isPlaying = true  }
+        } else if !isPlaying, let ayah = currentAyah, player.currentItem != nil || pendingRepeatWork != nil,
+                  let target = activeRepeat.jumpTarget(current: ayah) {
+            // The range changed while paused and no longer holds this ayah.
+            loadItem(ayah: target)
         } else if let work = pendingRepeatWork {
             // In (or held after) a Listen & Repeat gap: play means "go on now".
             cancelRepeatGap()
@@ -224,13 +297,9 @@ class AudioService: ObservableObject {
         guard let ayah = currentAyah, currentSurah > 0, totalAyahs > 0 else { return }
         ListeningSessionStore.shared.record(
             surah: currentSurah, surahName: currentSurahName, ayah: ayah,
-            totalAyahs: totalAyahs, loop: loopSettings,
+            totalAyahs: totalAyahs, repeatState: activeRepeat,
             fraction: progress, duration: duration
         )
-    }
-
-    func updateLoop(_ settings: LoopSettings) {
-        loopSettings = settings
     }
 
     func setPlaybackRate(_ rate: Float) {
@@ -261,7 +330,9 @@ class AudioService: ObservableObject {
         ayah: Int,
         chapterUrl: URL,
         wordStartMs: Int,
-        wordEndMs: Int
+        wordEndMs: Int,
+        fromWord: Int,
+        toWord: Int
     ) {
         wordLoopStart = Double(wordStartMs) / 1000.0
         wordLoopEnd   = Double(wordEndMs)   / 1000.0
@@ -272,7 +343,8 @@ class AudioService: ObservableObject {
         currentSurah  = surah
         currentAyah   = ayah
         isSeeking     = false
-        isWordLooping = true
+        wordRepeat    = WordRepeat(surah: surah, ayah: ayah,
+                                   fromWord: min(fromWord, toWord), toWord: max(fromWord, toWord))
 
         player.pause()
 
@@ -306,8 +378,8 @@ class AudioService: ObservableObject {
     // MARK: - Internal: per-ayah (AVQueuePlayer)
 
     /// Load an ayah by rebuilding the queue on the shared AVQueuePlayer.
-    /// For sequential (.off) mode we pre-queue the next ayah so iOS can
-    /// auto-advance in the background without a new play() call.
+    /// The ayah that will follow is pre-queued so iOS can auto-advance in the
+    /// background without a new play() call.
     private func loadItem(ayah: Int) {
         removeEndObserver()
         cancelRepeatGap()
@@ -318,21 +390,14 @@ class AudioService: ObservableObject {
         // Tear down old queue and insert the new current item.
         player.removeAllItems()
         preloadedItem = nil
+        preloadedAyah = nil
 
         let item = AVPlayerItem(url: audioURL(surah: currentSurah, ayah: ayah))
         item.preferredForwardBufferDuration = 6
         playerItem = item
         player.insert(item, after: nil)
 
-        // Pre-queue the natural follower for background-safe auto-advance.
-        // Skipped when Listen & Repeat is on: that mode pauses between ayahs, so a
-        // seamless pre-queued follower would play through the pause.
-        if loopSettings.mode == .off, !loopSettings.listenAndRepeat, ayah < totalAyahs {
-            let next = AVPlayerItem(url: audioURL(surah: currentSurah, ayah: ayah + 1))
-            next.preferredForwardBufferDuration = 6
-            player.insert(next, after: item)
-            preloadedItem = next   // strong ref — we'll observe it in handleAyahEnd
-        }
+        queueFollower(after: ayah)
 
         observeAyahEnd()
         // Pre-fetch next 3 ayahs to eliminate network buffering
@@ -346,9 +411,33 @@ class AudioService: ObservableObject {
         if currentSurah > 0, totalAyahs > 0 {
             ListeningSessionStore.shared.record(
                 surah: currentSurah, surahName: currentSurahName, ayah: ayah,
-                totalAyahs: totalAyahs, loop: loopSettings, fraction: 0, duration: 0
+                totalAyahs: totalAyahs, repeatState: activeRepeat, fraction: 0, duration: 0
             )
         }
+    }
+
+    /// Pre-queue the ayah that `repeatState` says follows `ayah`, when it follows
+    /// seamlessly: same surah, no pause (a queued item would play through the
+    /// pause). Covers repeats too, so a range keeps looping in the background.
+    private func queueFollower(after ayah: Int) {
+        let adv = activeRepeat.advance(after: ayah, ayahCount: totalAyahs)
+        guard adv.pause == .none, case .ayah(let next) = adv.step else { return }
+        let item = AVPlayerItem(url: audioURL(surah: currentSurah, ayah: next))
+        item.preferredForwardBufferDuration = 6
+        player.insert(item, after: player.items().last)
+        preloadedItem = item   // strong ref — we'll observe it in handleAyahEnd
+        preloadedAyah = next
+    }
+
+    /// Re-pick the pre-queued follower after the repeat changed mid-ayah.
+    private func refreshQueuedFollower() {
+        if let pre = preloadedItem, player.items().contains(pre), pre !== player.currentItem {
+            player.remove(pre)
+        }
+        preloadedItem = nil
+        preloadedAyah = nil
+        guard let ayah = currentAyah, player.currentItem != nil else { return }
+        queueFollower(after: ayah)
     }
 
     private func audioURL(surah: Int, ayah: Int) -> URL {
@@ -415,103 +504,84 @@ class AudioService: ObservableObject {
         guard let ayah = currentAyah else { return }
         removeEndObserver()
 
-        switch loopSettings.mode {
+        let adv = activeRepeat.advance(after: ayah, ayahCount: totalAyahs)
+        // A state for another surah is left alone; only the live one moves on.
+        if isRepeating { repeatState = adv.state }
 
-        case .off:
-            if ayah < totalAyahs {
-                let nextAyah = ayah + 1
-                if loopSettings.listenAndRepeat {
-                    // Pause on the ayah just heard so the reciter can repeat it, then
-                    // load the next. currentAyah stays put during the pause so the
-                    // reader keeps highlighting the ayah being repeated.
-                    scheduleAfterRepeatPause { [weak self] in self?.loadItem(ayah: nextAyah) }
-                } else {
-                    // Seamless, background-safe advance using the pre-queued item.
-                    currentAyah   = nextAyah
-                    playerItem    = preloadedItem ?? player.currentItem
-                    preloadedItem = nil
-                    observeAyahEnd()
-                    if nextAyah < totalAyahs {
-                        let nextNext = AVPlayerItem(url: audioURL(surah: currentSurah, ayah: nextAyah + 1))
-                        player.insert(nextNext, after: player.items().last)
-                        preloadedItem = nextNext
-                    }
-                    updateNowPlayingInfo()
-                }
-            } else {
-                continueToNextSurahOrStop()
-            }
-
-        case .single:
-            // Single-ayah looping is a foreground feature; re-loading is fine.
-            let max = loopSettings.repeatCount
-            if max == 0 || repeatCounter < max - 1 {
-                repeatCounter += 1
-                scheduleAfterRepeatPause { [weak self] in self?.loadItem(ayah: ayah) }
-            } else {
-                finishLoop(after: ayah)
-            }
-
-        case .segment:
-            if ayah < loopSettings.endAyah {
-                scheduleAfterRepeatPause { [weak self] in self?.loadItem(ayah: ayah + 1) }
-            } else {
-                let max = loopSettings.repeatCount
-                if max == 0 || repeatCounter < max - 1 {
-                    repeatCounter += 1
-                    let start = loopSettings.startAyah
-                    scheduleAfterRepeatPause { [weak self] in self?.loadItem(ayah: start) }
-                } else {
-                    finishLoop(after: ayah)
-                }
-            }
-        }
-    }
-
-    /// A counted repeat has played its last pass: repeat turns off and playback
-    /// carries on with the ayah after it, like ordinary listening.
-    private func finishLoop(after ayah: Int) {
-        repeatCounter = 0
-        loopSettings.mode = .off
-        if ayah < totalAyahs {
-            scheduleAfterRepeatPause { [weak self] in self?.loadItem(ayah: ayah + 1) }
+        if adv.pause == .none, case .ayah(let next) = adv.step,
+           let pre = preloadedItem, preloadedAyah == next {
+            // Seamless, background-safe advance using the pre-queued item.
+            currentAyah   = next
+            playerItem    = pre
+            preloadedItem = nil
+            preloadedAyah = nil
+            observeAyahEnd()
+            queueFollower(after: next)
+            updateNowPlayingInfo()
         } else {
-            continueToNextSurahOrStop()
+            // During a pause currentAyah stays put so the reader keeps
+            // highlighting the ayah being recited.
+            scheduleAfterRepeatPause(adv.pause, work(for: adv.step))
         }
     }
 
+    private func work(for step: RepeatState.Step) -> () -> Void {
+        switch step {
+        case .ayah(let n): return { [weak self] in self?.loadItem(ayah: n) }
+        case .nextSurah:   return { [weak self] in self?.continueToNextSurahOrStop() }
+        }
+    }
+
+    /// Ayah 1 of the next surah, with repeat off (a surah change always turns it
+    /// off); after An-Nas, stop.
     private func continueToNextSurahOrStop() {
         if currentSurah < 114, let nextCount = Self.surahAyahCounts[currentSurah + 1] {
             currentSurah    += 1
-            currentSurahName = "Surah \(currentSurah)"
+            currentSurahName = Self.surahName(currentSurah)
             totalAyahs       = nextCount
-            repeatCounter    = 0
-            scheduleAfterRepeatPause { [weak self] in self?.loadItem(ayah: 1) }
+            repeatState      = repeatState.keptWhenPlaying(surah: currentSurah, ayah: 1)
+            loadItem(ayah: 1)
         } else {
             // End of the Quran. The last ayah stays shown; play starts it again.
             player.removeAllItems()
             playerItem = nil
+            preloadedItem = nil
+            preloadedAyah = nil
             isPlaying = false
             progress = 0
             updateNowPlayingInfo()
         }
     }
 
-    /// Runs `work` after the Listen & Repeat gap — a fixed number of seconds, or the
-    /// just-played ayah's own length ("Match ayah length") — so *every* loop mode
-    /// (sequential, single, and segment) pauses for the reciter to repeat aloud.
-    /// When Listen & Repeat is off, `work` runs immediately. A manual stop clears
-    /// `pausedForRepeat`, cancelling a scheduled resume.
-    private func scheduleAfterRepeatPause(_ work: @escaping () -> Void) {
-        guard loopSettings.listenAndRepeat, duration > 0 else { work(); return }
+    /// The English name for a surah from the bundled text (no network), falling
+    /// back to the list cached for the widget, then to "Surah N".
+    private static func surahName(_ number: Int) -> String {
+        if let s = QuranOfflineStore.shared.surahs().first(where: { $0.number == number }) {
+            return s.englishName
+        }
+        if let s = SharedSurahCache.load().first(where: { $0.number == number }) {
+            return s.englishName
+        }
+        return "Surah \(number)"
+    }
+
+    /// Runs `work` after the repeat pause — a fixed number of seconds, or the
+    /// just-played ayah's own length. With no pause, `work` runs immediately. A
+    /// manual stop clears `pausedForRepeat`, cancelling a scheduled resume.
+    private func scheduleAfterRepeatPause(_ pause: RepeatState.Pause, _ work: @escaping () -> Void) {
+        let delay: Double
+        switch pause {
+        case .none:           work(); return
+        case .ayahLength:     delay = duration
+        case .seconds(let s): delay = Double(s)
+        }
+        guard delay > 0 else { work(); return }
         player.pause()
         isPlaying = false
         repeatGapTask?.cancel()
         pendingRepeatWork = work
         pausedForRepeat = true
         updateNowPlayingInfo()
-        let rawDelay = loopSettings.listenRepeatDelay.rawValue
-        let delay = rawDelay < 0 ? duration : rawDelay
         repeatGapTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled, let self, self.pausedForRepeat,
@@ -585,7 +655,7 @@ class AudioService: ObservableObject {
             currentAyah  = before.ayah
         }
         positionBeforeWordLoop = nil
-        isWordLooping = false
+        wordRepeat = nil
         teardownChapterPlayer()
     }
 
@@ -667,7 +737,7 @@ class AudioService: ObservableObject {
         cc.changeRepeatModeCommand.addTarget { [weak self] event in
             guard let e = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
             Task { @MainActor [weak self] in
-                self?.setLoopSingleAyah(e.repeatType == .one)
+                self?.setRepeatFromSystem(e.repeatType != .off)
             }
             return .success
         }
@@ -679,8 +749,13 @@ class AudioService: ObservableObject {
             return
         }
         let title = currentSurahName.isEmpty ? "Surah \(currentSurah)" : currentSurahName
+        let repeating = activeRepeat
+        MPRemoteCommandCenter.shared().changeRepeatModeCommand.currentRepeatType =
+            !repeating.isOn ? .off : repeating.isSingleAyah ? .one : .all
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle:             "Ayah \(ayah)",
+            MPMediaItemPropertyTitle:             repeating.status(currentAyah: ayah,
+                                                                   reciterName: Reciter.selected.name,
+                                                                   wordRepeat: wordRepeat),
             MPMediaItemPropertyAlbumTitle:        title,
             MPMediaItemPropertyArtist:            "Quran",
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,

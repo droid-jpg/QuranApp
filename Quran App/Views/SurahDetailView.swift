@@ -149,18 +149,25 @@ struct SurahPageView: View {
         }
         .sheet(isPresented: $showLoopSheet) {
             LoopSettingsSheet(
-                settings: model.activeLoop(audioService),
+                settings: sheetRepeatState,
+                surah: surah.number,
                 totalAyahs: surah.numberOfAyahs,
                 ayahs: model.ayahs,
                 focusAyah: loopFocusAyah,
-                onApply: { newSettings in
-                    model.applyLoopSettings(newSettings, audioService: audioService)
+                onApply: { newState in
+                    // With this surah not loaded, Apply starts the repeat (like the
+                    // sheet's "Play ayahs" button); otherwise it changes it in place.
+                    if newState.isOn && (audioService.currentSurah != surah.number
+                                         || audioService.currentAyah == nil) {
+                        audioService.startRepeat(newState, totalAyahs: surah.numberOfAyahs,
+                                                 surahName: surah.englishName)
+                    } else {
+                        audioService.setRepeat(newState)
+                    }
                 },
                 onStartPreset: { preset in
-                    model.applyLoopSettings(preset, audioService: audioService)
-                    audioService.playLoop(surah: surah.number, settings: preset,
-                                          totalAyahs: surah.numberOfAyahs,
-                                          surahName: surah.englishName)
+                    audioService.startRepeat(preset, totalAyahs: surah.numberOfAyahs,
+                                             surahName: surah.englishName)
                 }
             )
         }
@@ -183,6 +190,14 @@ struct SurahPageView: View {
     /// The ayah the Repeat sheet centers its presets on: the ayah currently playing
     /// in this surah, else the memorization working ayah when this is the target
     /// surah, else the first ayah.
+    /// The service's repeat when it is for this surah; otherwise an off state
+    /// centred on the focus ayah.
+    private var sheetRepeatState: RepeatState {
+        let s = audioService.repeatState
+        if s.surah == surah.number { return s }
+        return RepeatState(surah: surah.number, from: loopFocusAyah, to: loopFocusAyah)
+    }
+
     private var loopFocusAyah: Int {
         if playerActive, let a = audioService.currentAyah { return a }
         if let t = targetStore.target, t.surah == surah.number { return t.workingAyah }
@@ -303,8 +318,7 @@ private struct ReaderTopBar: View {
     }
 
     private var loopOn: Bool {
-        let loop = model.activeLoop(audioService)
-        return loop.mode != .off || loop.listenAndRepeat
+        audioService.repeatState.isOn && audioService.repeatState.surah == surah.number
     }
 
     var body: some View {
@@ -496,10 +510,8 @@ struct SurahDetailView: View {
     /// Loop the given ayah on its own — the reader's "Repeat this ayah".
     private func repeatAyah(_ ayah: Int) {
         Haptics.tap()
-        let preset = LoopSettings.listen(ayah: ayah)
-        viewModel.applyLoopSettings(preset, audioService: audioService)
-        audioService.playLoop(surah: surah.number, settings: preset,
-                              totalAyahs: surah.numberOfAyahs, surahName: surah.englishName)
+        audioService.startRepeat(.repeatThisAyah(surah: surah.number, ayah: ayah),
+                                 totalAyahs: surah.numberOfAyahs, surahName: surah.englishName)
     }
 
     private func playFrom(_ ayah: Int) {
@@ -731,7 +743,9 @@ struct SurahDetailView: View {
                     ayah: ayah.numberInSurah,
                     chapterUrl: chapterUrl,
                     wordStartMs: start.startMs,
-                    wordEndMs: end.endMs
+                    wordEndMs: end.endMs,
+                    fromWord: start.id,
+                    toWord: end.id
                 )
             }
         }

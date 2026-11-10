@@ -6,7 +6,6 @@ class SurahDetailViewModel: ObservableObject {
     @Published var ayahs: [Ayah] = []
     @Published var isLoading = false
     @Published var error: String?
-    @Published var loopSettings: LoopSettings
     @Published var showLoopSheet = false
 
     @Published var wordTimingsByAyah: [Int: [WordTiming]] = [:]
@@ -24,9 +23,6 @@ class SurahDetailViewModel: ObservableObject {
 
     init(surah: Surah) {
         self.surah = surah
-        var settings = LoopSettings()
-        settings.endAyah = surah.numberOfAyahs
-        self.loopSettings = settings
     }
 
     // MARK: - Ayah loading
@@ -105,31 +101,18 @@ class SurahDetailViewModel: ObservableObject {
 
     // MARK: - Playback
 
-    func applyLoopSettings(_ settings: LoopSettings, audioService: AudioService) {
-        loopSettings = settings
-        audioService.updateLoop(settings)
-    }
-
-    /// The repeat settings that apply to this surah right now. While this surah is
-    /// the one loaded in the player, the player's copy is the truth: it may have
-    /// been changed from Today, the expanded player, the lock screen or CarPlay.
-    /// `loopSettings` here only holds settings chosen before playback starts.
-    func activeLoop(_ audioService: AudioService) -> LoopSettings {
-        audioService.currentSurah == surah.number ? audioService.loopSettings : loopSettings
-    }
-
     func playAyah(_ number: Int, audioService: AudioService) {
         if audioService.currentSurah == surah.number, audioService.currentAyah == number {
             audioService.togglePlayPause()
         } else {
             recordPlay(ayah: number)
-            let loop = activeLoop(audioService)
-            loopSettings = loop
+            // The repeat lives on the service; play keeps it when this ayah is
+            // inside its range.
             audioService.play(
                 surah: surah.number,
                 startAyah: number,
-                loop: loop,
-                totalAyahs: surah.numberOfAyahs
+                totalAyahs: surah.numberOfAyahs,
+                surahName: surah.englishName
             )
         }
     }

@@ -41,16 +41,13 @@ struct HomeView: View {
     private func runDrill(_ drill: PlayerDrill, target t: MemorizationTarget) {
         Haptics.impact(.light)
         withAnimation(AppAnim.springFast) { activeDrill = drill }
-        let settings: LoopSettings
+        let state: RepeatState
         switch drill {
-        case .listen:      settings = .listen(ayah: t.workingAyah)
-        case .repeatAfter: settings = .repeatAfter(ayah: t.workingAyah)
-        // Chain the working ayah onto the couple before it — long enough to bind
-        // them together, short enough not to replay half a surah every tap.
-        case .chain:       settings = .chain(from: max(1, t.workingAyah - 2), through: t.workingAyah)
+        case .listen:      state = .repeatThisAyah(surah: t.surah, ayah: t.workingAyah)
+        case .repeatAfter: state = .listenThenRecite(surah: t.surah, ayah: t.workingAyah)
+        case .chain:       state = .joinWithPrevious2(surah: t.surah, ayah: t.workingAyah)
         }
-        audioService.playLoop(surah: t.surah, settings: settings,
-                              totalAyahs: t.totalAyahs, surahName: t.surahName)
+        audioService.startRepeat(state, totalAyahs: t.totalAyahs, surahName: t.surahName)
     }
 
     private func isPlaying(_ verse: DailyVerse) -> Bool {
@@ -72,7 +69,6 @@ struct HomeView: View {
                 Haptics.tap()
                 activeDrill = nil
                 audioService.play(surah: v.surahNumber, startAyah: v.ayahNumber,
-                                  loop: .listen(ayah: v.ayahNumber, repeatCount: 1),
                                   totalAyahs: total, surahName: v.surahName)
             })
         }
@@ -81,8 +77,8 @@ struct HomeView: View {
             items.append(.init(id: "lastloop", label: s.loopLabel, icon: "repeat") {
                 Haptics.tap()
                 activeDrill = nil
-                audioService.playLoop(surah: s.surah, settings: s.loop,
-                                      totalAyahs: s.totalAyahs, surahName: s.surahName)
+                audioService.startRepeat(s.repeatState, totalAyahs: s.totalAyahs,
+                                         surahName: s.surahName)
             })
         }
 
@@ -94,7 +90,7 @@ struct HomeView: View {
                 activeDrill = nil
                 // Sequential mode rolls on through the following surahs on its own.
                 audioService.play(surah: juz.startSurah, startAyah: juz.startAyah,
-                                  loop: LoopSettings(), totalAyahs: total, surahName: name)
+                                  totalAyahs: total, surahName: name)
             })
         }
 
@@ -224,7 +220,6 @@ struct HomeView: View {
                                 activeDrill = nil
                                 audioService.play(
                                     surah: verse.surahNumber, startAyah: verse.ayahNumber,
-                                    loop: .listen(ayah: verse.ayahNumber, repeatCount: 1),
                                     totalAyahs: total, surahName: verse.surahName
                                 )
                             }

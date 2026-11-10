@@ -204,14 +204,7 @@ struct HomeMiniPlayer: View {
         return surahs.first { $0.number == audioService.currentSurah }?.englishName
             ?? "Surah \(audioService.currentSurah)"
     }
-    private var subtitle: String {
-        let loop = audioService.loopSettings
-        switch loop.mode {
-        case .off:     return loop.listenAndRepeat ? "Ayah \(ayah) · listen & repeat" : "Ayah \(ayah)"
-        case .single:  return loop.listenAndRepeat ? "Ayah \(ayah) · repeat after" : "Ayah \(ayah) · looping"
-        case .segment: return "Ayah \(ayah) · chaining \(loop.startAyah)–\(loop.endAyah)"
-        }
-    }
+    private var subtitle: String { audioService.statusText }
     private var startIndex: Int? {
         surahs.firstIndex { $0.number == audioService.currentSurah }
     }

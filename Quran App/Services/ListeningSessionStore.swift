@@ -1,8 +1,8 @@
 import Foundation
 import Combine
 
-/// The last thing the user actually *listened* to — surah, ayah, reciter, loop
-/// shape and how far into that ayah playback got.
+/// The last thing the user actually *listened* to — surah, ayah, reciter, repeat
+/// and how far into that ayah playback got.
 ///
 /// Memorization has `MemorizationTargetStore` for "what am I working on"; this is
 /// the parallel pointer for "what was playing". Home's resume hero reads it so a
@@ -13,7 +13,7 @@ struct ListeningSession: Codable, Equatable {
     var ayah: Int
     var totalAyahs: Int
     var reciterId: Int
-    var loop: LoopSettings
+    var repeatState: RepeatState
     /// 0…1 position inside `ayah` when this snapshot was written.
     var fraction: Double
     /// Length of `ayah` in seconds (0 when it was never known).
@@ -24,20 +24,47 @@ struct ListeningSession: Codable, Equatable {
         Reciter.all.first { $0.id == reciterId }?.name ?? Reciter.all[0].name
     }
 
-    /// True when the session was a drill rather than plain sequential listening.
-    var isLoop: Bool { loop.mode != .off || loop.listenAndRepeat }
+    /// True when the session was a repeat rather than plain listening.
+    var isLoop: Bool { repeatState.isOn }
 
-    /// Short human label for the loop shape, used by the quick-start rail.
-    var loopLabel: String {
-        switch loop.mode {
-        case .off:     return loop.listenAndRepeat ? "Listen & repeat" : "Continue"
-        case .single:  return loop.listenAndRepeat ? "Repeat ayah \(loop.startAyah)" : "Loop ayah \(loop.startAyah)"
-        case .segment: return "Chain \(loop.startAyah)–\(loop.endAyah)"
-        }
-    }
+    /// The status line for this session, from the one status function.
+    var loopLabel: String { repeatState.status(currentAyah: ayah, reciterName: reciterName) }
 
     var elapsed: Double { duration * min(1, max(0, fraction)) }
     var remaining: Double { max(0, duration - elapsed) }
+}
+
+// Sessions saved before `RepeatState` hold the old `LoopSettings` under "loop";
+// they migrate on read. A repeat that can't be read at all becomes "off" rather
+// than losing the whole session.
+extension ListeningSession {
+    private enum CodingKeys: String, CodingKey {
+        case surah, surahName, ayah, totalAyahs, reciterId, fraction, duration, updated
+        case repeatState = "repeat"
+    }
+    private enum LegacyKeys: String, CodingKey { case loop }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        surah      = try c.decode(Int.self, forKey: .surah)
+        surahName  = (try? c.decodeIfPresent(String.self, forKey: .surahName)) ?? ""
+        ayah       = try c.decode(Int.self, forKey: .ayah)
+        totalAyahs = try c.decode(Int.self, forKey: .totalAyahs)
+        reciterId  = (try? c.decodeIfPresent(Int.self, forKey: .reciterId)) ?? Reciter.all[0].id
+        fraction   = (try? c.decodeIfPresent(Double.self, forKey: .fraction)) ?? 0
+        duration   = (try? c.decodeIfPresent(Double.self, forKey: .duration)) ?? 0
+        updated    = (try? c.decodeIfPresent(Date.self, forKey: .updated)) ?? Date()
+
+        if let state = try? c.decodeIfPresent(RepeatState.self, forKey: .repeatState) {
+            repeatState = state
+        } else if let legacy = try? decoder.container(keyedBy: LegacyKeys.self)
+                    .decodeIfPresent(RepeatState.Legacy.self, forKey: .loop) {
+            repeatState = RepeatState(legacy: legacy, surah: surah)
+        } else {
+            repeatState = RepeatState(surah: surah, from: ayah, to: ayah)
+        }
+        if repeatState.surah == 0 { repeatState.surah = surah }
+    }
 }
 
 @MainActor
@@ -63,12 +90,12 @@ final class ListeningSessionStore: ObservableObject {
     // MARK: - Recording
 
     func record(surah: Int, surahName: String, ayah: Int, totalAyahs: Int,
-                loop: LoopSettings, fraction: Double, duration: Double) {
+                repeatState: RepeatState, fraction: Double, duration: Double) {
         guard surah > 0, ayah > 0, totalAyahs > 0 else { return }
         let name = surahName.isEmpty ? (session?.surah == surah ? session?.surahName ?? "" : "") : surahName
         let snapshot = ListeningSession(
             surah: surah, surahName: name, ayah: ayah, totalAyahs: totalAyahs,
-            reciterId: Reciter.selected.id, loop: loop,
+            reciterId: Reciter.selected.id, repeatState: repeatState,
             fraction: min(1, max(0, fraction)), duration: max(0, duration),
             updated: Date()
         )

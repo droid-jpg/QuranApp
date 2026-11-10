@@ -78,15 +78,13 @@ struct QuranAppApp: App {
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
     }
 
-    /// Runs a request left by the "Continue Memorizing" Siri intent: start a chain
-    /// loop of the working ayah plus the couple before it, paused after each.
+    /// Runs a request left by the "Continue Memorizing" Siri intent: the same
+    /// "Join with previous 2" preset Today and the player use.
     private func performPendingHifzAction() {
         guard HifzIntentAction.take() == HifzIntentAction.continueMemorizing,
               let t = targetStore.target else { return }
-        let start = max(1, t.workingAyah - 2)
-        let preset = LoopSettings.chain(from: start, through: t.workingAyah, pause: true)
-        audioService.playLoop(surah: t.surah, settings: preset,
-                              totalAyahs: t.totalAyahs, surahName: t.surahName)
+        audioService.startRepeat(.joinWithPrevious2(surah: t.surah, ayah: t.workingAyah),
+                                 totalAyahs: t.totalAyahs, surahName: t.surahName)
     }
 
     private var preferredColorScheme: ColorScheme? {

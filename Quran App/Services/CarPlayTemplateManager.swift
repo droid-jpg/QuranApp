@@ -135,12 +135,12 @@ final class CarPlayTemplateManager: NSObject {
     }
 
     private func updateNowPlayingButtons() {
-        let isLooping = audio?.loopSettings.mode == .single
+        let isLooping = audio?.isRepeating == true
         let repeatBtn = CPNowPlayingRepeatButton { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let currently = self.audio?.loopSettings.mode == .single
-                self.audio?.setLoopSingleAyah(!currently)
+                let currently = self.audio?.isRepeating == true
+                self.audio?.setRepeatFromSystem(!currently)
                 self.updateNowPlayingButtons()
             }
         }
@@ -156,8 +156,6 @@ final class CarPlayTemplateManager: NSObject {
         audio?.play(
             surah: surah.number,
             startAyah: 1,
-            loop: LoopSettings(mode: .off, startAyah: 1,
-                               endAyah: surah.numberOfAyahs, repeatCount: 0),
             totalAyahs: surah.numberOfAyahs,
             surahName: surah.englishName
         )
@@ -177,7 +175,7 @@ final class CarPlayTemplateManager: NSObject {
             }
             .store(in: &cancellables)
 
-        audio.$loopSettings
+        audio.$repeatState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in self?.updateNowPlayingButtons() }

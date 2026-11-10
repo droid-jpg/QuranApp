@@ -3,65 +3,57 @@ import UIKit
 
 // MARK: - Shared vocabulary
 
+/// View-side shape of the repeat for the old player controls: off, one ayah, or
+/// a range. Derived from `RepeatState`; it holds no state of its own.
 enum PlayerScope { case off, ayah, range }
 enum PlayerDrill { case listen, repeatAfter, chain }
 
 /// Pure logic that maps the player's controls onto the shared `AudioService` +
-/// `LoopSettings`. A cheap value type the mini bar and expanded sheet build on
+/// `RepeatState`. A cheap value type the mini bar and expanded sheet build on
 /// demand, so both surfaces stay in lock-step without duplicating the audio wiring.
 struct PlayerEngine {
     let surah: Surah
-    let viewModel: SurahDetailViewModel
     let audioService: AudioService
 
     var total: Int { surah.numberOfAyahs }
     var currentAyah: Int { audioService.currentAyah ?? 1 }
-    var loop: LoopSettings { audioService.loopSettings }
-    var repsCount: Int { loop.repeatCount }
+    var repeatState: RepeatState { audioService.repeatState }
+    var reps: RepeatState.Times { repeatState.times }
     var scope: PlayerScope {
-        switch loop.mode {
-        case .off:     return .off
-        case .single:  return .ayah
-        case .segment: return .range
-        }
+        guard audioService.isRepeating else { return .off }
+        return repeatState.isSingleAyah ? .ayah : .range
     }
 
-    private func apply(_ s: LoopSettings) { viewModel.applyLoopSettings(s, audioService: audioService) }
+    /// The service's state when it is for this surah, so a change keeps its
+    /// times and pause.
+    private var base: RepeatState {
+        repeatState.surah == surah.number ? repeatState : RepeatState(surah: surah.number)
+    }
 
     func setScope(_ sc: PlayerScope, a: Int, b: Int) {
+        var s = base
         switch sc {
         case .off:
-            apply(LoopSettings(mode: .off, startAyah: 1, endAyah: total, repeatCount: 0,
-                               listenAndRepeat: loop.listenAndRepeat,
-                               listenRepeatDelay: loop.listenRepeatDelay))
+            s.isOn = false
         case .ayah:
-            apply(LoopSettings(mode: .single, startAyah: currentAyah, endAyah: currentAyah,
-                               repeatCount: repsCount,
-                               listenAndRepeat: loop.listenAndRepeat,
-                               listenRepeatDelay: loop.listenRepeatDelay))
+            s.isOn = true; s.from = currentAyah; s.to = currentAyah
         case .range:
-            let lo = min(a, b), hi = max(a, b)
-            apply(LoopSettings(mode: .segment, startAyah: lo, endAyah: hi,
-                               repeatCount: repsCount,
-                               listenAndRepeat: loop.listenAndRepeat,
-                               listenRepeatDelay: loop.listenRepeatDelay))
+            s.isOn = true; s.from = min(a, b); s.to = max(a, b)
         }
+        audioService.setRepeat(s)
     }
 
-    func setReps(_ n: Int) { var s = loop; s.repeatCount = n; apply(s) }
+    func setReps(_ t: RepeatState.Times) { var s = base; s.times = t; audioService.setRepeat(s) }
 
     func runDrill(_ d: PlayerDrill) {
-        let reps = repsCount
         let ayah = currentAyah
-        let s: LoopSettings
+        let s: RepeatState
         switch d {
-        case .listen:      s = .listen(ayah: ayah, repeatCount: reps)
-        case .repeatAfter: s = .repeatAfter(ayah: ayah, repeatCount: reps)
-        case .chain:       s = .chain(from: 1, through: ayah, repeatCount: reps)
+        case .listen:      s = .repeatThisAyah(surah: surah.number, ayah: ayah)
+        case .repeatAfter: s = .listenThenRecite(surah: surah.number, ayah: ayah)
+        case .chain:       s = .joinWithPrevious2(surah: surah.number, ayah: ayah)
         }
-        apply(s)
-        audioService.playLoop(surah: surah.number, settings: s,
-                              totalAyahs: total, surahName: surah.englishName)
+        audioService.startRepeat(s, totalAyahs: total, surahName: surah.englishName)
     }
 
     func cycleSpeed(_ speeds: [Float]) {
@@ -75,22 +67,8 @@ struct PlayerEngine {
     func next()      { audioService.skipToNextAyah() }
     func seek(_ f: Double) { audioService.seek(toFraction: f) }
 
-    /// "Ayah 14 · looping ×5" — what the player is doing, in one line, the same
-    /// phrasing Home's docked bar uses.
-    var summary: String {
-        let reps = loop.repeatCount
-        let tail = reps > 0 ? " ×\(reps)" : ""
-        switch loop.mode {
-        case .off:
-            return loop.listenAndRepeat ? "Ayah \(currentAyah) · listen & repeat" : "Ayah \(currentAyah)"
-        case .single:
-            return loop.listenAndRepeat
-                ? "Ayah \(currentAyah) · repeat after\(tail)"
-                : "Ayah \(currentAyah) · looping\(tail)"
-        case .segment:
-            return "Ayah \(currentAyah) · chaining \(loop.startAyah)–\(loop.endAyah)"
-        }
-    }
+    /// What the player is doing, in one line, from the one status function.
+    var summary: String { audioService.statusText }
 }
 
 let playerSpeeds: [Float] = [1.0, 1.5, 2.0, 0.75]
@@ -115,7 +93,7 @@ struct QuranPlayerBar: View {
     }
 
     private var engine: PlayerEngine {
-        PlayerEngine(surah: surah, viewModel: viewModel, audioService: audioService)
+        PlayerEngine(surah: surah, audioService: audioService)
     }
     private var playing: Bool { audioService.isPlaying }
     private var scope: PlayerScope { engine.scope }
@@ -145,8 +123,12 @@ struct QuranPlayerBar: View {
 
             Button {
                 Haptics.selection()
-                engine.setScope(scope == .off ? .ayah : scope == .ayah ? .range : .off,
-                                a: engine.loop.startAyah, b: engine.loop.endAyah)
+                // Off → this ayah → (with more than one ayah) a two-ayah range → off.
+                let a = engine.currentAyah
+                let b = a < engine.total ? a + 1 : max(1, a - 1)
+                let next: PlayerScope = scope == .off ? .ayah
+                    : (scope == .ayah && engine.total > 1) ? .range : .off
+                engine.setScope(next, a: a, b: b)
             } label: {
                 Image(systemName: "repeat")
                     .font(.label(15, weight: .semibold))
@@ -208,13 +190,13 @@ struct QuranExpandedPlayer: View {
     }
 
     private var engine: PlayerEngine {
-        PlayerEngine(surah: surah, viewModel: viewModel, audioService: audioService)
+        PlayerEngine(surah: surah, audioService: audioService)
     }
     private var total: Int { surah.numberOfAyahs }
     private var currentAyah: Int { audioService.currentAyah ?? 1 }
     private var playing: Bool { audioService.isPlaying }
     private var scope: PlayerScope { engine.scope }
-    private var repsCount: Int { engine.repsCount }
+    private var repsCount: RepeatState.Times { engine.reps }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -280,7 +262,7 @@ struct QuranExpandedPlayer: View {
 
                 HStack(spacing: 8) {
                     ScopeSegmented(scope: scope) { setScope($0) }
-                    RepsControl(options: [0, 3, 5], current: repsCount) { setReps($0) }
+                    RepsControl(options: [.infinite, .three, .five], current: repsCount) { setReps($0) }
                 }
 
                 // The range block only earns its space once "Range" is the chosen
@@ -374,7 +356,10 @@ struct QuranExpandedPlayer: View {
     private func drill(_ d: PlayerDrill) {
         Haptics.impact(.light)
         withAnimation(AppAnim.springFast) { selectedDrill = d }
-        if d == .chain { rangeA = 1; rangeB = currentAyah } else { rangeA = currentAyah; rangeB = currentAyah }
+        if d == .chain {
+            let r = RepeatState.joinRange(ending: currentAyah)
+            rangeA = r.lowerBound; rangeB = r.upperBound
+        } else { rangeA = currentAyah; rangeB = currentAyah }
         engine.runDrill(d)
     }
     private func setScope(_ sc: PlayerScope) {
@@ -382,7 +367,7 @@ struct QuranExpandedPlayer: View {
         selectedDrill = nil
         engine.setScope(sc, a: rangeA, b: rangeB)
     }
-    private func setReps(_ n: Int) { Haptics.selection(); engine.setReps(n) }
+    private func setReps(_ t: RepeatState.Times) { Haptics.selection(); engine.setReps(t) }
     private func cycleSpeed() { Haptics.selection(); engine.cycleSpeed(playerSpeeds) }
 
     private var rangeLabel: String {
@@ -391,8 +376,9 @@ struct QuranExpandedPlayer: View {
     }
 
     private func syncRange() {
-        if scope == .range { rangeA = engine.loop.startAyah; rangeB = engine.loop.endAyah }
-        else { rangeA = currentAyah; rangeB = min(total, currentAyah + 1) }
+        if scope == .range { rangeA = engine.repeatState.from; rangeB = engine.repeatState.to }
+        else if currentAyah < total { rangeA = currentAyah; rangeB = currentAyah + 1 }
+        else { rangeA = max(1, currentAyah - 1); rangeB = currentAyah }
     }
 
     private var safeInsets: UIEdgeInsets { keyWindowInsets() }
@@ -523,15 +509,15 @@ private struct ScopeSegmented: View {
 }
 
 private struct RepsControl: View {
-    let options: [Int]
-    let current: Int
-    let onPick: (Int) -> Void
+    let options: [RepeatState.Times]
+    let current: RepeatState.Times
+    let onPick: (RepeatState.Times) -> Void
 
     var body: some View {
         HStack(spacing: -1) {
             ForEach(options, id: \.self) { n in
                 Button { onPick(n) } label: {
-                    Text(n == 0 ? "∞" : "\(n)×")
+                    Text(n.count.map { "\($0)×" } ?? "∞")
                         .font(.label(10.5, weight: .semibold))
                         .foregroundStyle(current == n ? Color.brand : Color.secondary)
                         .frame(minWidth: 34)

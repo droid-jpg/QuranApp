@@ -7,8 +7,9 @@ import SwiftUI
 /// applies on the next play.
 struct LoopSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var settings: LoopSettings
+    @State private var settings: RepeatState
     @State private var showAyahPicker = false
+    let surah: Int
     let totalAyahs: Int
     /// Loaded ayahs for the surah, so the segment picker can show real text.
     /// May be empty if the reader hasn't finished loading; the picker then falls
@@ -16,15 +17,16 @@ struct LoopSettingsSheet: View {
     let ayahs: [Ayah]
     /// The ayah the presets center on — normally the one playing or being read.
     let focusAyah: Int
-    /// Stage a loop for the next play (Custom → Apply).
-    let onApply: (LoopSettings) -> Void
-    /// Start a preset loop playing right now.
-    var onStartPreset: (LoopSettings) -> Void = { _ in }
+    /// Stage a repeat (Custom → Apply).
+    let onApply: (RepeatState) -> Void
+    /// Start a preset repeat playing right now.
+    var onStartPreset: (RepeatState) -> Void = { _ in }
 
-    init(settings: LoopSettings, totalAyahs: Int, ayahs: [Ayah], focusAyah: Int = 1,
-         onApply: @escaping (LoopSettings) -> Void,
-         onStartPreset: @escaping (LoopSettings) -> Void = { _ in }) {
+    init(settings: RepeatState, surah: Int, totalAyahs: Int, ayahs: [Ayah], focusAyah: Int = 1,
+         onApply: @escaping (RepeatState) -> Void,
+         onStartPreset: @escaping (RepeatState) -> Void = { _ in }) {
         _settings = State(initialValue: settings)
+        self.surah = surah
         self.totalAyahs = totalAyahs
         self.ayahs = ayahs
         self.focusAyah = max(1, min(focusAyah, max(totalAyahs, 1)))
@@ -32,10 +34,42 @@ struct LoopSettingsSheet: View {
         self.onStartPreset = onStartPreset
     }
 
-    private func startPreset(_ preset: LoopSettings) {
+    private func startPreset(_ preset: RepeatState) {
         Haptics.tap()
         onStartPreset(preset)
         dismiss()
+    }
+
+    /// The old Off / This ayah / Range picker, mapped onto `RepeatState`.
+    private var scope: Binding<PlayerScope> {
+        Binding(
+            get: { !settings.isOn ? .off : settings.isSingleAyah ? .ayah : .range },
+            set: { new in
+                switch new {
+                case .off:
+                    settings.isOn = false
+                case .ayah:
+                    settings = settings.switchedOn(surah: surah, currentAyah: focusAyah)
+                        .clamped(ayahCount: totalAyahs)
+                    settings.to = settings.from
+                case .range:
+                    settings = settings.switchedOn(surah: surah, currentAyah: focusAyah)
+                        .clamped(ayahCount: totalAyahs)
+                    // A range needs two ayahs to differ from "This ayah".
+                    if settings.isSingleAyah, totalAyahs > 1 {
+                        if settings.to < totalAyahs { settings.to += 1 } else { settings.from -= 1 }
+                    }
+                }
+            }
+        )
+    }
+
+    /// "Pause to repeat" is now just "pause is not None".
+    private var pauses: Binding<Bool> {
+        Binding(
+            get: { settings.pause != .none },
+            set: { settings.pause = $0 ? .ayahLength : .none }
+        )
     }
 
     var body: some View {
@@ -45,16 +79,16 @@ struct LoopSettingsSheet: View {
                 Section {
                     PresetRow(icon: "repeat", title: "Listen",
                               subtitle: "Loop ayah \(focusAyah) back-to-back") {
-                        startPreset(.listen(ayah: focusAyah))
+                        startPreset(.repeatThisAyah(surah: surah, ayah: focusAyah))
                     }
                     PresetRow(icon: "pause.circle", title: "Repeat",
                               subtitle: "Play ayah \(focusAyah), then pause for you to recite") {
-                        startPreset(.repeatAfter(ayah: focusAyah))
+                        startPreset(.listenThenRecite(surah: surah, ayah: focusAyah))
                     }
                     if focusAyah > 1 {
                         PresetRow(icon: "link", title: "Chain",
-                                  subtitle: "Recite ayahs 1–\(focusAyah), pausing after each") {
-                            startPreset(.chain(from: 1, through: focusAyah, pause: true))
+                                  subtitle: "Loop ayahs \(RepeatState.joinRange(ending: focusAyah).lowerBound)–\(focusAyah) together") {
+                            startPreset(.joinWithPrevious2(surah: surah, ayah: focusAyah))
                         }
                     }
                 } header: {
@@ -65,27 +99,29 @@ struct LoopSettingsSheet: View {
 
                 // MARK: Custom
                 Section {
-                    Picker("Repeat", selection: $settings.mode) {
-                        Text("Off").tag(LoopSettings.Mode.off)
-                        Text("This ayah").tag(LoopSettings.Mode.single)
-                        Text("Range").tag(LoopSettings.Mode.segment)
+                    Picker("Repeat", selection: scope) {
+                        Text("Off").tag(PlayerScope.off)
+                        Text("This ayah").tag(PlayerScope.ayah)
+                        Text("Range").tag(PlayerScope.range)
                     }
                     .pickerStyle(.segmented)
 
-                    if settings.mode == .single {
-                        Stepper(value: $settings.startAyah, in: 1...max(totalAyahs, 1)) {
+                    if scope.wrappedValue == .ayah {
+                        Stepper(value: $settings.from, in: 1...max(totalAyahs, 1)) {
                             HStack {
                                 Text("Ayah")
                                 Spacer()
-                                Text("\(settings.startAyah)")
+                                Text("\(settings.from)")
                                     .foregroundStyle(.secondary)
                                     .monospacedDigit()
                             }
                         }
-                        .onChange(of: settings.startAyah) { _, v in settings.endAyah = v }
+                        .onChange(of: settings.from) { _, v in
+                            if scope.wrappedValue == .ayah || settings.to < v { settings.to = v }
+                        }
                     }
 
-                    if settings.mode == .segment {
+                    if scope.wrappedValue == .range {
                         Button { showAyahPicker = true } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "text.line.first.and.arrowtriangle.forward")
@@ -104,57 +140,46 @@ struct LoopSettingsSheet: View {
                         .buttonStyle(.plain)
                     }
 
-                    if settings.mode != .off {
-                        Picker("Times", selection: $settings.repeatCount) {
-                            Text("∞").tag(0)
-                            ForEach([1, 2, 3, 5, 7, 10], id: \.self) { Text("\($0)×").tag($0) }
+                    if settings.isOn {
+                        Picker("Times", selection: $settings.times) {
+                            ForEach([RepeatState.Times.infinite, .two, .three, .five, .ten]) { t in
+                                Text(t.count.map { "\($0)×" } ?? "∞").tag(t)
+                            }
                         }
-                        Toggle("Pause to repeat", isOn: $settings.listenAndRepeat)
-                        if settings.listenAndRepeat {
-                            Picker("Gap", selection: $settings.listenRepeatDelay) {
-                                ForEach(LoopSettings.RepeatDelay.allCases) { d in
-                                    Text(d.label).tag(d)
-                                }
+                        Toggle("Pause to repeat", isOn: pauses)
+                        if settings.pause != .none {
+                            Picker("Gap", selection: $settings.pause) {
+                                Text("Match ayah length").tag(RepeatState.Pause.ayahLength)
+                                Text("5 seconds").tag(RepeatState.Pause.seconds(5))
+                                Text("10 seconds").tag(RepeatState.Pause.seconds(10))
                             }
                         }
                     }
                 } header: {
                     Text("Custom")
                 } footer: {
-                    if settings.mode == .off {
+                    if !settings.isOn {
                         Text("Playback advances through the surah normally.")
-                    } else if settings.listenAndRepeat {
+                    } else if settings.pause != .none {
                         Text("After each ayah, audio pauses so you can repeat it aloud, then continues the loop.")
+                    } else if let n = settings.times.count {
+                        Text("Plays \(n) times, then carries on.")
                     } else {
-                        Text(settings.repeatCount == 0
-                             ? "Loops until you stop playback."
-                             : "Plays \(settings.repeatCount) time\(settings.repeatCount == 1 ? "" : "s"), then stops.")
+                        Text("Loops until you stop playback.")
                     }
                 }
             }
             .navigationTitle("Repeat")
             .navigationBarTitleDisplayMode(.inline)
-            .onChange(of: settings.mode) { _, newMode in
-                switch newMode {
-                case .single:
-                    settings.startAyah = min(max(settings.startAyah, 1), totalAyahs)
-                    settings.endAyah = settings.startAyah
-                case .segment:
-                    settings.startAyah = min(max(settings.startAyah, 1), totalAyahs)
-                    settings.endAyah = min(max(settings.endAyah, settings.startAyah), totalAyahs)
-                case .off:
-                    break
-                }
-            }
             .sheet(isPresented: $showAyahPicker) {
                 AyahRangePickerSheet(
                     ayahs: ayahs,
                     totalAyahs: totalAyahs,
-                    initialStart: settings.startAyah,
-                    initialEnd: settings.endAyah
+                    initialStart: settings.from,
+                    initialEnd: settings.to
                 ) { start, end in
-                    settings.startAyah = start
-                    settings.endAyah = end
+                    settings.from = min(start, end)
+                    settings.to = max(start, end)
                 }
             }
             .toolbar {
@@ -175,13 +200,13 @@ struct LoopSettingsSheet: View {
     }
 
     private var segmentRangeTitle: String {
-        settings.startAyah == settings.endAyah
-            ? "Ayah \(settings.startAyah)"
-            : "Ayahs \(settings.startAyah)–\(settings.endAyah)"
+        settings.from == settings.to
+            ? "Ayah \(settings.from)"
+            : "Ayahs \(settings.from)–\(settings.to)"
     }
 
     private var segmentRangeSubtitle: String {
-        let count = settings.endAyah - settings.startAyah + 1
+        let count = settings.to - settings.from + 1
         return "\(count) ayah\(count == 1 ? "" : "s") selected"
     }
 }
