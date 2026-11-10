@@ -110,15 +110,25 @@ class SurahDetailViewModel: ObservableObject {
         audioService.updateLoop(settings)
     }
 
+    /// The repeat settings that apply to this surah right now. While this surah is
+    /// the one loaded in the player, the player's copy is the truth: it may have
+    /// been changed from Today, the expanded player, the lock screen or CarPlay.
+    /// `loopSettings` here only holds settings chosen before playback starts.
+    func activeLoop(_ audioService: AudioService) -> LoopSettings {
+        audioService.currentSurah == surah.number ? audioService.loopSettings : loopSettings
+    }
+
     func playAyah(_ number: Int, audioService: AudioService) {
         if audioService.currentSurah == surah.number, audioService.currentAyah == number {
             audioService.togglePlayPause()
         } else {
             recordPlay(ayah: number)
+            let loop = activeLoop(audioService)
+            loopSettings = loop
             audioService.play(
                 surah: surah.number,
                 startAyah: number,
-                loop: loopSettings,
+                loop: loop,
                 totalAyahs: surah.numberOfAyahs
             )
         }

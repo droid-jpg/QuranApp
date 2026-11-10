@@ -149,7 +149,7 @@ struct SurahPageView: View {
         }
         .sheet(isPresented: $showLoopSheet) {
             LoopSettingsSheet(
-                settings: model.loopSettings,
+                settings: model.activeLoop(audioService),
                 totalAyahs: surah.numberOfAyahs,
                 ayahs: model.ayahs,
                 focusAyah: loopFocusAyah,
@@ -281,6 +281,7 @@ struct SurahPageView: View {
 private struct ReaderTopBar: View {
     let surah: Surah
     @ObservedObject var model: SurahDetailViewModel
+    @EnvironmentObject private var audioService: AudioService
     let showsTitle: Bool
     let onBack: () -> Void
     let onLoop: () -> Void
@@ -302,7 +303,8 @@ private struct ReaderTopBar: View {
     }
 
     private var loopOn: Bool {
-        model.loopSettings.mode != .off || model.loopSettings.listenAndRepeat
+        let loop = model.activeLoop(audioService)
+        return loop.mode != .off || loop.listenAndRepeat
     }
 
     var body: some View {
@@ -501,7 +503,9 @@ struct SurahDetailView: View {
     }
 
     private func playFrom(_ ayah: Int) {
-        audioService.stopWordLoop()
+        // Don't resume the main player here: `playAyah` decides what plays next,
+        // and a resume followed by its toggle would pause the ayah just asked for.
+        audioService.stopWordLoop(resume: false)
         viewModel.playAyah(ayah, audioService: audioService)
     }
 
@@ -779,7 +783,7 @@ struct SurahDetailView: View {
                 showResumeBar = true
             }
             // Track last-opened surah for widget
-            let ud = UserDefaults(suiteName: "group.sami.Quran-App")
+            let ud = UserDefaults(suiteName: "group.com.saminukta.Quran-App")
             ud?.set(surah.englishName, forKey: "lastSurahName")
             ud?.set(surah.number, forKey: "lastSurahNumber")
             WidgetCenter.shared.reloadAllTimelines()

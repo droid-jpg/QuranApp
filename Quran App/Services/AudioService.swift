@@ -85,6 +85,16 @@ class AudioService: ObservableObject {
     /// pause clears it so the scheduled resume is cancelled.
     private var pausedForRepeat = false
 
+    /// What the Listen & Repeat gap will do when it ends, and the timer waiting to
+    /// do it. Held separately so a pause during the gap can cancel the timer and
+    /// keep the work for the next play, and so play can skip the gap.
+    private var pendingRepeatWork: (() -> Void)?
+    private var repeatGapTask: Task<Void, Never>?
+
+    /// The ayah the main player was on before a word loop borrowed `currentSurah`
+    /// and `currentAyah`, restored when the word loop ends.
+    private var positionBeforeWordLoop: (surah: Int, ayah: Int?)?
+
     /// Position to restore once the ayah's real duration is known — set by
     /// `resume(_:)` so a saved listening session picks up mid-ayah.
     private var pendingSeekFraction: Double?
@@ -103,7 +113,7 @@ class AudioService: ObservableObject {
     // MARK: - Normal per-ayah playback
 
     func play(surah: Int, startAyah: Int, loop: LoopSettings, totalAyahs: Int, surahName: String = "") {
-        pausedForRepeat = false
+        cancelRepeatGap()
         pendingSeekFraction = nil
         stopWordLoopInternal()
         currentSurah = surah
@@ -136,15 +146,15 @@ class AudioService: ObservableObject {
     // MARK: - CarPlay / lock-screen navigation helpers
 
     func skipToNextAyah() {
-        guard let ayah = currentAyah, ayah < totalAyahs else { return }
         stopWordLoopInternal()
+        guard let ayah = currentAyah, ayah < totalAyahs else { return }
         repeatCounter = 0
         loadItem(ayah: ayah + 1)
     }
 
     func skipToPreviousAyah() {
-        guard let ayah = currentAyah, ayah > 1 else { return }
         stopWordLoopInternal()
+        guard let ayah = currentAyah, ayah > 1 else { return }
         repeatCounter = 0
         loadItem(ayah: ayah - 1)
     }
@@ -160,15 +170,43 @@ class AudioService: ObservableObject {
         if isWordLooping {
             if isPlaying { chapterPlayer?.pause(); isPlaying = false }
             else         { chapterPlayer?.play();  isPlaying = true  }
+        } else if let work = pendingRepeatWork {
+            // In (or held after) a Listen & Repeat gap: play means "go on now".
+            cancelRepeatGap()
+            work()
+        } else if player.currentItem == nil {
+            // The queue ran out (end of the Quran) but an ayah is still shown:
+            // play starts that ayah again instead of doing nothing.
+            guard !isPlaying, let ayah = currentAyah, currentSurah > 0 else { return }
+            loadItem(ayah: ayah)
         } else {
-            guard player.currentItem != nil else { return }
             if isPlaying { player.pause(); isPlaying = false; ListeningSessionStore.shared.flush() }
-            else         { player.play();  isPlaying = true  }
+            else         { player.play(); player.rate = playbackRate; isPlaying = true }
         }
     }
 
-    func stop() {
+    /// Pause from outside the app's own button (lock screen, a call, headphones
+    /// unplugged). During a Listen & Repeat gap nothing is audibly playing, so
+    /// this stops the gap's timer; the next play carries on from there.
+    private func pauseFromSystem() {
+        if isPlaying {
+            togglePlayPause()
+        } else if pausedForRepeat {
+            repeatGapTask?.cancel()
+            repeatGapTask = nil
+            pausedForRepeat = false
+        }
+    }
+
+    private func cancelRepeatGap() {
+        repeatGapTask?.cancel()
+        repeatGapTask = nil
+        pendingRepeatWork = nil
         pausedForRepeat = false
+    }
+
+    func stop() {
+        cancelRepeatGap()
         pendingSeekFraction = nil
         stopWordLoopInternal()
         clearPlayerItem()
@@ -227,6 +265,10 @@ class AudioService: ObservableObject {
     ) {
         wordLoopStart = Double(wordStartMs) / 1000.0
         wordLoopEnd   = Double(wordEndMs)   / 1000.0
+        if !isWordLooping {
+            positionBeforeWordLoop = (currentSurah, player.currentItem != nil ? currentAyah : nil)
+        }
+        cancelRepeatGap()
         currentSurah  = surah
         currentAyah   = ayah
         isSeeking     = false
@@ -248,10 +290,12 @@ class AudioService: ObservableObject {
         isPlaying = true
     }
 
-    func stopWordLoop() {
+    /// End a word loop. With `resume`, the main player carries on from where it
+    /// was; without, it stays paused there for the caller to decide.
+    func stopWordLoop(resume: Bool = true) {
         guard isWordLooping else { return }
         stopWordLoopInternal()
-        if player.currentItem != nil {
+        if resume, player.currentItem != nil {
             player.play()
             isPlaying = true
         } else {
@@ -266,6 +310,7 @@ class AudioService: ObservableObject {
     /// auto-advance in the background without a new play() call.
     private func loadItem(ayah: Int) {
         removeEndObserver()
+        cancelRepeatGap()
 
         currentAyah = ayah
         isSeeking   = false
@@ -393,18 +438,8 @@ class AudioService: ObservableObject {
                     }
                     updateNowPlayingInfo()
                 }
-            } else if currentSurah < 114,
-                      let nextCount = Self.surahAyahCounts[currentSurah + 1] {
-                // Auto-continue to the next surah
-                currentSurah    += 1
-                currentSurahName = "Surah \(currentSurah)"
-                totalAyahs       = nextCount
-                repeatCounter    = 0
-                scheduleAfterRepeatPause { [weak self] in self?.loadItem(ayah: 1) }
             } else {
-                player.removeAllItems()
-                isPlaying = false
-                updateNowPlayingInfo()
+                continueToNextSurahOrStop()
             }
 
         case .single:
@@ -414,9 +449,7 @@ class AudioService: ObservableObject {
                 repeatCounter += 1
                 scheduleAfterRepeatPause { [weak self] in self?.loadItem(ayah: ayah) }
             } else {
-                repeatCounter = 0
-                player.removeAllItems()
-                isPlaying = false
+                finishLoop(after: ayah)
             }
 
         case .segment:
@@ -429,11 +462,38 @@ class AudioService: ObservableObject {
                     let start = loopSettings.startAyah
                     scheduleAfterRepeatPause { [weak self] in self?.loadItem(ayah: start) }
                 } else {
-                    repeatCounter = 0
-                    player.removeAllItems()
-                    isPlaying = false
+                    finishLoop(after: ayah)
                 }
             }
+        }
+    }
+
+    /// A counted repeat has played its last pass: repeat turns off and playback
+    /// carries on with the ayah after it, like ordinary listening.
+    private func finishLoop(after ayah: Int) {
+        repeatCounter = 0
+        loopSettings.mode = .off
+        if ayah < totalAyahs {
+            scheduleAfterRepeatPause { [weak self] in self?.loadItem(ayah: ayah + 1) }
+        } else {
+            continueToNextSurahOrStop()
+        }
+    }
+
+    private func continueToNextSurahOrStop() {
+        if currentSurah < 114, let nextCount = Self.surahAyahCounts[currentSurah + 1] {
+            currentSurah    += 1
+            currentSurahName = "Surah \(currentSurah)"
+            totalAyahs       = nextCount
+            repeatCounter    = 0
+            scheduleAfterRepeatPause { [weak self] in self?.loadItem(ayah: 1) }
+        } else {
+            // End of the Quran. The last ayah stays shown; play starts it again.
+            player.removeAllItems()
+            playerItem = nil
+            isPlaying = false
+            progress = 0
+            updateNowPlayingInfo()
         }
     }
 
@@ -446,14 +506,17 @@ class AudioService: ObservableObject {
         guard loopSettings.listenAndRepeat, duration > 0 else { work(); return }
         player.pause()
         isPlaying = false
+        repeatGapTask?.cancel()
+        pendingRepeatWork = work
         pausedForRepeat = true
         updateNowPlayingInfo()
         let rawDelay = loopSettings.listenRepeatDelay.rawValue
         let delay = rawDelay < 0 ? duration : rawDelay
-        Task { @MainActor [weak self] in
+        repeatGapTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(delay))
-            guard let self, self.loopSettings.listenAndRepeat, self.pausedForRepeat else { return }
-            self.pausedForRepeat = false
+            guard !Task.isCancelled, let self, self.pausedForRepeat,
+                  let work = self.pendingRepeatWork else { return }
+            self.cancelRepeatGap()
             work()
         }
     }
@@ -517,6 +580,11 @@ class AudioService: ObservableObject {
     }
 
     private func stopWordLoopInternal() {
+        if isWordLooping, let before = positionBeforeWordLoop {
+            currentSurah = before.surah
+            currentAyah  = before.ayah
+        }
+        positionBeforeWordLoop = nil
         isWordLooping = false
         teardownChapterPlayer()
     }
@@ -539,9 +607,9 @@ class AudioService: ObservableObject {
                 guard let self, let type else { return }
                 switch type {
                 case .began:
-                    guard self.isPlaying else { return }
+                    guard self.isPlaying || self.pausedForRepeat else { return }
                     self.resumeAfterInterruption = true
-                    self.togglePlayPause()
+                    self.pauseFromSystem()
                 case .ended:
                     defer { self.resumeAfterInterruption = false }
                     guard self.resumeAfterInterruption, options.contains(.shouldResume), !self.isPlaying
@@ -559,8 +627,8 @@ class AudioService: ObservableObject {
                 .flatMap(AVAudioSession.RouteChangeReason.init)
             MainActor.assumeIsolated {
                 // Headphones or a car disconnected: keep the recitation private by staying paused.
-                guard let self, reason == .oldDeviceUnavailable, self.isPlaying else { return }
-                self.togglePlayPause()
+                guard let self, reason == .oldDeviceUnavailable else { return }
+                self.pauseFromSystem()
             }
         }
     }
@@ -581,8 +649,7 @@ class AudioService: ObservableObject {
         cc.pauseCommand.isEnabled = true
         cc.pauseCommand.addTarget { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.isPlaying else { return }
-                self.togglePlayPause()
+                self?.pauseFromSystem()
             }
             return .success
         }

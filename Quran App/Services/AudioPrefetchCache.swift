@@ -26,8 +26,11 @@ final class AudioPrefetchCache {
             guard !FileManager.default.fileExists(atPath: local.path),
                   !self.inFlight.contains(remoteURL) else { return }
             self.inFlight.insert(remoteURL)
-            let task = URLSession.shared.downloadTask(with: remoteURL) { [weak self] tmp, _, err in
-                guard let self, let tmp, err == nil else {
+            let task = URLSession.shared.downloadTask(with: remoteURL) { [weak self] tmp, response, err in
+                // Only keep real audio: a 404 or error page saved as .mp3 would be
+                // preferred over the network on every later play of that ayah.
+                let ok = (response as? HTTPURLResponse)?.statusCode == 200
+                guard let self, let tmp, err == nil, ok else {
                     self?.queue.async { self?.inFlight.remove(remoteURL) }
                     return
                 }

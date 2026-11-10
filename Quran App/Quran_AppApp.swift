@@ -156,7 +156,8 @@ struct QuranAppApp: App {
                 // Returning users get the usual silent refresh.
                 showOnboarding = !didOnboard
                 if didOnboard {
-                    _ = await NotificationService.shared.requestPermission()
+                    // No permission prompt here: it is asked in onboarding and when a
+                    // notification is switched on in Settings, never cold at launch.
                     NotificationService.shared.scheduleMemorizationReminder()
                     prayerTimesService.requestAndFetch()
                 }
