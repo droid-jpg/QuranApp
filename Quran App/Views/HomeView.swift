@@ -79,6 +79,14 @@ struct HomeView: View {
             .onChange(of: translationId) {
                 Task { await DailyVerseService.shared.loadIfNeeded() }
             }
+            // Now Playing's "Go to ayah in reader": the root selects Today, and the
+            // reader opens here the way the verse of the day opens it.
+            .onReceive(NotificationCenter.default.publisher(for: .openReaderAtAyah)) { note in
+                guard let number = note.userInfo?["surah"] as? Int else { return }
+                var next = NavigationPath()
+                next.append(TodayRoute.reader(surah: number, ayah: note.userInfo?["ayah"] as? Int))
+                path = next
+            }
         }
         // Light tap on push only.
         .sensoryFeedback(trigger: path) { old, new in
@@ -135,6 +143,11 @@ struct HomeView: View {
 }
 
 /// Where Today pushes to.
+extension Notification.Name {
+    /// Open the reader at an ayah on the Today tab. `userInfo`: "surah", "ayah" (Int).
+    static let openReaderAtAyah = Notification.Name("openReaderAtAyah")
+}
+
 private enum TodayRoute: Hashable {
     case calendar, prayerTimes, memorization
     case reader(surah: Int, ayah: Int?)

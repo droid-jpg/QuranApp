@@ -312,23 +312,15 @@ private struct MiniProgressLine: View {
 // MARK: - Now Playing
 
 /// Now Playing's place above the whole app. Only this re-renders when it opens
-/// or closes.
+/// or closes; it does not observe the audio service, so while Now Playing is
+/// closed an ayah advance never reaches it.
 struct NowPlayingSlot: View {
     @ObservedObject var ui: PlayerUI
-    @EnvironmentObject private var audioService: AudioService
 
     var body: some View {
         if ui.nowPlayingShown {
-            QuranExpandedPlayer(
-                onCollapse: { ui.closeNowPlaying() },
-                onRepeat: { ui.openRepeat(for: audioService) },
-                onClosePlayer: {
-                    Haptics.tap()
-                    ui.closeNowPlaying()
-                    audioService.closePlayer()
-                }
-            )
-            .zIndex(10)
+            NowPlayingView(ui: ui)
+                .zIndex(10)
         }
     }
 }

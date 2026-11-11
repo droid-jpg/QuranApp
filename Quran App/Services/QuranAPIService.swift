@@ -68,6 +68,14 @@ class QuranAPIService {
         try? data.write(to: cacheURL(surah: surah, translationId: translationId), options: .atomic)
     }
 
+    /// The surah's text with no network: the copy the reader cached for this
+    /// translation, else the bundled text (whose translation column is filled only
+    /// for the bundled edition, so other editions come back Arabic only).
+    static func offlineAyahs(surah: Int, translationId: String) -> [Ayah]? {
+        cachedFromDisk(surah: surah, translationId: translationId)
+            ?? QuranOfflineStore.shared.ayahs(surah: surah, translationId: translationId)
+    }
+
     private static func cachedFromDisk(surah: Int, translationId: String) -> [Ayah]? {
         let url = cacheURL(surah: surah, translationId: translationId)
         guard let data = try? Data(contentsOf: url),

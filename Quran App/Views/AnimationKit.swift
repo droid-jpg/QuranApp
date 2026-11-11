@@ -125,58 +125,6 @@ extension View {
     }
 }
 
-// MARK: - Active playback indicator (animated bars)
-
-/// Five bars rising and falling, shown only while audio plays (callers swap it
-/// for a still glyph when paused, which stops it).
-///
-/// Drawn into a `Canvas` from the timeline's clock rather than animating each
-/// bar's frame: the old `repeatForever` frame animations re-ran layout every
-/// frame for as long as audio played. This repaints a 20×14 pt canvas at up to
-/// 30 fps and never touches layout. Reduce Motion holds the bars still.
-struct PlayingIndicatorView: View {
-    let color: Color
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private static let heights: [CGFloat] = [6, 10, 8, 12, 7]
-    private static let delays: [Double]   = [0, 0.15, 0.3, 0.1, 0.25]
-    private static let barWidth: CGFloat = 2.5
-    private static let spacing: CGFloat = 2
-    private static let rest: CGFloat = 3
-    /// One rise (or fall), as the old `.easeInOut(duration: 0.5)` autoreversing.
-    private static let halfPeriod: Double = 0.5
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
-            let t = reduceMotion ? nil : context.date.timeIntervalSinceReferenceDate
-            Canvas { gc, size in
-                let n = Self.heights.count
-                let total = CGFloat(n) * Self.barWidth + CGFloat(n - 1) * Self.spacing
-                var x = (size.width - total) / 2
-                for i in 0..<n {
-                    let h = Self.barHeight(i, at: t)
-                    let rect = CGRect(x: x, y: size.height - h, width: Self.barWidth, height: h)
-                    gc.fill(Capsule().path(in: rect), with: .color(color))
-                    x += Self.barWidth + Self.spacing
-                }
-            }
-        }
-        .frame(width: 20, height: 14)
-        .accessibilityHidden(true)
-    }
-
-    /// The bar's height at time `t`: a triangle wave between rest and its peak,
-    /// eased in and out. `nil` (Reduce Motion) holds it midway.
-    private static func barHeight(_ i: Int, at t: Double?) -> CGFloat {
-        guard let t else { return (rest + heights[i]) / 2 }
-        let p = max(0, t - delays[i]) / halfPeriod
-        let tri = p.truncatingRemainder(dividingBy: 2)
-        let linear = tri <= 1 ? tri : 2 - tri
-        let eased = linear * linear * (3 - 2 * linear)
-        return rest + (heights[i] - rest) * CGFloat(eased)
-    }
-}
-
 // MARK: - Shimmer skeleton
 
 struct ShimmerModifier: ViewModifier {

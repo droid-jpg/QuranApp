@@ -165,6 +165,10 @@ struct QuranAppApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .showQuranTab)) { _ in
                 selectedTab = .quran
             }
+            // Now Playing's "Go to ayah in reader" opens the reader on Today.
+            .onReceive(NotificationCenter.default.publisher(for: .openReaderAtAyah)) { _ in
+                selectedTab = .home
+            }
             .task {
                 SurahPlaybackState.shared.bind(to: audioService)
                 CloudSync.shared.start()

@@ -110,6 +110,9 @@ class AudioService: ObservableObject {
 
     private var totalAyahs: Int = 0
 
+    /// Ayah count of the surah loaded in the player (0 when none has been).
+    var loadedAyahCount: Int { totalAyahs }
+
     // Word-loop boundaries — global seconds into the chapter audio file.
     private var wordLoopStart: Double = 0
     private var wordLoopEnd: Double = 0
