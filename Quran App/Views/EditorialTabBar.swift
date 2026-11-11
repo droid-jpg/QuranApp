@@ -17,9 +17,8 @@ final class Chrome: ObservableObject {
 
 struct EditorialTabBar: View {
     /// Height of the bar's content row: a 24 pt icon over an 11 pt label, with room to spare for
-    /// the 44 pt minimum hit target. A `safeAreaInset` on the TabView reserves this for scrolling
-    /// content, but it does not reach a fixed layout inside a pushed NavigationStack — screens
-    /// that dock their own bottom chrome (the dhikr counter) have to reserve it themselves.
+    /// the 44 pt minimum hit target. The root reserves it (with the mini player) as a bottom
+    /// safe-area inset on the TabView (`BottomChrome`).
     static let barHeight: CGFloat = 56
 
     @Binding var selection: AppTab

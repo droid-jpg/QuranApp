@@ -19,12 +19,10 @@ struct DhikrView: View {
 
             Spacer(minLength: 20)
         }
-        // As a safe-area inset rather than the last row of the VStack, and with
-        // the tab bar's height reserved by hand — the TabView's own inset does
-        // not reach a fixed layout inside a pushed stack, so the bar was being
-        // drawn underneath it.
+        // As a safe-area inset rather than the last row of the VStack. The root's
+        // inset (mini player + tab bar) already sits below it.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            bottomBar.padding(.bottom, EditorialTabBar.barHeight)
+            bottomBar
         }
         .navigationTitle("Dhikr")
         .navigationBarTitleDisplayMode(.inline)

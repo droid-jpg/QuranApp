@@ -12,32 +12,20 @@ struct HomeView: View {
     @EnvironmentObject private var memorizationStore: MemorizationStore
     @EnvironmentObject private var srStore: MemorizationSRStore
     @EnvironmentObject private var targetStore: MemorizationTargetStore
-    @EnvironmentObject private var audioService: AudioService
+    /// Commands only. Playback state lives in the app-wide mini player; the few
+    /// bits drawn here observe the service in leaf views, so an ayah advance
+    /// doesn't re-render the dashboard.
+    @Environment(\.audioServiceRef) private var audioService
     @EnvironmentObject private var prayerService: PrayerTimesService
     @StateObject private var listVM = SurahListViewModel()
     @ObservedObject private var dailyVerse = DailyVerseService.shared
-    @ObservedObject private var listening = ListeningSessionStore.shared
     @AppStorage("selectedTranslationId") private var translationId = Translation.fallbackId
     // Declared so the dashboard repaints the moment the reading face changes.
     @AppStorage("readingFace") private var readingFace = ReadingFace.newYork.rawValue
     @State private var showReview = false
     @State private var activeDrill: PlayerDrill? = nil
 
-    private var isPlayerActive: Bool { audioService.currentAyah != nil }
-
     // MARK: - Listening actions
-
-    /// The resume block's play button. When the saved session is already loaded in
-    /// the player this is a plain play/pause; otherwise it restores the session —
-    /// same ayah, same loop, same position inside the ayah.
-    private func toggleResume(_ session: ListeningSession) {
-        Haptics.tap()
-        if audioService.currentAyah != nil && audioService.currentSurah == session.surah {
-            audioService.togglePlayPause()
-        } else {
-            audioService.resume(session)
-        }
-    }
 
     /// Run one of the three acquisition drills against the current target, straight
     /// from the dashboard — the same presets the reader's player uses.
@@ -50,20 +38,16 @@ struct HomeView: View {
         case .repeatAfter: state = .listenThenRecite(surah: t.surah, ayah: t.workingAyah)
         case .chain:       state = .joinWithPrevious2(surah: t.surah, ayah: t.workingAyah)
         }
-        audioService.startRepeat(state, totalAyahs: t.totalAyahs, surahName: t.surahName)
-    }
-
-    private func isPlaying(_ verse: DailyVerse) -> Bool {
-        audioService.isPlaying && audioService.currentSurah == verse.surahNumber
-            && audioService.currentAyah == verse.ayahNumber
+        audioService?.startRepeat(state, totalAyahs: t.totalAyahs, surahName: t.surahName)
     }
 
     private func ayahCount(of surah: Int) -> Int? {
         listVM.surahs.first { $0.number == surah }?.numberOfAyahs
     }
 
-    /// One-tap starts for when there's nothing to resume.
-    private var quickStarts: [QuickStartRail.QuickStart] {
+    /// One-tap starts. Takes the saved session from `QuickStartsSlot`, which
+    /// observes it, so Today doesn't re-render on every ayah.
+    private func quickStarts(session: ListeningSession?) -> [QuickStartRail.QuickStart] {
         var items: [QuickStartRail.QuickStart] = []
 
         if let v = dailyVerse.verse, let total = ayahCount(of: v.surahNumber) {
@@ -71,17 +55,17 @@ struct HomeView: View {
                                icon: "sun.horizon.fill", tint: .orange) {
                 Haptics.tap()
                 activeDrill = nil
-                audioService.play(surah: v.surahNumber, startAyah: v.ayahNumber,
-                                  totalAyahs: total, surahName: v.surahName)
+                audioService?.play(surah: v.surahNumber, startAyah: v.ayahNumber,
+                                   totalAyahs: total, surahName: v.surahName)
             })
         }
 
-        if let s = listening.session, s.isLoop {
+        if let s = session, s.isLoop {
             items.append(.init(id: "lastloop", label: s.loopLabel, icon: "repeat") {
                 Haptics.tap()
                 activeDrill = nil
-                audioService.startRepeat(s.repeatState, totalAyahs: s.totalAyahs,
-                                         surahName: s.surahName)
+                audioService?.startRepeat(s.repeatState, totalAyahs: s.totalAyahs,
+                                          surahName: s.surahName)
             })
         }
 
@@ -92,8 +76,8 @@ struct HomeView: View {
                 Haptics.tap()
                 activeDrill = nil
                 // Sequential mode rolls on through the following surahs on its own.
-                audioService.play(surah: juz.startSurah, startAyah: juz.startAyah,
-                                  totalAyahs: total, surahName: name)
+                audioService?.play(surah: juz.startSurah, startAyah: juz.startAyah,
+                                   totalAyahs: total, surahName: name)
             })
         }
 
@@ -157,27 +141,9 @@ struct HomeView: View {
                             .staggeredAppear(delay: 0.07)
                     }
 
-                    // ── Now playing / resume ──────────────────────────────
-                    // Top slot, because "hear Qur'an" is the shortest path into
-                    // the app and it used to cost a tab switch and 114 rows.
-                    if let session = listening.session {
-                        ResumeListeningSection(
-                            session: session,
-                            surahs: listVM.surahs,
-                            audioService: audioService,
-                            onToggle: { toggleResume(session) }
-                        )
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 14)
-                        .staggeredAppear(delay: 0.075)
-                    }
-
                     // ── One-tap starts ────────────────────────────────────
-                    if !quickStarts.isEmpty {
-                        QuickStartRail(items: quickStarts)
-                            .padding(.bottom, 18)
-                            .staggeredAppear(delay: 0.09)
-                    }
+                    // Now playing and resume are the app-wide mini player's.
+                    QuickStartsSlot(items: quickStarts(session:))
 
                     // ── Memorizing (current target) ───────────────────────
                     if let t = targetStore.target,
@@ -208,8 +174,8 @@ struct HomeView: View {
                     if dailyVerse.verse != nil || dailyVerse.isLoading {
                         VerseOfDaySection(
                             surahs: listVM.surahs,
-                            isPlaying: isPlaying,
                             onPlay: { verse in
+                                guard let audioService else { return }
                                 // The button shows pause while the verse plays, so it pauses (and
                                 // resumes) it rather than starting it over.
                                 if audioService.currentSurah == verse.surahNumber
@@ -270,30 +236,40 @@ struct HomeView: View {
                         .padding(.bottom, 8)
                         .staggeredAppear(delay: 0.26)
                 }
-                .padding(.bottom, 28)
+                .padding(.bottom, Spacing.md)
             }
             // The masthead is the title now — the nav bar would only repeat it.
             .toolbar(.hidden, for: .navigationBar)
-            // Audio never leaves the tab: what Home starts, Home can also pause,
-            // resume and stop without a trip to the reader.
-            .safeAreaInset(edge: .bottom) {
-                if isPlayerActive {
-                    HomeMiniPlayer(audioService: audioService, surahs: listVM.surahs)
-                        .padding(.bottom, 6)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
-            .animation(AppAnim.spring, value: isPlayerActive)
             .task { await listVM.load() }
             .onChange(of: translationId) {
                 Task { await dailyVerse.loadIfNeeded() }
             }
-            .onChange(of: audioService.currentAyah) { _, ayah in
-                if ayah == nil { activeDrill = nil }
+            // A publisher, not an observed property: Today hears only this one change.
+            .onReceive(audioService?.$currentAyah.eraseToAnyPublisher()
+                       ?? Empty().eraseToAnyPublisher()) { ayah in
+                if ayah == nil, activeDrill != nil { activeDrill = nil }
             }
             .fullScreenCover(isPresented: $showReview) {
                 ReviewSessionView(store: srStore, initialCards: srStore.dueItems())
             }
+        }
+    }
+}
+
+// MARK: - One-tap starts
+
+/// Observes the saved session so the "last repeat" start stays current without
+/// Today itself re-rendering on every ayah (the session republishes per ayah).
+private struct QuickStartsSlot: View {
+    let items: (ListeningSession?) -> [QuickStartRail.QuickStart]
+    @ObservedObject private var listening = ListeningSessionStore.shared
+
+    var body: some View {
+        let list = items(listening.session)
+        if !list.isEmpty {
+            QuickStartRail(items: list)
+                .padding(.bottom, 18)
+                .staggeredAppear(delay: 0.09)
         }
     }
 }
@@ -543,10 +519,16 @@ struct NextPrayerSection: View {
 /// reader; the play button is a sibling, because nested buttons swallow taps.
 private struct VerseOfDaySection: View {
     let surahs: [Surah]
-    let isPlaying: (DailyVerse) -> Bool
     let onPlay: (DailyVerse) -> Void
 
     @ObservedObject private var service = DailyVerseService.shared
+    /// Observed here, in the leaf, rather than by Today.
+    @EnvironmentObject private var audioService: AudioService
+
+    private func isPlaying(_ verse: DailyVerse) -> Bool {
+        audioService.isPlaying && audioService.currentSurah == verse.surahNumber
+            && audioService.currentAyah == verse.ayahNumber
+    }
     @AppStorage("arabicScript") private var arabicScript = ArabicScript.system.rawValue
 
     private func startIndex(_ v: DailyVerse) -> Int? {

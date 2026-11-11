@@ -50,6 +50,14 @@ class AudioService: ObservableObject {
     @Published private(set) var wordRepeat: WordRepeat?
     var isWordLooping: Bool { wordRepeat != nil }
 
+    /// True while the player is waiting for the current ayah's audio to arrive.
+    /// Published only when it changes, which is at most a couple of times per ayah.
+    @Published private(set) var isBuffering = false
+
+    /// The ayah whose audio could not be played, until the next load. Playback is
+    /// paused with that ayah still current, so Play retries it.
+    @Published private(set) var failedAyah: Int?
+
     /// Repeat is on for the surah that is loaded.
     var isRepeating: Bool {
         repeatState.isOn && currentSurah > 0 && repeatState.surah == currentSurah
@@ -129,12 +137,17 @@ class AudioService: ObservableObject {
     /// Set when a call or another app interrupts playback, so it can pick up again afterwards.
     private var resumeAfterInterruption = false
 
+    private var bufferingWatch: AnyCancellable?
+    /// Watches the current item for a load failure; replaced whenever it changes.
+    private var itemStatusWatch: AnyCancellable?
+
     init() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(true)
         setupPlayerTimeObserver()
         setupRemoteCommandCenter()
         observeAudioSession()
+        observeBuffering()
     }
 
     // MARK: - Normal per-ayah playback
@@ -170,6 +183,14 @@ class AudioService: ObservableObject {
         if session.fraction > 0.02 && session.fraction < 0.95 {
             pendingSeekFraction = session.fraction
         }
+    }
+
+    /// At launch, before anything plays: take the saved session's repeat as the
+    /// service's own, so the Repeat sheet shows it while the player sits restored
+    /// and paused. Loads nothing.
+    func adoptRepeat(from session: ListeningSession) {
+        guard currentAyah == nil, currentSurah == 0 else { return }
+        repeatState = session.repeatState
     }
 
     // MARK: - Repeat changes
@@ -278,16 +299,23 @@ class AudioService: ObservableObject {
         pausedForRepeat = false
     }
 
-    func stop() {
+    /// "Close player": stop, forget the saved session and clear the lock screen,
+    /// so the mini player goes away and stays away after a relaunch.
+    func closePlayer() {
+        stop()
+        ListeningSessionStore.shared.clear()
+        updateNowPlayingInfo()
+    }
+
+    private func stop() {
         cancelRepeatGap()
         pendingSeekFraction = nil
         stopWordLoopInternal()
         clearPlayerItem()
         isPlaying = false
         currentAyah = nil
+        failedAyah = nil
         progress = 0
-        // The session itself survives a stop — that's the whole point of the
-        // resume card; only the live playback is torn down.
         ListeningSessionStore.shared.flush()
     }
 
@@ -386,6 +414,7 @@ class AudioService: ObservableObject {
 
         currentAyah = ayah
         isSeeking   = false
+        if failedAyah != nil { failedAyah = nil }
 
         // Tear down old queue and insert the new current item.
         player.removeAllItems()
@@ -395,6 +424,7 @@ class AudioService: ObservableObject {
         let item = AVPlayerItem(url: audioURL(surah: currentSurah, ayah: ayah))
         item.preferredForwardBufferDuration = 6
         playerItem = item
+        watchStatus(of: item)
         player.insert(item, after: nil)
 
         queueFollower(after: ayah)
@@ -469,6 +499,7 @@ class AudioService: ObservableObject {
     }
 
     private func clearPlayerItem() {
+        itemStatusWatch = nil
         removeEndObserver()
         player.pause()
         player.removeAllItems()
@@ -515,6 +546,7 @@ class AudioService: ObservableObject {
             playerItem    = pre
             preloadedItem = nil
             preloadedAyah = nil
+            watchStatus(of: pre)
             observeAyahEnd()
             queueFollower(after: next)
             updateNowPlayingInfo()
@@ -620,6 +652,44 @@ class AudioService: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - Loading and failure state
+
+    private func observeBuffering() {
+        bufferingWatch = player.publisher(for: \.timeControlStatus)
+            .map { $0 == .waitingToPlayAtSpecifiedRate }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] waiting in
+                MainActor.assumeIsolated {
+                    guard let self, self.isBuffering != waiting else { return }
+                    self.isBuffering = waiting
+                }
+            }
+    }
+
+    private func watchStatus(of item: AVPlayerItem) {
+        itemStatusWatch = item.publisher(for: \.status, options: [.initial, .new])
+            .filter { $0 == .failed }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak item] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let item else { return }
+                    self.handleItemFailure(item)
+                }
+            }
+    }
+
+    /// The current ayah's audio couldn't load (no network, missing file). Stop
+    /// the queue there and keep the ayah current: Play then reloads it.
+    private func handleItemFailure(_ item: AVPlayerItem) {
+        guard item === playerItem, !isWordLooping else { return }
+        cancelRepeatGap()
+        clearPlayerItem()
+        isPlaying = false
+        failedAyah = currentAyah
+        updateNowPlayingInfo()
     }
 
     // MARK: - Internal: chapter / word loop

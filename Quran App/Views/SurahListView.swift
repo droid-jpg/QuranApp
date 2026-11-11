@@ -3,7 +3,8 @@ import SwiftUI
 struct SurahListView: View {
     @StateObject private var viewModel = SurahListViewModel()
     @EnvironmentObject private var store: MemorizationStore
-    @EnvironmentObject private var audioService: AudioService
+    /// Commands only (the context menu); the list doesn't redraw on playback.
+    @Environment(\.audioServiceRef) private var audioService
     @ObservedObject private var downloadManager = DownloadManager.shared
     @AppStorage("selectedReciterId") private var selectedReciterId = 7
     @State private var showJuzBrowser  = false
@@ -98,12 +99,14 @@ struct SurahListView: View {
                             )
                         }
                         .contextMenu {
-                            SurahQuickActions(
-                                surah: surah,
-                                store: store,
-                                downloadManager: downloadManager,
-                                audioService: audioService
-                            )
+                            if let audioService {
+                                SurahQuickActions(
+                                    surah: surah,
+                                    store: store,
+                                    downloadManager: downloadManager,
+                                    audioService: audioService
+                                )
+                            }
                         }
                         .swipeActions(edge: .leading, allowsFullSwipe: true) {
                             let next = store.status(for: surah.number).next

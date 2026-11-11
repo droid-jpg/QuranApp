@@ -31,7 +31,12 @@ enum AppTab: String, Hashable, CaseIterable, Identifiable {
 
 @main
 struct QuranAppApp: App {
-    @StateObject private var audioService       = AudioService()
+    /// `@State`, not `@StateObject`: the root must not observe the player, or
+    /// every ayah advance and play/pause would re-evaluate the scene and the
+    /// TabView. The views that draw playback state observe it themselves.
+    @State private var audioService             = AudioService()
+    /// Now Playing / Repeat sheet state, likewise held without observing it.
+    @State private var playerUI                 = PlayerUI()
     @StateObject private var memorizationStore  = MemorizationStore()
     @StateObject private var srStore            = MemorizationSRStore()
     @StateObject private var targetStore        = MemorizationTargetStore()
@@ -44,7 +49,6 @@ struct QuranAppApp: App {
     @State private var showSplash = true
     @State private var showOnboarding = false
     @State private var selectedTab: AppTab = .home
-    @ObservedObject private var chrome = Chrome.shared
     /// Bumped when the colour theme changes. `Color.brand` is computed, so the
     /// whole tree has to be rebuilt for the new accent to reach views that
     /// weren't otherwise going to re-render. Tab selection and the More tab's
@@ -101,27 +105,33 @@ struct QuranAppApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                TabView(selection: $selectedTab) {
-                    Tab(value: AppTab.home) {
-                        HomeView().toolbar(.hidden, for: .tabBar)
+                ZStack {
+                    TabView(selection: $selectedTab) {
+                        Tab(value: AppTab.home) {
+                            HomeView().clearsBottomChrome().toolbar(.hidden, for: .tabBar)
+                        }
+                        Tab(value: AppTab.quran) {
+                            SurahListView().clearsBottomChrome().toolbar(.hidden, for: .tabBar)
+                        }
+                        Tab(value: AppTab.more) {
+                            MoreView().clearsBottomChrome().toolbar(.hidden, for: .tabBar)
+                        }
                     }
-                    Tab(value: AppTab.quran) {
-                        SurahListView().toolbar(.hidden, for: .tabBar)
+                    // The system bar is hidden per-tab above. The mini player and
+                    // `EditorialTabBar` take its place, once, as an overlay along the
+                    // bottom; each tab reserves their height (`clearsBottomChrome`),
+                    // so every scroll view in it, the reader's pages included, ends
+                    // clear of both with no per-screen padding. (A safe-area inset on
+                    // the TabView itself shrank the TabView but not the tabs' own
+                    // pages, which then ran on under the bars: AUDIT #24.)
+                    .overlay(alignment: .bottom) {
+                        BottomChrome(selection: $selectedTab, ui: playerUI)
                     }
-                    Tab(value: AppTab.more) {
-                        MoreView().toolbar(.hidden, for: .tabBar)
-                    }
+
+                    // Now Playing, above everything, from any tab.
+                    NowPlayingSlot(ui: playerUI)
                 }
-                // The system bar is hidden per-tab above; `EditorialTabBar` takes
-                // its place as a safe-area inset, so it reserves its own space
-                // instead of floating over the last row of every screen.
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if !chrome.tabBarHidden {
-                        EditorialTabBar(selection: $selectedTab)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                }
-                .animation(AppAnim.spring, value: chrome.tabBarHidden)
+                .background(PlayerSheetsHost(ui: playerUI))
                 .tint(.brand)
                 .environmentObject(audioService)
                 // The same service as a plain reference, for views that only
@@ -155,6 +165,11 @@ struct QuranAppApp: App {
                 CloudSync.shared.start()
                 CarPlayBridge.shared.audioService       = audioService
                 CarPlayBridge.shared.memorizationStore  = memorizationStore
+                // The mini player comes back paused with the last session; its
+                // repeat is the service's until Play resumes it.
+                if let session = ListeningSessionStore.shared.session {
+                    audioService.adoptRepeat(from: session)
+                }
 
                 // First launch: let onboarding request permissions in context.
                 // Returning users get the usual silent refresh.
@@ -182,7 +197,7 @@ struct QuranAppApp: App {
             // reader is open: it repaints itself in place (`ReadingType`), and a
             // rebuild would throw away the page the user is scrolled to.
             .onReceive(NotificationCenter.default.publisher(for: .readingTypeDidChange)) { _ in
-                guard !chrome.tabBarHidden else { return }
+                guard !Chrome.shared.tabBarHidden else { return }
                 themeEpoch += 1
             }
             .onChange(of: scenePhase) { _, phase in

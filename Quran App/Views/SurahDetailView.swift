@@ -41,21 +41,15 @@ extension EnvironmentValues {
     @Entry var audioServiceRef: AudioService? = nil
 }
 
-/// Whether the expanded player is up. Held by the pager as a plain reference
-/// (`@State`, not `@StateObject`), so toggling it re-renders only the bar and the
-/// overlay that observe it, never the pager's pages.
-@MainActor
-final class ReaderPlayerUI: ObservableObject {
-    @Published var expanded = false
-}
-
 // MARK: - Surah page browser (swipe between surahs)
 
 /// Wraps multiple `SurahDetailView`s in a horizontally-paged TabView so the user
 /// can swipe left/right between surahs, and owns everything that must sit *above*
 /// the pages: the reader's own top bar (the system navigation bar is hidden — on
 /// iOS 26 it floats over scroll content, which put chrome on top of scripture),
-/// the audio player, the action menu, and the reader's sheets.
+/// the action menu, and the reader's sheets. The mini player and Now Playing are
+/// the app's, mounted at the root (`BottomChrome`, `NowPlayingSlot`); the root's
+/// bottom inset reaches the pages, so no ayah ends up under the mini player.
 struct SurahPageView: View {
     let surahs: [Surah]
     let startIndex: Int
@@ -68,8 +62,6 @@ struct SurahPageView: View {
     @Environment(\.dismiss) private var dismiss
 
     @StateObject private var models = SurahModelStore()
-    /// Not `@StateObject`: the pager must not observe it (see `ReaderPlayerUI`).
-    @State private var playerUI = ReaderPlayerUI()
     @StateObject private var menu = EditorialMenuPresenter()
 
     @State private var currentIndex: Int
@@ -130,31 +122,9 @@ struct SurahPageView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            // The mini bar is an inset rather than an overlay, so every page's
-            // scroll view reserves exactly its height — no ayah ends up under it,
-            // and no magic number goes stale when the bar changes.
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                ReaderPlayerBarSlot(
-                    surahNumber: surah.number,
-                    ui: playerUI,
-                    onExpand: {
-                        Haptics.tap()
-                        withAnimation(AppAnim.spring) { playerUI.expanded = true }
-                    },
-                    onRepeat: { repeatSheetSurah = playingSurah ?? surah }
-                )
-            }
         }
         // Ours replaces it: see `ReaderTopBar`.
         .toolbar(.hidden, for: .navigationBar)
-        .overlay {
-            ReaderExpandedPlayerSlot(
-                surahNumber: surah.number,
-                ui: playerUI,
-                onCollapse: { withAnimation(AppAnim.spring) { playerUI.expanded = false } },
-                onRepeat: { repeatSheetSurah = playingSurah ?? surah }
-            )
-        }
         .editorialMenu(menu)
         // Reading gets the whole page — the tab bar comes back on the way out.
         .onAppear { Chrome.shared.tabBarHidden = true }
@@ -188,12 +158,6 @@ struct SurahPageView: View {
     }
 
     // MARK: Bar actions
-
-    /// The surah that is loaded in the player, when it is one of this pager's.
-    private var playingSurah: Surah? {
-        guard let audioService else { return nil }
-        return surahs.first { $0.number == audioService.currentSurah }
-    }
 
     /// Where a fresh repeat starts: the ayah playing in that surah, else the
     /// memorization working ayah when it is the target surah, else ayah 1.
@@ -285,65 +249,6 @@ struct SurahPageView: View {
         let cards = due.isEmpty ? all : due
         guard !cards.isEmpty else { return }
         reviewSession = ReviewSessionConfig(cards: cards, title: surah.englishName)
-    }
-}
-
-// MARK: - Player slots
-
-/// The player belongs to the surah on screen, so swiping away from what's
-/// playing puts the page back to full height.
-@MainActor
-private func playerIsActive(_ audio: AudioService, surahNumber: Int) -> Bool {
-    audio.currentAyah != nil && audio.currentSurah == surahNumber
-}
-
-/// The mini bar's place under the pages. It observes the audio service itself so
-/// the pager doesn't have to: a play/pause or an ayah advance re-renders this and
-/// the bar, not the pages.
-private struct ReaderPlayerBarSlot: View {
-    let surahNumber: Int
-    @ObservedObject var ui: ReaderPlayerUI
-    let onExpand: () -> Void
-    let onRepeat: () -> Void
-
-    @EnvironmentObject private var audioService: AudioService
-    /// Follows `active` inside an animated transaction, so the pages' inset (and
-    /// with it their height) animates with the bar, as it did when the pager
-    /// carried `.animation(_:value:)` itself. Nil until first shown.
-    @State private var shown: Bool?
-
-    private var active: Bool { playerIsActive(audioService, surahNumber: surahNumber) }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if shown ?? active {
-                QuranPlayerBar(onExpand: onExpand, onRepeat: onRepeat)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .onAppear { shown = active }
-        .onChange(of: active) { _, now in
-            withAnimation(AppAnim.spring) { shown = now }
-            if !now { ui.expanded = false }
-        }
-    }
-}
-
-/// The expanded player's place above the reader. Only this re-renders when the
-/// player opens or closes.
-private struct ReaderExpandedPlayerSlot: View {
-    let surahNumber: Int
-    @ObservedObject var ui: ReaderPlayerUI
-    let onCollapse: () -> Void
-    let onRepeat: () -> Void
-
-    @EnvironmentObject private var audioService: AudioService
-
-    var body: some View {
-        if ui.expanded && playerIsActive(audioService, surahNumber: surahNumber) {
-            QuranExpandedPlayer(onCollapse: onCollapse, onRepeat: onRepeat)
-                .zIndex(10)
-        }
     }
 }
 

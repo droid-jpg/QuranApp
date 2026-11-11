@@ -3,129 +3,91 @@ import UIKit
 
 // MARK: - Shared wiring
 
-/// The transport actions the mini bar and expanded player share, so both surfaces
+/// The transport actions the mini player and Now Playing share, so both surfaces
 /// stay in lock-step without duplicating the audio wiring. Repeat is not here: both
 /// open the one `RepeatSheet`.
 struct PlayerEngine {
     let audioService: AudioService
+
+    /// The saved session, when nothing is loaded in the player (restored paused
+    /// at launch, or after a stop).
+    private var restoredSession: ListeningSession? {
+        audioService.currentAyah == nil ? ListeningSessionStore.shared.session : nil
+    }
 
     func cycleSpeed(_ speeds: [Float]) {
         let idx = speeds.firstIndex(of: audioService.playbackRate) ?? 0
         audioService.setPlaybackRate(speeds[(idx + 1) % speeds.count])
     }
 
-    func playPause() { audioService.togglePlayPause() }
-    func stop()      { audioService.stop() }
+    /// Play/pause; with nothing loaded, resumes the saved session where it stopped,
+    /// with the repeat as the Repeat sheet left it.
+    func playPause() {
+        if var session = restoredSession {
+            if audioService.repeatState.surah == session.surah {
+                session.repeatState = audioService.repeatState
+            }
+            audioService.resume(session)
+        } else {
+            audioService.togglePlayPause()
+        }
+    }
+
     func prev()      { audioService.skipToPreviousAyah() }
     func next()      { audioService.skipToNextAyah() }
     func seek(_ f: Double) { audioService.seek(toFraction: f) }
 
+    /// The surah in the player, or the saved session's.
+    var playerSurahNumber: Int? {
+        if audioService.currentAyah != nil, audioService.currentSurah > 0 { return audioService.currentSurah }
+        return ListeningSessionStore.shared.session?.surah
+    }
+
+    /// The repeat that applies to what the player shows: the live one, or for a
+    /// restored session the service's state when it names that surah (the Repeat
+    /// sheet edits it before Play), else the session's own.
+    private func repeatState(session: ListeningSession?) -> RepeatState? {
+        if audioService.currentAyah != nil { return audioService.activeRepeat }
+        guard let session else { return nil }
+        return audioService.repeatState.surah == session.surah ? audioService.repeatState : session.repeatState
+    }
+
+    func isRepeating(session: ListeningSession?) -> Bool {
+        repeatState(session: session)?.isOn ?? false
+    }
+
     /// What the player is doing, in one line, from the one status function.
-    var summary: String { audioService.statusText }
+    func statusText(session: ListeningSession?) -> String {
+        if audioService.currentAyah != nil { return audioService.statusText }
+        guard let session, let state = repeatState(session: session) else { return "" }
+        return state.status(currentAyah: session.ayah, reciterName: session.reciterName)
+    }
 }
 
 let playerSpeeds: [Float] = [1.0, 1.5, 2.0, 0.75]
 
-// MARK: - Mini bar
-
-/// The docked bar. The reader hands it to its pager as a bottom safe-area inset,
-/// so every page reserves exactly its height and no ayah is ever drawn under it.
-struct QuranPlayerBar: View {
-    let onExpand: () -> Void
-    let onRepeat: () -> Void
-
-    @EnvironmentObject private var audioService: AudioService
-
-    private var type = ReadingType()
-
-    init(onExpand: @escaping () -> Void, onRepeat: @escaping () -> Void) {
-        self.onExpand = onExpand
-        self.onRepeat = onRepeat
-    }
-
-    private var engine: PlayerEngine { PlayerEngine(audioService: audioService) }
-    private var playing: Bool { audioService.isPlaying }
-    private var repeating: Bool { audioService.isRepeating }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            Button { onExpand() } label: {
-                HStack(spacing: 12) {
-                    if playing {
-                        PlayingIndicatorView(color: .brand)
-                    } else {
-                        Image(systemName: "waveform")
-                            .font(.label(14, weight: .semibold))
-                            .foregroundStyle(.brand)
-                            .frame(width: 20, height: 14)
-                    }
-                    Text(engine.summary)
-                        .font(type.serif(15))
-                        .foregroundStyle(Color(.label).opacity(0.8))
-                        .lineLimit(1)
-                        .contentTransition(.numericText())
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                Haptics.tap()
-                onRepeat()
-            } label: {
-                Image(systemName: "repeat")
-                    .font(.label(15, weight: .semibold))
-                    .foregroundStyle(repeating ? Color.brand : Color.secondary)
-                    // The HIG's minimum hit target, without making the bar taller.
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-                    .padding(.vertical, -11)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Repeat")
-            .accessibilityValue(repeating ? audioService.statusText : "Off")
-
-            Button { Haptics.tap(); engine.playPause() } label: {
-                PlayCircle(playing: playing, size: 38)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(playing ? "Pause" : "Play")
-        }
-        .padding(.leading, 16)
-        .padding(.trailing, 13)
-        .padding(.vertical, 8)
-        // Opaque: a material here re-blurred the scrolling page behind the bar
-        // on every frame, under an indicator that animates while audio plays.
-        .background(Palette.surfaceRaised)
-        .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.16), lineWidth: 1))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 10)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 8).onEnded { v in
-                if v.translation.height <= -30 { onExpand() }
-            }
-        )
-        .animation(AppAnim.springFast, value: playing)
-    }
-}
-
 // MARK: - Expanded player
 
-/// Scrubber, Repeat, speed and transport. Presented as an overlay over the whole
-/// reader (never a system sheet) so the ayah being heard stays on screen behind it.
+/// Now Playing: scrubber, Repeat, speed and transport. Presented by the root as
+/// an overlay over the whole app (`NowPlayingSlot`), so it opens from any tab.
+/// It needs nothing from the reader: everything comes from the audio service.
 struct QuranExpandedPlayer: View {
     let onCollapse: () -> Void
     let onRepeat: () -> Void
+    /// Stops playback and forgets the saved session (replaces Stop).
+    let onClosePlayer: () -> Void
 
     @EnvironmentObject private var audioService: AudioService
+    @ObservedObject private var listening = ListeningSessionStore.shared
 
     private var engine: PlayerEngine { PlayerEngine(audioService: audioService) }
-    private var playing: Bool { audioService.isPlaying }
+    private var playing: Bool { audioService.currentAyah != nil && audioService.isPlaying }
 
-    init(onCollapse: @escaping () -> Void, onRepeat: @escaping () -> Void) {
+    init(onCollapse: @escaping () -> Void, onRepeat: @escaping () -> Void,
+         onClosePlayer: @escaping () -> Void) {
         self.onCollapse = onCollapse
         self.onRepeat = onRepeat
+        self.onClosePlayer = onClosePlayer
     }
 
     var body: some View {
@@ -140,7 +102,7 @@ struct QuranExpandedPlayer: View {
             // A plain move: fading the whole sheet as a group cost an offscreen
             // pass on every frame of the open and close.
             sheet
-                .transition(.move(edge: .bottom))
+                .transition(Motion.move(.move(edge: .bottom)))
         }
     }
 
@@ -160,8 +122,8 @@ struct QuranExpandedPlayer: View {
             VStack(spacing: 15) {
                 Scrubber(clock: audioService.clock) { engine.seek($0) }
 
-                RepeatButton(value: audioService.activeRepeat.shortSummary,
-                             on: audioService.isRepeating) {
+                RepeatButton(value: repeatValue,
+                             on: engine.isRepeating(session: listening.session)) {
                     Haptics.tap()
                     onRepeat()
                 }
@@ -179,11 +141,14 @@ struct QuranExpandedPlayer: View {
                     .accessibilityLabel(playing ? "Pause" : "Play")
                     TransportButton(system: "forward.end.fill", size: 24) { Haptics.tap(); engine.next() }
                     Spacer()
-                    TransportButton(system: "stop.fill", size: 18,
-                                    tint: Color.secondary) {
-                        Haptics.tap(); engine.stop(); onCollapse()
-                    }
+                    // Balances the speed pill, so the transport stays centred.
+                    SpeedPill(rate: audioService.playbackRate) {}.hidden()
                 }
+
+                Button("Close player", action: onClosePlayer)
+                    .font(TypeScale.secondary)
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(minHeight: MinSize.hitTarget)
             }
             .padding(.horizontal, 20)
             .padding(.top, 4)
@@ -193,6 +158,14 @@ struct QuranExpandedPlayer: View {
         // under the home indicator, so no strip of dimmed page shows there.
         .background(Palette.surfaceRaised, ignoresSafeAreaEdges: .bottom)
         .overlay(alignment: .top) { Hairline() }
+    }
+
+    /// "Off", or the repeat's short summary.
+    private var repeatValue: String {
+        if audioService.currentAyah != nil { return audioService.activeRepeat.shortSummary }
+        guard let session = listening.session else { return "Off" }
+        let state = audioService.repeatState.surah == session.surah ? audioService.repeatState : session.repeatState
+        return state.shortSummary
     }
 
     private func cycleSpeed() { Haptics.selection(); engine.cycleSpeed(playerSpeeds) }
