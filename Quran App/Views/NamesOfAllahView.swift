@@ -86,9 +86,8 @@ struct NamesOfAllahView: View {
             Haptics.selection()
             action()
         } label: {
-            Text(label.uppercased())
-                .font(.label(10, weight: .semibold))
-                .kerning(1.1)
+            Text(label)
+                .font(.label(13, weight: .semibold))
                 .foregroundStyle(on ? Color.brand : Color.secondary)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 8)
@@ -112,7 +111,7 @@ private struct NameRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(name.id)")
-                .font(.label(11, weight: .bold).monospacedDigit())
+                .font(.label(13, weight: .bold).monospacedDigit())
                 .foregroundStyle(isMemorized ? Color.brand : Color(.tertiaryLabel))
                 .frame(minWidth: 22, alignment: .leading)
                 .padding(.top, 5)

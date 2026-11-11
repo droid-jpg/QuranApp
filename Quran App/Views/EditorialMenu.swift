@@ -187,7 +187,7 @@ struct EditorialMenuOverlay: View {
                 .minimumScaleFactor(0.85)
             Spacer(minLength: 8)
             if let detail = action.detail {
-                MetaText(detail.uppercased(), tint: .brand, size: 9.5)
+                MetaText(detail, tint: .brand, size: 13)
             }
         }
         .opacity(action.isEnabled ? 1 : 0.35)

@@ -46,7 +46,7 @@ struct ReadingTypeSheet: View {
                                     Spacer(minLength: 8)
                                     if f == face {
                                         Image(systemName: "checkmark")
-                                            .font(.label(12, weight: .bold))
+                                            .font(.label(13, weight: .bold))
                                             .foregroundStyle(.brand)
                                     }
                                 }
@@ -77,7 +77,7 @@ struct ReadingTypeSheet: View {
                                         .environment(\.layoutDirection, .rightToLeft)
                                     Eyebrow(s.displayName,
                                             tint: s == script ? .brand : Color.secondary,
-                                            size: 9)
+                                            size: 13)
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
@@ -157,7 +157,7 @@ struct ReadingTypeSheet: View {
 
             HStack(alignment: .top, spacing: 12) {
                 Text("15")
-                    .font(.label(11, weight: .bold).monospacedDigit())
+                    .font(.label(13, weight: .bold).monospacedDigit())
                     .foregroundStyle(.brand)
                     .frame(minWidth: 20, alignment: .leading)
                     .padding(.top, 4)
@@ -196,7 +196,7 @@ private struct TypeSlider: View {
                 .frame(width: 82, alignment: .leading)
             Slider(value: $value, in: range, step: 1)
                 .tint(.brand)
-            MetaText("\(Int(value))", size: 11)
+            MetaText("\(Int(value))", size: 13)
                 .frame(width: 22, alignment: .trailing)
         }
     }

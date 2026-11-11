@@ -52,9 +52,8 @@ struct DhikrView: View {
                         Haptics.selection()
                         withAnimation(Motion.standard) { store.select(preset) }
                     } label: {
-                        Text(preset.name.uppercased())
-                            .font(.label(10, weight: .semibold))
-                            .kerning(1.1)
+                        Text(preset.name)
+                            .font(.label(13, weight: .semibold))
                             .foregroundStyle(on ? Color.brand : Color.secondary)
                             .padding(.horizontal, 11)
                             .padding(.vertical, 8)
@@ -143,10 +142,9 @@ struct DhikrView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.counterclockwise")
-                            .font(.label(10, weight: .bold))
-                        Text("RESET")
-                            .font(.label(10, weight: .semibold))
-                            .kerning(1.2)
+                            .font(.label(13, weight: .bold))
+                        Text("Reset")
+                            .font(.label(13, weight: .semibold))
                     }
                     .foregroundStyle(.brand)
                     .padding(.horizontal, 11)

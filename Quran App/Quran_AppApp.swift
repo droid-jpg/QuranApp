@@ -270,7 +270,7 @@ private struct SplashView: View {
                     .foregroundStyle(Color(.label).opacity(0.75))
                     .environment(\.layoutDirection, .rightToLeft)
 
-                Text("Holy Quran")
+                Text("Quran")
                     .font(.appSerif(34, weight: .medium))
                     .foregroundStyle(.primary)
                     .padding(.top, 10)

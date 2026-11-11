@@ -215,7 +215,7 @@ final class QuranTourUITests: XCTestCase {
         snap("list"); dump("list")
 
         // Search
-        let field = app.textFields["Search surah"]
+        let field = app.textFields["Search surahs"]
         if field.waitForExistence(timeout: 3) {
             field.tap(); field.typeText("nas")
             pause(1.2); snap("list-search"); dump("list-search")
@@ -224,7 +224,7 @@ final class QuranTourUITests: XCTestCase {
         snap("list-search-cleared")
 
         // Filters
-        for f in ["SAVED", "MEMORIZED", "LEARNING", "ALL"] {
+        for f in ["Downloaded", "Memorized", "Learning", "All"] {
             if app.buttons[f].exists { app.buttons[f].tap(); pause(0.8); snap("list-filter-\(f)") }
         }
 
@@ -275,8 +275,8 @@ final class QuranTourUITests: XCTestCase {
         }
 
         // ⋯ panel
-        if app.buttons["More"].exists {
-            app.buttons["More"].tap(); pause(1.2)
+        if app.buttons["Reader options"].exists {
+            app.buttons["Reader options"].tap(); pause(1.2)
             snap("reader-more"); dump("reader-more")
             tapAt(0.5, 0.08); pause(0.8)
         }
@@ -311,8 +311,8 @@ final class QuranTourUITests: XCTestCase {
         }
         dump("player-after-skip")
 
-        // The loop range picker (what replaced A/B)
-        for label in ["Set range", "Range", "From", "Loop range"] where exists(label) {
+        // The Repeat sheet (replaced the old loop range picker)
+        for label in ["Repeat", "Set range", "Range", "From"] where exists(label) {
             tapPrefix(label); settle()
             snap("range-picker"); dump("range-picker")
             swipeUp(); snap("range-picker-scrolled")

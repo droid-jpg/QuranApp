@@ -6,7 +6,6 @@ class SurahDetailViewModel: ObservableObject {
     @Published var ayahs: [Ayah] = []
     @Published var isLoading = false
     @Published var error: String?
-    @Published var showLoopSheet = false
 
     @Published var wordTimingsByAyah: [Int: [WordTiming]] = [:]
     @Published var isLoadingWordTimings = false

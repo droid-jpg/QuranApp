@@ -301,7 +301,7 @@ struct PrayerNotificationsSection: View {
     private func prayerToggle(_ name: String, _ binding: Binding<Bool>) -> some View {
         HStack(spacing: 11) {
             Image(systemName: PrayerIcons.names[name] ?? "clock")
-                .font(.label(12))
+                .font(.label(13))
                 .foregroundStyle(binding.wrappedValue ? Color.brand : Color(.tertiaryLabel))
                 .frame(width: 18)
             Text(name)
@@ -396,15 +396,14 @@ private struct ThemePicker: View {
                                     .strokeBorder(theme.swatch, lineWidth: 1.5)
                                     .frame(width: 44, height: 44)
                                 Image(systemName: "checkmark")
-                                    .font(.label(12, weight: .bold))
+                                    .font(.label(13, weight: .bold))
                                     .foregroundStyle(.white)
                             }
                         }
                         .frame(height: 46)
 
-                        Text(theme.displayName.uppercased())
-                            .font(.label(8.5, weight: theme == selection ? .bold : .semibold))
-                            .kerning(0.9)
+                        Text(theme.displayName)
+                            .font(.label(13, weight: theme == selection ? .bold : .semibold))
                             .foregroundStyle(theme == selection
                                              ? Color(.label)
                                              : Color.secondary)

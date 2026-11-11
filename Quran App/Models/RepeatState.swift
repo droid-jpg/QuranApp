@@ -77,7 +77,7 @@ struct WordRepeat: Equatable {
 
 extension RepeatState {
     /// The single "join with previous 2" range, shared by every caller (Today,
-    /// the player, the Repeat sheet, Siri) so Chain means the same thing everywhere.
+    /// the player, the Repeat sheet, Siri) so the join means the same thing everywhere.
     static func joinRange(ending ayah: Int) -> ClosedRange<Int> {
         let end = max(1, ayah)
         return max(1, end - 2)...end

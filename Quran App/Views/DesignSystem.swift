@@ -414,24 +414,6 @@ struct BarButton: View {
 // 99 Names and the calendar still speak in cards. These stay so those screens
 // keep their shape (and keep compiling) until they get the same pass.
 
-/// List section header. Same call sites as before, but set as an eyebrow with a
-/// glyph so a List section reads like an `EditorialSection`.
-struct SectionHeader: View {
-    let title: String
-    let systemImage: String
-    var tint: Color = .brand
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: systemImage)
-                .font(.label(13, weight: .semibold))
-                .foregroundStyle(tint)
-            Eyebrow(title)
-        }
-        .textCase(nil)
-    }
-}
-
 /// The card surface, now ruled: a hairline box in the feature's tint and no fill
 /// at all. Every screen that still builds itself out of cards — the memorization
 /// hub, the method guide — picks up the restyle from here rather than one by one.
@@ -446,36 +428,6 @@ struct TintedCardModifier: ViewModifier {
 extension View {
     func tintedCard(_ color: Color) -> some View {
         modifier(TintedCardModifier(color: color))
-    }
-}
-
-/// Single chip used by every juz picker (Memorize overview sheet). The parent
-/// owns the selection model (`Int?` or `Int`).
-struct JuzChip: View {
-    let label: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(label)
-                .font(TypeScale.caption)
-                .foregroundStyle(isSelected ? Color.brand : Palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
-                .frame(minHeight: MinSize.segmentedControl)
-                .overlay(
-                    Rectangle().strokeBorder(isSelected ? Color.brand : Palette.separator,
-                                             lineWidth: 1)
-                )
-                // Drawn at 36 pt; the tappable area reaches 44.
-                .padding(.vertical, (MinSize.hitTarget - MinSize.segmentedControl) / 2)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .animation(Motion.quick, value: isSelected)
     }
 }
 
@@ -512,7 +464,7 @@ struct MemorizationStatusCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Image(systemName: icon)
-                    .font(.label(10, weight: .bold))
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(accent)
                 Spacer()
                 MetaText("\(surah.number)", tint: accent)

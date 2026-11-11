@@ -124,7 +124,7 @@ struct IslamicCalendarView: View {
         HStack(spacing: 12) {
             Button(action: onPrev) {
                 Image(systemName: "chevron.left")
-                    .font(.label(12, weight: .bold))
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(.brand)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
@@ -138,7 +138,7 @@ struct IslamicCalendarView: View {
 
             Button(action: onNext) {
                 Image(systemName: "chevron.right")
-                    .font(.label(12, weight: .bold))
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(.brand)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
@@ -151,9 +151,8 @@ struct IslamicCalendarView: View {
         .padding(.bottom, 4)
         .overlay(alignment: .bottom) {
             if !cal.isDate(anchor, equalTo: now, toGranularity: mode == .week ? .weekOfYear : .month) {
-                Button("TODAY") { jumpToToday() }
-                    .font(.label(9, weight: .bold))
-                    .kerning(1.2)
+                Button("Today") { jumpToToday() }
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(.brand)
                     .offset(y: 12)
             }
@@ -164,9 +163,8 @@ struct IslamicCalendarView: View {
     private var weekdayHeader: some View {
         HStack(spacing: 0) {
             ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, s in
-                Text(s.uppercased())
-                    .font(.label(9, weight: .bold))
-                    .kerning(0.8)
+                Text(s)
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(Color.secondary)
                     .frame(maxWidth: .infinity)
             }
@@ -438,11 +436,10 @@ private struct EventKindChip: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.label(9, weight: .bold))
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(isSelected ? color : Color.secondary)
-                Text(label.uppercased())
-                    .font(.label(9.5, weight: .semibold))
-                    .kerning(1)
+                Text(label)
+                    .font(.label(13, weight: .semibold))
                     .foregroundStyle(isSelected ? color : Color.secondary)
             }
             .padding(.horizontal, 10)
@@ -488,7 +485,7 @@ private struct EventRow: View {
                             .font(.appSerif(18, weight: .medium))
                             .foregroundStyle(Color(.label))
                         Spacer(minLength: 6)
-                        MetaText(event.kind.label.uppercased(), tint: event.kind.color, size: 8.5)
+                        MetaText(event.kind.label, tint: event.kind.color, size: 13)
                     }
 
                     Text(event.arabicName)
@@ -530,30 +527,29 @@ private struct EventRow: View {
 
         HStack(spacing: 7) {
             if occ.durationDays() > 1 {
-                MetaText("\(Self.rangeFmt.string(from: start)) – \(Self.dayFmt.string(from: end))", size: 9.5)
-                MetaText("· \(occ.durationDays()) DAYS", tint: Color(.label).opacity(0.32), size: 9)
+                MetaText("\(Self.rangeFmt.string(from: start)) – \(Self.dayFmt.string(from: end))", size: 13)
+                MetaText("· \(occ.durationDays()) days", tint: Color(.label).opacity(0.32), size: 13)
             } else {
-                MetaText(Self.dayFmt.string(from: start), size: 9.5)
+                MetaText(Self.dayFmt.string(from: start), size: 13)
             }
 
             if let note = event.recurrence.note {
-                MetaText("· \(note.uppercased())", tint: Color(.label).opacity(0.32), size: 9)
+                MetaText("· \(note)", tint: Color(.label).opacity(0.32), size: 13)
                     .lineLimit(1)
             }
 
             Spacer(minLength: 4)
 
             if isActive {
-                Text("NOW")
-                    .font(.label(9, weight: .bold))
-                    .kerning(1)
+                Text("Now")
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(Color(.systemBackground))
                     .padding(.horizontal, 6).padding(.vertical, 3)
                     .background(event.kind.color)
             } else if isPast {
-                MetaText("PASSED", tint: Color(.tertiaryLabel), size: 9)
+                MetaText("Passed", tint: Color(.tertiaryLabel), size: 13)
             } else {
-                MetaText(countdown(to: start).uppercased(), tint: event.kind.color, size: 9.5)
+                MetaText(countdown(to: start), tint: event.kind.color, size: 13)
             }
         }
     }

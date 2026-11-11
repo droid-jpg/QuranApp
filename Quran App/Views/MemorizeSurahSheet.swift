@@ -130,7 +130,7 @@ private struct GoalOptionRow: View {
 
                 if selected {
                     Image(systemName: "checkmark")
-                        .font(.label(12, weight: .bold))
+                        .font(.label(13, weight: .bold))
                         .foregroundStyle(.brand)
                 }
             }

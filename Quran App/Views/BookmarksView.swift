@@ -87,7 +87,7 @@ private struct BookmarkRow: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: "bookmark.fill")
-                    .font(.label(9, weight: .bold))
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(.brand)
                 Eyebrow("\(bm.surahName) \(bm.ayahNumber)", tint: .brand)
                 Spacer(minLength: 8)

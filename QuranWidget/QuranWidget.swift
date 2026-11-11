@@ -345,7 +345,7 @@ private struct LargeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 9) {
-                Text("Holy Quran")
+                Text("Quran")
                     .font(.wSerif(19, weight: .medium))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -523,7 +523,7 @@ struct QuranWidget: Widget {
         StaticConfiguration(kind: kind, provider: QuranWidgetProvider()) { entry in
             QuranWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName("Holy Quran")
+        .configurationDisplayName("Quran")
         .description("Next prayer, what you're memorizing, and where you left off.")
         .supportedFamilies([
             .systemSmall, .systemMedium, .systemLarge,

@@ -62,7 +62,7 @@ struct ReviewSessionView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if !queue.isEmpty {
-                        MetaText("\(reviewedCount)/\(total)", size: 11)
+                        MetaText("\(reviewedCount)/\(total)", size: 13)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -169,7 +169,7 @@ private struct ReviewCardView: View {
         VStack(spacing: 16) {
             HStack(spacing: 7) {
                 Image(systemName: mode.icon)
-                    .font(.label(10, weight: .bold))
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(.brand)
                 Eyebrow(mode.title, tint: .brand)
             }
@@ -490,9 +490,8 @@ private struct ReviewCardView: View {
                     Haptics.tap()
                     onGrade(grade)
                 } label: {
-                    Text(grade.label.uppercased())
-                        .font(.label(10.5, weight: .semibold))
-                        .kerning(1.1)
+                    Text(grade.label)
+                        .font(.label(13, weight: .semibold))
                         .foregroundStyle(grade.tint)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)

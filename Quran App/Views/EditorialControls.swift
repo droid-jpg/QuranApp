@@ -55,7 +55,7 @@ struct EditorialMenuRow<Value: Hashable>: View {
                     .foregroundStyle(Palette.textSecondary)
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.label(9, weight: .bold))
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(Palette.textTertiary)
             }
             .contentShape(Rectangle())
@@ -128,7 +128,7 @@ struct EditorialNavRow: View {
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.label(10, weight: .bold))
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(Palette.textTertiary)
             }
             .contentShape(Rectangle())
@@ -216,7 +216,7 @@ struct EditorialSlider: View {
                 .frame(width: labelWidth, alignment: .leading)
             Slider(value: $value, in: range, step: 1)
                 .tint(.brand)
-            MetaText("\(Int(value))", size: 11)
+            MetaText("\(Int(value))", size: 13)
                 .frame(width: 24, alignment: .trailing)
         }
         .accessibilityElement(children: .combine)

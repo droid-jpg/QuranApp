@@ -72,7 +72,7 @@ struct MemorizationGuideView: View {
                 GuideStep(number: 1, title: "Open any surah",
                           detail: "Browse to a surah from the Quran tab and start reading.")
                 GuideStep(number: 2, title: "Add what you want to learn",
-                          detail: "Tap the + beside an ayah to enrol just that verse — or choose “Memorize Surah” from the ⋯ menu to add the whole surah at once.")
+                          detail: "Tap the + beside an ayah to enrol just that ayah — or choose “Memorize Surah” from the ⋯ menu to add the whole surah at once.")
                 GuideStep(number: 3, title: "Review here, daily",
                           detail: "Come back to this screen and tap Review. A few minutes a day is all it takes.")
             }
