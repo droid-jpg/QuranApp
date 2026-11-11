@@ -50,7 +50,7 @@ struct DhikrView: View {
                     let on = store.selectedPreset.id == preset.id
                     Button {
                         Haptics.selection()
-                        withAnimation(AppAnim.smooth) { store.select(preset) }
+                        withAnimation(Motion.standard) { store.select(preset) }
                     } label: {
                         Text(preset.name.uppercased())
                             .font(.label(10, weight: .semibold))
@@ -85,7 +85,7 @@ struct DhikrView: View {
                 .stroke(Color.brand, style: StrokeStyle(lineWidth: 2, lineCap: .butt))
                 .rotationEffect(.degrees(-90))
                 .frame(width: 250, height: 250)
-                .animation(.spring(duration: 0.3), value: store.progress)
+                .animation(Motion.standard, value: store.progress)
 
             Button(action: store.tap) {
                 VStack(spacing: 8) {
@@ -93,13 +93,13 @@ struct DhikrView: View {
                         Image(systemName: "checkmark")
                             .font(.system(size: 52, weight: .light))
                             .foregroundStyle(.brand)
-                            .transition(.scale.combined(with: .opacity))
+                            .transition(Motion.move(.scale.combined(with: .opacity)))
                     } else {
                         Text("\(store.count)")
                             .font(.appSerif(72, weight: .light))
                             .foregroundStyle(.primary)
                             .contentTransition(.numericText(countsDown: false))
-                            .animation(.spring(duration: 0.2), value: store.count)
+                            .animation(Motion.quick, value: store.count)
                     }
 
                     Eyebrow(store.selectedPreset.name)
@@ -245,6 +245,6 @@ struct TapScaleStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
-            .animation(.spring(duration: 0.15), value: configuration.isPressed)
+            .animation(Motion.quick, value: configuration.isPressed)
     }
 }

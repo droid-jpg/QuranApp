@@ -178,8 +178,6 @@ struct ReadingTypeSheet: View {
             }
             .padding(.top, 16)
         }
-        .animation(.easeOut(duration: 0.12), value: arabicFontSize)
-        .animation(.easeOut(duration: 0.12), value: translationFontSize)
     }
 }
 

@@ -237,9 +237,9 @@ private struct ArabicWordChip: View {
             .onTapGesture {
                 guard let detail else { return }
                 Haptics.tap()
-                withAnimation(.easeOut(duration: 0.15)) { flash = true }
+                withAnimation(Motion.quick) { flash = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    withAnimation(.easeOut(duration: 0.3)) { flash = false }
+                    withAnimation(Motion.standard) { flash = false }
                 }
                 onTap(detail)
             }

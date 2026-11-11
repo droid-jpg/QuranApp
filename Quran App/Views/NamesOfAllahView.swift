@@ -141,7 +141,7 @@ private struct NameRow: View {
             }
         }
         .padding(.vertical, 13)
-        .animation(.easeInOut(duration: 0.2), value: status)
+        .animation(Motion.standard, value: status)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isMemorized ? [.isSelected] : [])
     }

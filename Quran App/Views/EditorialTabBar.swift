@@ -35,9 +35,11 @@ final class Chrome: ObservableObject {
     }
 
     /// The reader started scrolling: controls a tap brought back go away again.
+    /// Without animation: the page under the finger must not be re-laid out
+    /// frame by frame while it scrolls (REDESIGN §5).
     func readerScrolled() {
         guard readerHidesControls, !readerControlsHidden else { return }
-        setControlsHidden(true)
+        setControlsHidden(true, animated: false)
     }
 
     /// Leaving the reader always brings the controls (and the mini player) back.
@@ -46,9 +48,11 @@ final class Chrome: ObservableObject {
         setControlsHidden(false)
     }
 
-    private func setControlsHidden(_ hidden: Bool) {
+    private func setControlsHidden(_ hidden: Bool, animated: Bool = true) {
         guard hidden != readerControlsHidden else { return }
-        withAnimation(Motion.standard) { readerControlsHidden = hidden }
+        var transaction = Transaction(animation: animated ? Motion.standard : nil)
+        transaction.disablesAnimations = !animated
+        withTransaction(transaction) { readerControlsHidden = hidden }
     }
 }
 

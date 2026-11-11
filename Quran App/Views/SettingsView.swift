@@ -417,6 +417,6 @@ private struct ThemePicker: View {
                 .accessibilityAddTraits(theme == selection ? [.isButton, .isSelected] : .isButton)
             }
         }
-        .animation(.easeOut(duration: 0.15), value: selection)
+        .animation(Motion.quick, value: selection)
     }
 }

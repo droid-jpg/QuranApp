@@ -475,7 +475,7 @@ private struct ReviewCardView: View {
     private var revealButton: some View {
         OutlineButton(label: "Show answer", on: true) {
             Haptics.tap()
-            withAnimation(.easeInOut(duration: 0.2)) { revealed = true }
+            withAnimation(Motion.standard) { revealed = true }
         }
         .padding(.horizontal, 24)
     }

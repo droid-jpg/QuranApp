@@ -246,7 +246,6 @@ struct EditorialSpecimenSlider: View {
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: rightToLeft ? .trailing : .leading)
                 .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight)
-                .animation(.easeOut(duration: 0.12), value: value)
         }
     }
 }

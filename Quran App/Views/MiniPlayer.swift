@@ -25,11 +25,13 @@ final class PlayerUI: ObservableObject {
 
     func openNowPlaying() {
         guard !nowPlayingShown else { return }
+        TabSwipe.shared.blocked = true
         withAnimation(Motion.sheet) { nowPlayingShown = true }
     }
 
     func closeNowPlaying() {
         guard nowPlayingShown else { return }
+        TabSwipe.shared.blocked = false
         withAnimation(Motion.sheet) { nowPlayingShown = false }
     }
 
@@ -298,9 +300,12 @@ private struct MiniPlayer: View {
             }
         }
         .contentShape(Rectangle())
+        // Swipe up: the §3.0 rule upright (12 pt at 2:1, then past 32 pt or a flick).
         .simultaneousGesture(
-            DragGesture(minimumDistance: Spacing.xs).onEnded { v in
-                if v.translation.height <= -Spacing.xl { ui.openNowPlaying() }
+            DragGesture(minimumDistance: SwipeRule.activation).onEnded { v in
+                if SwipeRule.commitsUp(translation: v.translation, velocity: v.velocity) {
+                    ui.openNowPlaying()
+                }
             }
         )
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)

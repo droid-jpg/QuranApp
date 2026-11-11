@@ -49,7 +49,8 @@ struct SurahListView: View {
             VStack(spacing: 0) {
                 SurahListTopBar(
                     searchText: $viewModel.searchText,
-                    filter: $filter,
+                    // The list settles into the new filter rather than jumping.
+                    filter: $filter.animation(Motion.standard),
                     searchFocused: $searchFocused,
                     onJuz: {
                         Haptics.tap()

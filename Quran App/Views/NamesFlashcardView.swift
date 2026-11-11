@@ -8,6 +8,7 @@ struct NamesFlashcardView: View {
     @State private var currentIndex = 0
     @State private var isFlipped = false
     @State private var dragOffset: CGSize = .zero
+    @State private var cardWidth: CGFloat = 300
 
     private let names = AllahName.all
 
@@ -35,17 +36,28 @@ struct NamesFlashcardView: View {
                 flashcard
                     .rotation3DEffect(.degrees(isFlipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
                     .offset(dragOffset)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { cardWidth = $0 }
+                    // The app's one swipe rule (§3.0): 12 pt at 2:1 horizontal,
+                    // then past 40% of the card or a flick.
                     .gesture(
-                        DragGesture()
-                            .onChanged { dragOffset = CGSize(width: $0.translation.width, height: 0) }
+                        DragGesture(minimumDistance: SwipeRule.activation)
+                            .onChanged { v in
+                                let t = v.translation
+                                guard dragOffset != .zero
+                                        || abs(t.width) >= abs(t.height) * SwipeRule.dominance else { return }
+                                dragOffset = CGSize(width: t.width, height: 0)
+                            }
                             .onEnded { val in
-                                withAnimation(.spring(duration: 0.3)) { dragOffset = .zero }
-                                if val.translation.width < -60 { advance(by: 1) }
-                                else if val.translation.width > 60 { advance(by: -1) }
+                                let moved = dragOffset != .zero
+                                withAnimation(Motion.sheet) { dragOffset = .zero }
+                                guard moved, SwipeRule.commits(translation: val.translation.width,
+                                                               velocity: val.velocity.width,
+                                                               width: cardWidth) else { return }
+                                advance(by: val.translation.width < 0 ? 1 : -1)
                             }
                     )
                     .onTapGesture {
-                        withAnimation(.spring(duration: 0.4)) { isFlipped.toggle() }
+                        withAnimation(Motion.sheet) { isFlipped.toggle() }
                     }
 
                 Spacer()
@@ -136,7 +148,7 @@ struct NamesFlashcardView: View {
     private func advance(by delta: Int) {
         let next = currentIndex + delta
         guard next >= 0, next < names.count else { return }
-        withAnimation(.spring(duration: 0.35)) {
+        withAnimation(Motion.sheet) {
             isFlipped = false
             currentIndex = next
         }

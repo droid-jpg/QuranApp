@@ -94,6 +94,11 @@ struct QuranAppApp: App {
                                  totalAyahs: t.totalAyahs, surahName: t.surahName)
     }
 
+    private func hideSplash() {
+        guard showSplash else { return }
+        withAnimation(Motion.standard) { showSplash = false }
+    }
+
     private var preferredColorScheme: ColorScheme? {
         switch colorSchemeRaw {
         case "light": return .light
@@ -106,17 +111,26 @@ struct QuranAppApp: App {
         WindowGroup {
             ZStack {
                 ZStack {
-                    TabView(selection: $selectedTab) {
-                        Tab(value: AppTab.home) {
-                            HomeView().clearsBottomChrome().toolbar(.hidden, for: .tabBar)
-                        }
-                        Tab(value: AppTab.quran) {
-                            SurahListView().clearsBottomChrome().toolbar(.hidden, for: .tabBar)
-                        }
-                        Tab(value: AppTab.more) {
-                            MoreView().clearsBottomChrome().toolbar(.hidden, for: .tabBar)
+                    // Swiping on a tab's root screen moves to the next tab
+                    // (`swipesBetweenTabs`); the stage draws the drag, so a frame
+                    // of it doesn't re-evaluate the tabs.
+                    TabSwipeStage {
+                        TabView(selection: $selectedTab) {
+                            Tab(value: AppTab.home) {
+                                HomeView().clearsBottomChrome().swipesBetweenTabs(.home)
+                                    .toolbar(.hidden, for: .tabBar)
+                            }
+                            Tab(value: AppTab.quran) {
+                                SurahListView().clearsBottomChrome().swipesBetweenTabs(.quran)
+                                    .toolbar(.hidden, for: .tabBar)
+                            }
+                            Tab(value: AppTab.more) {
+                                MoreView().clearsBottomChrome().swipesBetweenTabs(.more)
+                                    .toolbar(.hidden, for: .tabBar)
+                            }
                         }
                     }
+                    .background(Palette.background.ignoresSafeArea())
                     // The system bar is hidden per-tab above. The mini player and
                     // `EditorialTabBar` take its place, once, as an overlay along the
                     // bottom; each tab reserves their height (`clearsBottomChrome`),
@@ -166,6 +180,10 @@ struct QuranAppApp: App {
                 }
                 .environmentObject(prayerTimesService)
             }
+            // A swipe on a tab's root screen asks for the next tab.
+            .onReceive(NotificationCenter.default.publisher(for: .selectAppTab)) { note in
+                if let tab = note.object as? AppTab { selectedTab = tab }
+            }
             // Today's search field asks for the Quran tab.
             .onReceive(NotificationCenter.default.publisher(for: .showQuranTab)) { _ in
                 selectedTab = .quran
@@ -195,13 +213,20 @@ struct QuranAppApp: App {
                     prayerTimesService.refreshIfNeeded()
                 }
 
+                KeyboardPresence.shared.start()
+
+                // The splash goes as soon as Today has its verse, and never
+                // stays longer than 0.4 s for it: a slow network fills the
+                // verse in on Today instead of holding the app behind the splash.
+                let splashCap = Task {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    hideSplash()
+                }
                 await DailyVerseService.shared.loadIfNeeded()
+                splashCap.cancel()
+                hideSplash()
 
                 performPendingHifzAction()
-
-                // Dismiss splash after a brief moment
-                try? await Task.sleep(for: .milliseconds(1400))
-                withAnimation(.easeOut(duration: 0.5)) { showSplash = false }
             }
             .onReceive(NotificationCenter.default.publisher(for: .appThemeDidChange)) { _ in
                 themeEpoch += 1
@@ -233,8 +258,6 @@ struct QuranAppApp: App {
 
 private struct SplashView: View {
     @Environment(\.colorScheme) var colorScheme
-    @State private var scale: CGFloat = 0.85
-    @State private var opacity: Double = 0
 
     var body: some View {
         ZStack {
@@ -259,14 +282,6 @@ private struct SplashView: View {
                 ProgressView()
                     .tint(.brand)
                     .padding(.top, 26)
-            }
-            .scaleEffect(scale)
-            .opacity(opacity)
-            .onAppear {
-                withAnimation(.spring(response: 0.6, dampingFraction: 0.75)) {
-                    scale   = 1.0
-                    opacity = 1.0
-                }
             }
         }
     }

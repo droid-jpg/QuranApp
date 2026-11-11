@@ -34,8 +34,8 @@ extension EnvironmentValues {
 
 // MARK: - Surah page browser (swipe between surahs)
 
-/// Wraps multiple `SurahDetailView`s in a horizontally-paged TabView so the user
-/// can swipe left/right between surahs, and owns everything that must sit *above*
+/// Lays `SurahDetailView`s side by side so the user can swipe left/right between
+/// surahs (`PagerLayout`, `ReaderSwipeInstaller`), and owns everything that must sit *above*
 /// the pages: the reader's own top bar (the system navigation bar is hidden — on
 /// iOS 26 it floats over scroll content, which put chrome on top of scripture),
 /// the reader options menu, and the reader's sheets. The mini player, Now Playing
@@ -59,6 +59,8 @@ struct SurahPageView: View {
     @State private var router = ReaderSheetRouter()
 
     @State private var currentIndex: Int
+    /// The pager's drag offset. Held, not observed: only the track redraws per frame.
+    @State private var pagerDrag = ReaderPagerDrag()
     @State private var showReadingType = false
     @State private var showMushaf = false
     @State private var showMemorizeSheet = false
@@ -74,6 +76,9 @@ struct SurahPageView: View {
 
     private var surah: Surah { surahs[max(0, min(currentIndex, surahs.count - 1))] }
     private var model: SurahDetailViewModel { models.model(for: surah) }
+    private var pageRange: ClosedRange<Int> {
+        max(0, currentIndex - 1)...min(surahs.count - 1, currentIndex + 1)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -84,28 +89,34 @@ struct SurahPageView: View {
                 onOptions: { presentReaderMenu() }
             )
 
-            TabView(selection: $currentIndex) {
-                ForEach(surahs.indices, id: \.self) { idx in
-                    // Only the page on screen and its neighbours are built; the
-                    // rest stay blank until a swipe brings them next door, so
-                    // opening the reader doesn't make a model and a page for all
-                    // 114 surahs, and re-rendering the pager stays cheap.
-                    Group {
-                        if abs(idx - currentIndex) <= 1 {
-                            SurahDetailView(
-                                surah: surahs[idx],
-                                viewModel: models.model(for: surahs[idx]),
-                                initialAyah: idx == startIndex ? initialAyah : nil,
-                                router: router
-                            )
-                        } else {
-                            Palette.background
-                        }
+            // The page on screen and its neighbours, side by side; a swipe
+            // outside the left 32 pt drags them (`ReaderSwipeInstaller`), a swipe
+            // inside it is Back. Only these three are built, so opening the
+            // reader doesn't make a model and a page for all 114 surahs.
+            ReaderPagerTrack(drag: pagerDrag) {
+                PagerLayout(current: currentIndex) {
+                    ForEach(pageRange, id: \.self) { idx in
+                        SurahDetailView(
+                            surah: surahs[idx],
+                            viewModel: models.model(for: surahs[idx]),
+                            initialAyah: idx == startIndex ? initialAyah : nil,
+                            router: router
+                        )
+                        .layoutValue(key: PageIndexKey.self, value: idx)
+                        .allowsHitTesting(idx == currentIndex)
+                        .accessibilityHidden(idx != currentIndex)
                     }
-                    .tag(idx)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
+            .background(ReaderSwipeInstaller(
+                drag: pagerDrag,
+                canPage: { [surahs, currentIndex] direction in
+                    surahs.indices.contains(currentIndex + direction)
+                },
+                onPage: { direction in
+                    currentIndex = max(0, min(currentIndex + direction, surahs.count - 1))
+                }
+            ).frame(width: 0, height: 0).accessibilityHidden(true))
         }
         .background(Palette.background)
         // Ours replaces it: see `ReaderTopBar`.

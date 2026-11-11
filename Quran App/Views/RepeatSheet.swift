@@ -179,7 +179,7 @@ struct RepeatSheet: View {
                 .padding(.top, 4)
                 .padding(.bottom, 24)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
-                .animation(AppAnim.smooth, value: state.isOn)
+                .animation(Motion.standard, value: state.isOn)
             }
             .scrollBounceBehavior(.basedOnSize)
         }

@@ -46,7 +46,7 @@ struct MemorizeSurahSheet: View {
                         ForEach(MemorizationGoal.allCases) { g in
                             GoalOptionRow(goal: g, selected: g == goal) {
                                 Haptics.selection()
-                                withAnimation(.easeOut(duration: 0.15)) { goal = g }
+                                withAnimation(Motion.quick) { goal = g }
                             }
                         }
                     }

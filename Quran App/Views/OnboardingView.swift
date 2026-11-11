@@ -28,7 +28,7 @@ struct OnboardingView: View {
                 reminders.tag(3)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .animation(.easeInOut(duration: 0.25), value: page)
+            .animation(Motion.standard, value: page)
 
             // Dots + primary button
             VStack(spacing: 18) {
@@ -46,7 +46,7 @@ struct OnboardingView: View {
                         NotificationService.shared.scheduleMemorizationReminder()
                         onDone()
                     } else {
-                        withAnimation { page += 1 }
+                        withAnimation(Motion.standard) { page += 1 }
                     }
                 } label: {
                     Text(page == lastPage ? "Get Started" : "Continue")

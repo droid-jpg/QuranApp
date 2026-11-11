@@ -71,11 +71,11 @@ final class EditorialMenuPresenter: ObservableObject {
 
     func present(_ request: EditorialMenuRequest) {
         Haptics.impact(.medium)
-        withAnimation(AppAnim.springFast) { self.request = request }
+        withAnimation(Motion.sheet) { self.request = request }
     }
 
     func dismiss() {
-        withAnimation(AppAnim.springFast) { request = nil }
+        withAnimation(Motion.sheet) { request = nil }
     }
 }
 
@@ -93,18 +93,11 @@ struct EditorialMenuOverlay: View {
         self.onDismiss = onDismiss
     }
 
+    /// The panel only; `editorialMenu(_:)` lays the scrim under it. Each is its
+    /// own child of the presenting ZStack, so each runs its own transition (a
+    /// transition on a child of an inserted view never plays).
     var body: some View {
-        ZStack(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.black.opacity(0.38))
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture { onDismiss() }
-                .transition(.opacity)
-
-            panel
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
+        panel
     }
 
     private var panel: some View {
@@ -218,10 +211,21 @@ extension View {
     /// Draws whatever menu the presenter is holding above this view.
     func editorialMenu(_ presenter: EditorialMenuPresenter) -> some View {
         overlay {
-            if let request = presenter.request {
-                EditorialMenuOverlay(request: request) { presenter.dismiss() }
-                    .zIndex(20)
+            ZStack(alignment: .bottom) {
+                if presenter.request != nil {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.38))
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { presenter.dismiss() }
+                        .transition(.opacity)
+                }
+                if let request = presenter.request {
+                    EditorialMenuOverlay(request: request) { presenter.dismiss() }
+                        .transition(Motion.move(.move(edge: .bottom)))
+                }
             }
+            .zIndex(20)
         }
     }
 }

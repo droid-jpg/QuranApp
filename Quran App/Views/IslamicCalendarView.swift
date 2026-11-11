@@ -214,13 +214,13 @@ struct IslamicCalendarView: View {
         Haptics.selection()
         let comp = months != 0 ? DateComponents(month: months) : DateComponents(day: weeks * 7)
         if let d = cal.date(byAdding: comp, to: anchor) {
-            withAnimation(.easeInOut(duration: 0.2)) { anchor = d }
+            withAnimation(Motion.standard) { anchor = d }
         }
     }
 
     private func select(_ day: Date) {
         Haptics.selection()
-        withAnimation(.easeInOut(duration: 0.15)) {
+        withAnimation(Motion.quick) {
             selectedDay = cal.startOfDay(for: day)
             if mode == .month, !cal.isDate(day, equalTo: anchor, toGranularity: .month) {
                 anchor = day
@@ -230,7 +230,7 @@ struct IslamicCalendarView: View {
 
     private func jumpToToday() {
         Haptics.tap()
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(Motion.standard) {
             anchor = now
             selectedDay = cal.startOfDay(for: now)
         }
@@ -505,7 +505,7 @@ private struct EventRow: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 Haptics.tap()
-                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                withAnimation(Motion.standard) { expanded.toggle() }
             }
 
             if expanded {
@@ -516,7 +516,7 @@ private struct EventRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
                     .padding(.leading, 32)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(Motion.move(.opacity.combined(with: .move(edge: .top))))
             }
         }
     }

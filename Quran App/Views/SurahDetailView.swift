@@ -75,7 +75,7 @@ struct SurahDetailView: View {
             // Resume bar sits in the layout flow — cannot be covered by the bar.
             if showResumeBar {
                 resumeBar
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(Motion.move(.move(edge: .top).combined(with: .opacity)))
             }
 
             ScrollViewReader { proxy in
@@ -134,7 +134,6 @@ struct SurahDetailView: View {
             }
         }
         .background(Palette.background)
-        .animation(Motion.sheet, value: showResumeBar)
         .onChange(of: translationId) {
             Task { await viewModel.loadAyahs() }
         }
@@ -151,7 +150,7 @@ struct SurahDetailView: View {
             // Resume tracking (Feature 6)
             if let last = viewModel.lastPlayedAyah(), scrollTarget == nil, !showResumeBar {
                 resumeAyah = last
-                showResumeBar = true
+                withAnimation(Motion.standard) { showResumeBar = true }
             }
             // Track last-opened surah for widget
             let ud = UserDefaults(suiteName: "group.com.saminukta.Quran-App")
@@ -170,8 +169,8 @@ struct SurahDetailView: View {
             Button {
                 withAnimation(Motion.standard) {
                     resumeProxy?.scrollTo(resumeAyah, anchor: .top)
+                    showResumeBar = false
                 }
-                showResumeBar = false
             } label: {
                 Text("Resume")
                     .font(.system(.subheadline, weight: .semibold))
@@ -180,7 +179,7 @@ struct SurahDetailView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            Button { showResumeBar = false } label: {
+            Button { withAnimation(Motion.standard) { showResumeBar = false } } label: {
                 Image(systemName: "xmark")
                     .font(.system(.footnote, weight: .bold))
                     .foregroundStyle(Palette.textSecondary)
