@@ -303,6 +303,8 @@ private struct WordDefinitionSheet: View {
         // The system grabber; .large is there for when Dynamic Type outgrows 280 pt.
         .presentationDetents([.height(280), .large])
         .presentationDragIndicator(.visible)
+        // Opaque like the other sheets (AUDIT #21).
+        .presentationBackground(Palette.surfaceRaised)
         .onDisappear { clip.stop() }
     }
 }
@@ -344,6 +346,10 @@ struct TafsirSheet: View {
                 }
             }
             .presentationDetents([.medium, .large])
+            // Opaque like the other sheets (AUDIT #21), bar included.
+            .presentationBackground(Palette.surfaceRaised)
+            .toolbarBackground(Palette.surfaceRaised, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
         }
     }
 }

@@ -96,9 +96,10 @@ struct AyahActionsSheet: View {
                 .foregroundStyle(Palette.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                // Leading under right-to-left: the line starts at the right edge.
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .environment(\.layoutDirection, .rightToLeft)
+                // The frame sits outside the right-to-left text, so trailing is
+                // the right edge: the Arabic line starts at the right.
+                .frame(maxWidth: .infinity, alignment: .trailing)
             Text(ayah.translation)
                 .font(TypeScale.body)
                 .foregroundStyle(Palette.textPrimary)
@@ -232,7 +233,8 @@ struct AyahActionsSheet: View {
         }
         .padding(.vertical, Spacing.xs)
         .padding(.horizontal, Spacing.xxs)
-        .frame(maxWidth: .infinity, minHeight: MinSize.ayahActionButton, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, minHeight: MinSize.ayahActionButton, maxHeight: .infinity,
+               alignment: .top)
         .frame(minWidth: MinSize.ayahActionButton)
         .background(Rectangle().fill(on ? Palette.highlight : Palette.surface))
         .overlay(Rectangle().strokeBorder(on ? Palette.accent : Palette.separator, lineWidth: 1))

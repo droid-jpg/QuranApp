@@ -70,7 +70,6 @@ final class ReaderSheetRouter: ObservableObject {
 struct ReaderSheetsHost: View {
     @ObservedObject var router: ReaderSheetRouter
 
-    @Environment(\.audioServiceRef) private var audioService
     @Environment(\.playerUIRef) private var playerUI
     @EnvironmentObject private var srStore: MemorizationSRStore
     @EnvironmentObject private var memorizationStore: MemorizationStore
@@ -86,10 +85,7 @@ struct ReaderSheetsHost: View {
                         surah: ref.surah, ayah: ref.ayah, model: ref.model,
                         closeThen: { next in router.close(then: next) },
                         onTafsir: { router.sheet = .tafsir(ref) },
-                        onWordByWord: {
-                            Task { await ref.model.loadWordTimingsIfNeeded() }
-                            router.sheet = .wordByWord(ref)
-                        },
+                        onWordByWord: { router.sheet = .wordByWord(ref) },
                         onAddToMemorization: { addToMemorization(ref) },
                         onMoreRepeatOptions: {
                             playerUI?.openRepeat(surah: ref.surah, pendingAyah: ref.ayah.numberInSurah)
@@ -98,7 +94,7 @@ struct ReaderSheetsHost: View {
                 case .tafsir(let ref):
                     ReaderTafsirSheet(ref: ref, model: ref.model)
                 case .wordByWord(let ref):
-                    ReaderWordPicker(ref: ref, model: ref.model, audioService: audioService)
+                    WordByWordSheet(ref: ref, model: ref.model)
                 }
             }
             .confirmationDialog(
@@ -183,35 +179,6 @@ private struct ReaderTafsirSheet: View {
     var body: some View {
         if let text = model.tafsirByAyah[ref.ayah.numberInSurah] {
             TafsirSheet(ayah: ref.ayah, surahName: ref.surah.englishName, text: text)
-        }
-    }
-}
-
-/// The existing word-by-word picker (its own repeat toggle is the next task),
-/// following the model while word timings load.
-private struct ReaderWordPicker: View {
-    let ref: ReaderAyahRef
-    @ObservedObject var model: SurahDetailViewModel
-    let audioService: AudioService?
-
-    var body: some View {
-        let n = ref.ayah.numberInSurah
-        WordLoopPickerView(
-            ayah: ref.ayah,
-            timings: model.wordTimingsByAyah[n] ?? [],
-            isLoading: model.isLoadingWordTimings,
-            errorMessage: model.wordTimingsError
-        ) { start, end in
-            guard let chapterUrl = model.chapterAudioUrl() else { return }
-            audioService?.startWordLoop(
-                surah: ref.surah.number,
-                ayah: n,
-                chapterUrl: chapterUrl,
-                wordStartMs: start.startMs,
-                wordEndMs: end.endMs,
-                fromWord: start.id,
-                toWord: end.id
-            )
         }
     }
 }

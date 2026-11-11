@@ -66,7 +66,7 @@ struct ReviewSessionView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { ClipPlayer.shared.stop(); GapClipPlayer.shared.stop(); dismiss() }
+                    Button("Done") { ClipPlayer.shared.stop(); dismiss() }
                 }
             }
             .onAppear {
@@ -76,7 +76,7 @@ struct ReviewSessionView: View {
                 total = initialCards.count
                 pickMode(for: queue.first)
             }
-            .onDisappear { ClipPlayer.shared.stop(); GapClipPlayer.shared.stop() }
+            .onDisappear { ClipPlayer.shared.stop() }
         }
     }
 
@@ -115,7 +115,6 @@ struct ReviewSessionView: View {
     private func handle(_ card: AyahReview, _ grade: ReviewGrade) {
         let updated = store.recordReview(card, grade: grade)
         ClipPlayer.shared.stop()
-        GapClipPlayer.shared.stop()
         if !queue.isEmpty { queue.removeFirst() }
         if grade == .again {
             queue.append(updated)   // see it again before the session ends
@@ -137,7 +136,6 @@ private struct ReviewCardView: View {
     @State private var revealed = false
     @State private var blankIndex = 0
     @ObservedObject private var clip = ClipPlayer.shared
-    @ObservedObject private var gap = GapClipPlayer.shared
     @AppStorage("fillBlankUseTransliteration") private var fillBlankUseTransliteration = false
     @AppStorage("memorizationUseSimpleMeaning") private var useSimpleMeaning = false
     @AppStorage("memorizationCardScript")          private var cardScript: MemorizationCardScript = .arabic
@@ -331,7 +329,7 @@ private struct ReviewCardView: View {
         .onChange(of: revealed) { _, nowRevealed in
             if nowRevealed { playFullAyah() }   // full recitation once the answer is shown
         }
-        .onDisappear { GapClipPlayer.shared.stop() }
+        .onDisappear { ClipPlayer.shared.stop() }
     }
 
     /// Plays the ayah with the hidden word silenced (before reveal) or in full
@@ -341,13 +339,13 @@ private struct ReviewCardView: View {
     private var gapAudioButton: some View {
         if gapTimings?.verseTimestamps[card.ayah] != nil {
             Button {
-                if gap.isActive { GapClipPlayer.shared.stop() }
+                if clip.isActive { ClipPlayer.shared.stop() }
                 else if revealed { playFullAyah() }
                 else { playGapAudio() }
             } label: {
-                Label(gap.isActive ? "Stop"
+                Label(clip.isActive ? "Stop"
                         : (revealed ? "Play full ayah" : "Play with gap"),
-                      systemImage: gap.isActive ? "stop.circle.fill" : "play.circle.fill")
+                      systemImage: clip.isActive ? "stop.circle.fill" : "play.circle.fill")
                     .font(.label(13, weight: .semibold))
                     .foregroundStyle(.brand)
             }
@@ -463,13 +461,13 @@ private struct ReviewCardView: View {
 
     private func playGapAudio() {
         guard let w = gapWindow(), let url = gapTimings?.chapterAudioUrl else { return }
-        GapClipPlayer.shared.play(url: url, fromMs: w.from, toMs: w.to,
+        ClipPlayer.shared.play(url: url, fromMs: w.from, toMs: w.to,
                                   muteFromMs: w.muteFrom, muteToMs: w.muteTo)
     }
 
     private func playFullAyah() {
         guard let w = gapWindow(), let url = gapTimings?.chapterAudioUrl else { return }
-        GapClipPlayer.shared.play(url: url, fromMs: w.from, toMs: w.to)
+        ClipPlayer.shared.play(url: url, fromMs: w.from, toMs: w.to)
     }
 
     // MARK: Controls

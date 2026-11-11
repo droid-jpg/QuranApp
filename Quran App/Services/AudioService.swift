@@ -129,9 +129,10 @@ class AudioService: ObservableObject {
     private var pendingRepeatWork: (() -> Void)?
     private var repeatGapTask: Task<Void, Never>?
 
-    /// The ayah the main player was on before a word loop borrowed `currentSurah`
-    /// and `currentAyah`, restored when the word loop ends.
-    private var positionBeforeWordLoop: (surah: Int, ayah: Int?)?
+    /// The main session's position before a word repeat borrowed `currentSurah`,
+    /// `currentAyah` and the ayah count (so every screen reads one coherent
+    /// "surah, ayah 5 of 7"), restored whole when the word repeat ends.
+    private var positionBeforeWordLoop: (surah: Int, name: String, total: Int, ayah: Int?)?
 
     /// Position to restore once the ayah's real duration is known — set by
     /// `resume(_:)` so a saved listening session picks up mid-ayah.
@@ -245,15 +246,18 @@ class AudioService: ObservableObject {
 
     // MARK: - CarPlay / lock-screen navigation helpers
 
+    /// Lock screen / CarPlay Next. A word repeat ends first and returns the MAIN
+    /// session's position (paused), so Next acts on that, never on the borrowed
+    /// word-repeat ayah or surah.
     func skipToNextAyah() {
-        stopWordLoopInternal()
+        stopWordLoop(resume: false)
         guard let ayah = currentAyah,
               let next = activeRepeat.nextAyah(after: ayah, ayahCount: totalAyahs) else { return }
         loadItem(ayah: next)
     }
 
     func skipToPreviousAyah() {
-        stopWordLoopInternal()
+        stopWordLoop(resume: false)
         guard let ayah = currentAyah,
               let prev = activeRepeat.previousAyah(before: ayah) else { return }
         loadItem(ayah: prev)
@@ -363,15 +367,20 @@ class AudioService: ObservableObject {
         wordStartMs: Int,
         wordEndMs: Int,
         fromWord: Int,
-        toWord: Int
+        toWord: Int,
+        totalAyahs ayahCount: Int,
+        surahName: String
     ) {
         wordLoopStart = Double(wordStartMs) / 1000.0
         wordLoopEnd   = Double(wordEndMs)   / 1000.0
         if !isWordLooping {
-            positionBeforeWordLoop = (currentSurah, player.currentItem != nil ? currentAyah : nil)
+            positionBeforeWordLoop = (currentSurah, currentSurahName, totalAyahs,
+                                      currentAyah)
         }
         cancelRepeatGap()
         currentSurah  = surah
+        currentSurahName = surahName
+        totalAyahs    = ayahCount
         currentAyah   = ayah
         isSeeking     = false
         wordRepeat    = WordRepeat(surah: surah, ayah: ayah,
@@ -717,15 +726,17 @@ class AudioService: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.isSeeking = false
-                if self.isWordLooping { self.chapterPlayer?.play() }
+                if self.isWordLooping, self.isPlaying { self.chapterPlayer?.play() }
             }
         }
     }
 
     private func stopWordLoopInternal() {
         if isWordLooping, let before = positionBeforeWordLoop {
-            currentSurah = before.surah
-            currentAyah  = before.ayah
+            currentSurah     = before.surah
+            currentSurahName = before.name
+            totalAyahs       = before.total
+            currentAyah      = before.ayah
         }
         positionBeforeWordLoop = nil
         wordRepeat = nil
