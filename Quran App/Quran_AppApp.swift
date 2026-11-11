@@ -137,6 +137,8 @@ struct QuranAppApp: App {
                 // The same service as a plain reference, for views that only
                 // send it commands and must not re-render on its changes.
                 .environment(\.audioServiceRef, audioService)
+                // Likewise the player UI, for the reader's "More repeat options".
+                .environment(\.playerUIRef, playerUI)
                 .environmentObject(memorizationStore)
                 .environmentObject(srStore)
                 .environmentObject(targetStore)

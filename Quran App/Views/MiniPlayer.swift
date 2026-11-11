@@ -19,6 +19,9 @@ import UIKit
 final class PlayerUI: ObservableObject {
     @Published var nowPlayingShown = false
     @Published var repeatSheetSurah: Surah?
+    /// Set when the Repeat sheet opens from an ayah ("More repeat options"): the
+    /// sheet shows From = To = this ayah, pending until Repeat is switched on.
+    private(set) var repeatSheetAyah: Int?
 
     func openNowPlaying() {
         guard !nowPlayingShown else { return }
@@ -35,8 +38,22 @@ final class PlayerUI: ObservableObject {
         guard let number = PlayerEngine(audioService: audio).playerSurahNumber,
               let surah = QuranOfflineStore.shared.surahs().first(where: { $0.number == number })
         else { return }
+        repeatSheetAyah = nil
         repeatSheetSurah = surah
     }
+
+    /// Opens the Repeat sheet for `surah`, prefilled with `ayah` (Ayah actions →
+    /// More repeat options). Still the one Repeat sheet, presented from the root.
+    func openRepeat(surah: Surah, pendingAyah ayah: Int) {
+        repeatSheetAyah = ayah
+        repeatSheetSurah = surah
+    }
+}
+
+extension EnvironmentValues {
+    /// The root's `PlayerUI` as a plain reference, for views that only ask it to
+    /// open something (the reader). Reading it does not observe it.
+    @Entry var playerUIRef: PlayerUI? = nil
 }
 
 // MARK: - Bottom chrome
@@ -55,7 +72,7 @@ struct BottomChrome: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            MiniPlayerSlot(ui: ui)
+            MiniPlayerSlot(ui: ui, hiddenByReader: chrome.readerControlsHidden)
             if tabBarShown ?? !chrome.tabBarHidden {
                 EditorialTabBar(selection: $selection)
                     .transition(Motion.move(.move(edge: .bottom).combined(with: .opacity)))
@@ -144,6 +161,8 @@ private struct BottomSafeAreaSetter: UIViewControllerRepresentable {
 /// session exists, and hides it otherwise.
 private struct MiniPlayerSlot: View {
     let ui: PlayerUI
+    /// "Hide controls while reading" has the reader to itself.
+    var hiddenByReader = false
 
     @EnvironmentObject private var audioService: AudioService
     @ObservedObject private var listening = ListeningSessionStore.shared
@@ -154,7 +173,7 @@ private struct MiniPlayerSlot: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if shown ?? visible {
+            if (shown ?? visible) && !hiddenByReader {
                 MiniPlayer(audioService: audioService, session: listening.session, ui: ui)
                     .transition(Motion.move(.move(edge: .bottom).combined(with: .opacity)))
             }
@@ -341,7 +360,8 @@ struct PlayerSheetsHost: View {
                     surah: surah,
                     ayahs: QuranOfflineStore.shared.ayahs(surah: surah.number,
                                                           translationId: Translation.fallbackId) ?? [],
-                    focusAyah: focusAyah(in: surah)
+                    focusAyah: ui.repeatSheetAyah ?? focusAyah(in: surah),
+                    pendingAyah: ui.repeatSheetAyah
                 )
             }
     }

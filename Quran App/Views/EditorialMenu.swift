@@ -105,7 +105,6 @@ struct EditorialMenuOverlay: View {
             panel
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-        .ignoresSafeArea(edges: .bottom)
     }
 
     private var panel: some View {
@@ -125,11 +124,12 @@ struct EditorialMenuOverlay: View {
                 }
             }
         }
-        // The home-indicator allowance goes inside the background, or the panel
-        // leaves a strip of dimmed page below itself.
-        .padding(.bottom, safeBottom)
+        // The rows end above the bottom safe area, which in the reader includes
+        // the app's mini player, so it never covers the last row; the background
+        // runs on under it, so no strip of dimmed page shows below the panel.
+        .padding(.bottom, Spacing.xs)
         .frame(maxWidth: .infinity)
-        .background(Palette.surfaceRaised)
+        .background(Palette.surfaceRaised, ignoresSafeAreaEdges: .bottom)
         .overlay(alignment: .top) { Hairline() }
         .accessibilityAddTraits(.isModal)
     }
@@ -209,13 +209,6 @@ struct EditorialMenuOverlay: View {
         case .accent:      Color.brand
         case .destructive: Color.red
         }
-    }
-
-    private var safeBottom: CGFloat {
-        let inset = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.windows.first { $0.isKeyWindow }?.safeAreaInsets.bottom ?? 0
-        return max(inset, 16)
     }
 }
 

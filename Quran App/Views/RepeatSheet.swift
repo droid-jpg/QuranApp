@@ -16,6 +16,10 @@ struct RepeatSheet: View {
     let ayahs: [Ayah]
     /// The ayah a fresh repeat starts on when nothing in this surah is playing.
     let focusAyah: Int
+    /// Opened from an ayah ("More repeat options"): From = To = this ayah is shown
+    /// as the pending state, off until the switch is turned on. Ignored while a
+    /// repeat is already on in this surah, which the sheet then shows as it is.
+    let pendingAyah: Int?
 
     @EnvironmentObject private var audioService: AudioService
     @Environment(\.dismiss) private var dismiss
@@ -27,10 +31,16 @@ struct RepeatSheet: View {
 
     private var type = ReadingType()
 
-    init(surah: Surah, ayahs: [Ayah], focusAyah: Int) {
+    /// Set once the switch has applied the pending ayah; from then on the sheet
+    /// shows the service's state like any other.
+    @State private var pendingApplied = false
+
+    init(surah: Surah, ayahs: [Ayah], focusAyah: Int, pendingAyah: Int? = nil) {
         self.surah = surah
         self.ayahs = ayahs
-        self.focusAyah = max(1, min(focusAyah, max(surah.numberOfAyahs, 1)))
+        let total = max(surah.numberOfAyahs, 1)
+        self.focusAyah = max(1, min(focusAyah, total))
+        self.pendingAyah = pendingAyah.map { max(1, min($0, total)) }
     }
 
     fileprivate enum RangeEnd: String, Identifiable {
@@ -42,8 +52,17 @@ struct RepeatSheet: View {
 
     private var isLoadedHere: Bool { audioService.currentSurah == surah.number && audioService.currentAyah != nil }
 
-    /// The ayah "this ayah" means: the one playing here, else the focus ayah.
+    /// The pending prefill, while it still applies.
+    private var pending: Int? {
+        guard let pendingAyah, !pendingApplied else { return nil }
+        let s = audioService.repeatState
+        return s.isOn && s.surah == surah.number ? nil : pendingAyah
+    }
+
+    /// The ayah "this ayah" means: the ayah the sheet was opened from, else the
+    /// one playing here, else the focus ayah.
     private var liveAyah: Int {
+        if let pendingAyah { return pendingAyah }
         if isLoadedHere, let a = audioService.currentAyah { return min(a, total) }
         return focusAyah
     }
@@ -51,6 +70,10 @@ struct RepeatSheet: View {
     /// What the sheet shows and edits.
     private var state: RepeatState {
         let s = audioService.repeatState
+        if let p = pending {
+            return RepeatState(isOn: false, surah: surah.number, from: p, to: p, times: .infinite,
+                               pause: s.surah == surah.number ? s.pause : .none)
+        }
         if s.surah == surah.number { return s.clamped(ayahCount: total) }
         var fresh = s.switchedOn(surah: surah.number, currentAyah: liveAyah).clamped(ayahCount: total)
         fresh.isOn = false
@@ -70,7 +93,12 @@ struct RepeatSheet: View {
             get: { state.isOn },
             set: { on in
                 Haptics.selection()
-                if on {
+                if on, pending != nil {
+                    var s = state
+                    s.isOn = true
+                    pendingApplied = true
+                    audioService.setRepeat(s.clamped(ayahCount: total))
+                } else if on {
                     audioService.setRepeat(audioService.repeatState
                         .switchedOn(surah: surah.number, currentAyah: liveAyah)
                         .clamped(ayahCount: total))

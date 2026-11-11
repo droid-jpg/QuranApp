@@ -12,7 +12,44 @@ final class Chrome: ObservableObject {
     static let shared = Chrome()
     /// Set by the surah reader so scripture gets the whole page.
     @Published var tabBarHidden = false
+
+    /// "Hide controls while reading" has put the reader's top bar and the mini
+    /// player out of the way. Only ever true while the reader is on screen.
+    @Published private(set) var readerControlsHidden = false
+    /// The reader is up with "Hide controls while reading" on.
+    private var readerHidesControls = false
+
     private init() {}
+
+    /// The reader appeared, or the setting changed while it is up. Turning the
+    /// setting on hides the controls at once; turning it off brings them back.
+    func setReaderHidesControls(_ on: Bool) {
+        readerHidesControls = on
+        setControlsHidden(on)
+    }
+
+    /// A tap on the page: shows hidden controls, or hides them again.
+    func readerTapped() {
+        guard readerHidesControls else { return }
+        setControlsHidden(!readerControlsHidden)
+    }
+
+    /// The reader started scrolling: controls a tap brought back go away again.
+    func readerScrolled() {
+        guard readerHidesControls, !readerControlsHidden else { return }
+        setControlsHidden(true)
+    }
+
+    /// Leaving the reader always brings the controls (and the mini player) back.
+    func leaveReader() {
+        readerHidesControls = false
+        setControlsHidden(false)
+    }
+
+    private func setControlsHidden(_ hidden: Bool) {
+        guard hidden != readerControlsHidden else { return }
+        withAnimation(Motion.standard) { readerControlsHidden = hidden }
+    }
 }
 
 struct EditorialTabBar: View {

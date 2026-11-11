@@ -98,6 +98,59 @@ extension RepeatState {
     }
 }
 
+// MARK: - Ayah actions (reader)
+
+extension RepeatState {
+    /// What the Ayah actions sheet's Repeat button does for one ayah.
+    enum AyahAction: Equatable {
+        /// From = To = this ayah, ∞ (also collapses a range that holds this ayah).
+        case repeatAyah
+        /// Extends the range forward to this ayah (it comes after `to`).
+        case repeatToHere
+        /// Extends the range back to this ayah (it comes before `from`).
+        case repeatFromHere
+        /// This ayah is the whole range: repeat turns off, playback carries on.
+        case stop
+
+        var label: String {
+            switch self {
+            case .repeatAyah:     return "Repeat"
+            case .repeatToHere:   return "Repeat to here"
+            case .repeatFromHere: return "Repeat from here"
+            case .stop:           return "Stop repeating"
+            }
+        }
+    }
+
+    /// The Repeat button's meaning for `ayah` of `surah`, given this state.
+    func ayahAction(surah: Int, ayah: Int) -> AyahAction {
+        guard isOn, self.surah == surah else { return .repeatAyah }
+        if isSingleAyah && from == ayah { return .stop }
+        if ayah > to { return .repeatToHere }
+        if ayah < from { return .repeatFromHere }
+        return .repeatAyah
+    }
+
+    /// The state after `action` on `ayah` of `surah`. Extending keeps times and
+    /// pause; a fresh single-ayah repeat is ∞ and keeps this surah's pause.
+    func applying(_ action: AyahAction, surah: Int, ayah: Int) -> RepeatState {
+        var s = self
+        s.completed = 0
+        switch action {
+        case .repeatAyah:
+            s = RepeatState(isOn: true, surah: surah, from: ayah, to: ayah, times: .infinite,
+                            pause: self.surah == surah ? pause : .none)
+        case .repeatToHere:
+            s.to = max(s.from, ayah)
+        case .repeatFromHere:
+            s.from = min(ayah, s.to)
+        case .stop:
+            s.isOn = false
+        }
+        return s
+    }
+}
+
 // MARK: - Engine decisions (pure)
 
 extension RepeatState {

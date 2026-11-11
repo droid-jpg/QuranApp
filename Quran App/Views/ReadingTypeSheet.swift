@@ -113,9 +113,7 @@ struct ReadingTypeSheet: View {
                     Hairline().padding(.vertical, 14)
                     ToggleRow(title: "Show transliteration", isOn: $showTransliteration)
                     Hairline().padding(.vertical, 14)
-                    ToggleRow(title: "Immersive reading",
-                              caption: "hide controls",
-                              isOn: $immersiveReading)
+                    ToggleRow(title: "Hide controls while reading", isOn: $immersiveReading)
 
                     // ── Live specimen ─────────────────────────────────────
                     Hairline().padding(.top, 24).padding(.bottom, 18)
@@ -206,24 +204,20 @@ private struct TypeSlider: View {
     }
 }
 
+/// One line at every reading face and size (AUDIT #22): the title shrinks a
+/// little rather than wrap. The toggle carries the title as its label, so
+/// VoiceOver reads the visible text.
 private struct ToggleRow: View {
     let title: String
-    var caption: String? = nil
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        Toggle(isOn: $isOn) {
             Text(title)
                 .font(.appSerif(17))
-            if let caption {
-                Text("— \(caption)")
-                    .font(.appSerif(14, italic: true))
-                    .foregroundStyle(Color.secondary)
-            }
-            Spacer(minLength: 8)
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .tint(.brand)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
+        .tint(.brand)
     }
 }
