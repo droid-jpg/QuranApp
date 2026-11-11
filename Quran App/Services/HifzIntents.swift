@@ -28,7 +28,7 @@ enum HifzIntentAction {
 struct ContinueMemorizingIntent: AppIntent {
     static var title: LocalizedStringResource = "Continue Memorizing"
     static var description = IntentDescription(
-        "Loops the ayah you're currently memorizing — chained after the ones before it — so you can recite along hands-free."
+        "Repeats the ayah you're currently memorizing, joined with the two before it, so you can recite along hands-free."
     )
     /// Bring the app forward so its audio engine can play (and keep playing in the
     /// background afterward).

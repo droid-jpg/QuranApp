@@ -63,7 +63,7 @@ struct HomeView: View {
             .navigationDestination(for: TodayRoute.self) { route in
                 switch route {
                 case .calendar:     IslamicCalendarView()
-                case .prayerTimes:  PrayerTimesScreen()
+                case .prayerTimes:  PrayerTimesView()
                 case .memorization: MemorizationHubView()
                 case .reader(let number, let ayah):
                     if let idx = surahs.firstIndex(where: { $0.number == number }) {
@@ -169,6 +169,9 @@ enum HomeDates {
         return f
     }()
 
+    /// "29 Jumada I", for More's Islamic Calendar row.
+    static var hijri: String { hijriFmt.string(from: Date()) }
+
     /// "Mon 9 Nov · 29 Jumada I"
     static var today: String {
         let now = Date()
@@ -248,30 +251,20 @@ private struct PrayerCard: View {
         Group {
             switch service.fetchStatus {
             case .ready:
-                if let times = service.prayerTimes {
+                if let times = service.prayerTimes, service.hasTodaysTimes {
                     ready(times)
                 } else {
-                    message("Couldn’t load prayer times", action: "Try again") {
-                        service.requestAndFetch()
-                    }
+                    loading
+                }
+            case .failed:
+                message("Couldn’t load prayer times", action: "Try again") {
+                    service.requestAndFetch()
                 }
             case .fetching:
-                HStack(spacing: Spacing.sm) {
-                    ProgressView()
-                    Text("Getting prayer times…")
-                        .font(TypeScale.body)
-                        .foregroundStyle(Palette.textSecondary)
-                    Spacer(minLength: 0)
-                }
-                .padding(Spacing.cardPadding)
+                loading
             case .notDetermined, .denied:
                 message("Prayer times need your location", action: "Allow location") {
-                    if service.fetchStatus == .denied,
-                       let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
-                    } else {
-                        service.requestAndFetch()
-                    }
+                    service.allowLocationAccess()
                 }
             }
         }
@@ -279,6 +272,19 @@ private struct PrayerCard: View {
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: Spacing.sm))
         .overlay(RoundedRectangle(cornerRadius: Spacing.sm).strokeBorder(Palette.separator, lineWidth: 1))
         .onReceive(ticker) { now = $0 }
+        // Never prompts; refetches only when there is nothing for today.
+        .task { service.refreshIfNeeded() }
+    }
+
+    private var loading: some View {
+        HStack(spacing: Spacing.sm) {
+            ProgressView()
+            Text("Getting prayer times…")
+                .font(TypeScale.body)
+                .foregroundStyle(Palette.textSecondary)
+            Spacer(minLength: 0)
+        }
+        .padding(Spacing.cardPadding)
     }
 
     private func ready(_ times: PrayerTimes) -> some View {
@@ -295,7 +301,7 @@ private struct PrayerCard: View {
                             .font(TypeScale.heading.monospacedDigit())
                             .foregroundStyle(Palette.textPrimary)
                     }
-                    Text("in \(Self.countdown(to: next.date, from: now))")
+                    Text("in \(PrayerCountdown.text(to: next.date, from: now))")
                         .font(TypeScale.secondary)
                         .foregroundStyle(Palette.textSecondary)
                 }
@@ -329,33 +335,6 @@ private struct PrayerCard: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, Spacing.cardPadding)
-    }
-
-    /// "1 h 12 min", "12 min", "less than a minute".
-    private static func countdown(to date: Date, from now: Date) -> String {
-        let minutes = max(0, Int(date.timeIntervalSince(now) / 60))
-        let h = minutes / 60, m = minutes % 60
-        if h > 0 { return "\(h) h \(m) min" }
-        if m > 0 { return "\(m) min" }
-        return "less than a minute"
-    }
-}
-
-/// Prayer Times, pushed from Today. Prayer times live inline on More today (there
-/// is no separate screen yet), so this shows that same block on its own page.
-private struct PrayerTimesScreen: View {
-    @EnvironmentObject private var service: PrayerTimesService
-
-    var body: some View {
-        ScrollView {
-            PrayerTimesCardView(service: service)
-                .padding(.horizontal, Spacing.screenMargin)
-                .padding(.top, Spacing.md)
-                .padding(.bottom, Spacing.lg)
-        }
-        .background(Palette.background)
-        .navigationTitle("Prayer Times")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

@@ -4,7 +4,7 @@ import SwiftUI
 /// hub's help button, its "How it works" link, and the first-run empty state.
 /// It teaches the whole feature in one place — the mental model (mark vs.
 /// review), how to add ayahs, the goals, how spaced-repetition review and
-/// grading work, and the drill styles — so the engine is self-teaching rather
+/// grading work, and the ways you are tested — so the engine is self-teaching rather
 /// than something the user has to reverse-engineer.
 struct MemorizationGuideView: View {
     @Environment(\.dismiss) private var dismiss
@@ -18,7 +18,7 @@ struct MemorizationGuideView: View {
                     goalsSection
                     reviewSection
                     gradesSection
-                    drillSection
+                    testSection
                     markingSection
                     tip
                 }
@@ -85,7 +85,7 @@ struct MemorizationGuideView: View {
         GuideSection(title: "Pick a goal", systemImage: "target") {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Tell the app what you're memorizing for and it tailors how each ayah is tested. You can change a surah's goal anytime.")
-                    .font(.caption)
+                    .font(TypeScale.secondary)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(MemorizationGoal.allCases) { goal in
@@ -109,7 +109,7 @@ struct MemorizationGuideView: View {
                         .font(.appSerif(19))
                         .foregroundStyle(.green)
                     Text("Once you've recalled an ayah comfortably for about three weeks, it's counted as **Mastered**.")
-                        .font(.caption)
+                        .font(TypeScale.secondary)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -132,13 +132,13 @@ struct MemorizationGuideView: View {
         }
     }
 
-    // MARK: Drill styles
+    // MARK: Test styles
 
-    private var drillSection: some View {
+    private var testSection: some View {
         GuideSection(title: "Three ways you're tested", systemImage: "rectangle.3.group") {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Your goal decides which of these show up. Each due ayah is drilled with one, picked at random to keep you on your toes.")
-                    .font(.caption)
+                Text("Your goal decides which of these show up. Each due ayah is tested with one, picked at random to keep you on your toes.")
+                    .font(TypeScale.secondary)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 GuideRow(icon: ReviewMode.flashcard.icon, title: ReviewMode.flashcard.title,
@@ -154,20 +154,20 @@ struct MemorizationGuideView: View {
     // MARK: Marking vs. reviewing
 
     private var markingSection: some View {
-        GuideSection(title: "Marking vs. reviewing", systemImage: "square.grid.3x3.fill") {
+        GuideSection(title: "Marking vs. reviewing", systemImage: "hand.point.up.left.fill") {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Two ways to track progress — use either or both:")
-                    .font(.caption)
+                    .font(TypeScale.secondary)
                     .foregroundStyle(.secondary)
                 ConceptCard(
                     icon: "hand.point.up.left.fill", tint: .orange,
                     title: "Mark a surah",
-                    detail: "A quick self-assessment — flag a surah In Progress or Memorized. It paints the 114-surah progress grid, even for surahs you're not actively drilling. Set it from a surah's page in this hub."
+                    detail: "A quick self-assessment — set a surah to Learning or Memorized from its status button in this hub, even for surahs you're not reviewing."
                 )
                 ConceptCard(
                     icon: "graduationcap.fill", tint: .brand,
                     title: "Add to review",
-                    detail: "Actively drills individual ayahs with spaced repetition and tracks true mastery. A surah turns green on the grid on its own once every ayah is mastered."
+                    detail: "Reviews individual ayahs with spaced repetition and tracks true mastery. A surah counts as Memorized on its own once every ayah is mastered."
                 )
             }
         }
@@ -181,7 +181,7 @@ struct MemorizationGuideView: View {
                 .font(.appSerif(15))
                 .foregroundStyle(.yellow)
             Text("Short and daily beats long and rare. Five honest minutes a day will out-memorize an hour once a week — the spacing is doing the heavy lifting.")
-                .font(.caption)
+                .font(TypeScale.secondary)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -229,7 +229,7 @@ private struct GuideStep: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.subheadline.weight(.semibold))
                 Text(detail)
-                    .font(.caption)
+                    .font(TypeScale.secondary)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -238,7 +238,7 @@ private struct GuideStep: View {
     }
 }
 
-/// An icon-circle + title + caption row, used for goals and drill styles.
+/// An icon-circle + title + caption row, used for goals and test styles.
 private struct GuideRow: View {
     let icon: String
     let title: String
@@ -255,7 +255,7 @@ private struct GuideRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.subheadline.weight(.semibold))
                 Text(detail)
-                    .font(.caption)
+                    .font(TypeScale.secondary)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -271,13 +271,13 @@ private struct GuideGradeRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(grade.label)
-                .font(.caption.weight(.bold))
+                .font(TypeScale.caption)
                 .foregroundStyle(grade.tint)
                 .frame(width: 58)
                 .padding(.vertical, 7)
                 .background(grade.tint.opacity(0.15), in: Rectangle())
             Text(grade.guideDetail)
-                .font(.caption)
+                .font(TypeScale.secondary)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -302,7 +302,7 @@ private struct ConceptCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.subheadline.weight(.semibold))
                 Text(detail)
-                    .font(.caption)
+                    .font(TypeScale.secondary)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

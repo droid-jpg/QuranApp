@@ -5,8 +5,8 @@ enum MemorizationStatus: String, Codable, CaseIterable {
 
     var label: String {
         switch self {
-        case .notStarted: "Not Started"
-        case .inProgress: "In Progress"
+        case .notStarted: "Not started"
+        case .inProgress: "Learning"
         case .memorized:  "Memorized"
         }
     }

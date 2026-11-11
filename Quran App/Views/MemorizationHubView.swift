@@ -1,66 +1,48 @@
 import SwiftUI
 
-/// The home of the memorization engine, pushed from the More tab. It pulls the
-/// per-ayah spaced-repetition store and the per-surah heatmap store together:
-/// one progress picture, a single Review-now entry point, and per-surah
-/// management of goals and enrolled ayahs.
+/// Memorization (REDESIGN §3.9), pushed from More and from Today's memorization row.
+/// Top to bottom: Review (one section, one empty state), Practice for the ayah being
+/// learned (three presets and "Mark ayah learned"), then every surah grouped by
+/// status: Learning, Memorized, and Not started, collapsed.
 ///
-/// Ruled like the rest of the app — the percentage carries the page as a piece
-/// of type rather than as a dial, and the surah list is hairline rows.
-///
-/// Hosted inside More's NavigationStack — it has no NavigationStack of its own.
+/// Hosted inside a NavigationStack of its own host (More or Today); it has none.
+/// It sends playback commands through the plain `audioServiceRef` and does not
+/// observe the player.
 struct MemorizationHubView: View {
     @EnvironmentObject private var srStore: MemorizationSRStore
     @EnvironmentObject private var memorizationStore: MemorizationStore
-    @StateObject private var listVM = SurahListViewModel()
+    @EnvironmentObject private var targetStore: MemorizationTargetStore
+    @Environment(\.audioServiceRef) private var audioService
 
     @AppStorage("selectedTranslationId") private var translationId = Translation.fallbackId
 
+    /// The bundled surah list, so the groups never wait on the network.
+    @State private var surahs = QuranOfflineStore.shared.surahs()
     @State private var session: ReviewSessionConfig?
-    @State private var showGrid = false
     @State private var showGuide = false
+    @State private var showNotStarted = false
+    @State private var showSurahComplete = false
 
     private var surahByNumber: [Int: Surah] {
-        Dictionary(uniqueKeysWithValues: listVM.surahs.map { ($0.number, $0) })
-    }
-
-    /// Whether the user has anything in the system yet — drives the onboarding
-    /// empty state vs. the populated hub.
-    private var hasContent: Bool {
-        srStore.totalCount > 0 || !memorizationStore.markedNumbers.isEmpty
+        Dictionary(uniqueKeysWithValues: surahs.map { ($0.number, $0) })
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
-                progressSection
+            LazyVStack(alignment: .leading, spacing: Spacing.sectionGap) {
                 reviewSection
-                focusSection
-                surahsSection
-
-                if hasContent {
-                    EditorialSection(title: "Everything", icon: "square.grid.3x3.fill",
-                                     iconTint: Color.secondary) {
-                        EditorialNavRow(title: "Full progress grid",
-                                        caption: "All 114 surahs as a heat map") {
-                            Haptics.tap()
-                            showGrid = true
-                        }
-                        .padding(.bottom, 14)
-                        EditorialNavRow(title: "How memorization works",
-                                        caption: "Goals, reviews, and tracking — explained") {
-                            Haptics.tap()
-                            showGuide = true
-                        }
-                    }
+                if let target = targetStore.target {
+                    practiceSection(target)
                 }
+                statusGroups
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 8)
-            .padding(.bottom, 40)
+            .padding(.horizontal, Spacing.screenMargin)
+            .padding(.top, Spacing.md)
+            .padding(.bottom, Spacing.lg)
         }
+        .background(Palette.background)
         .navigationTitle("Memorization")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -72,96 +54,82 @@ struct MemorizationHubView: View {
                 .accessibilityLabel("How memorization works")
             }
         }
-        .task { await listVM.load() }
+        .task {
+            if surahs.isEmpty {
+                surahs = (try? await QuranAPIService.shared.fetchSurahList()) ?? []
+            }
+        }
         // Keep enrolled ayahs' cached translations in step with the user's
         // current translation choice: refresh on entry and on any later switch.
         .task(id: translationId) { await srStore.refreshTranslations() }
         .fullScreenCover(item: $session) { cfg in
             ReviewSessionView(store: srStore, initialCards: cfg.cards, title: cfg.title)
         }
-        .sheet(isPresented: $showGrid) {
-            MemorizationOverviewSheet()
-        }
         .sheet(isPresented: $showGuide) {
             MemorizationGuideView()
         }
-    }
-
-    // MARK: - Progress
-
-    private var progressSection: some View {
-        let enrolled = srStore.totalCount
-        let mature = srStore.matureCount
-        let due = srStore.dueCount()
-        let fraction = enrolled > 0 ? Double(mature) / Double(enrolled) : 0
-
-        return EditorialSection(title: "Progress", icon: "chart.bar.fill", showsRule: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                if enrolled == 0 {
-                    // A 52pt em dash reads as a stray rule, not as "no data" —
-                    // so the empty case says so in words instead.
-                    Text("Nothing in review yet.")
-                        .font(.appSerif(21, weight: .medium))
-                        .padding(.bottom, 5)
-                    Text("Ayahs you enrol from the reader are drilled here on a schedule.")
-                        .font(.appSerif(15))
-                        .foregroundStyle(Color.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text("\(Int((fraction * 100).rounded()))%")
-                            .font(.appSerif(52, weight: .medium))
-                            .foregroundStyle(.primary)
-                            .contentTransition(.numericText())
-                        Text("mastered")
-                            .font(.appSerif(17, italic: true))
-                            .foregroundStyle(Color.secondary)
-                    }
-                    .padding(.bottom, 14)
-
-                    RuleProgress(fraction: fraction, tint: .brand)
-
-                    HStack(spacing: 18) {
-                        StatDot(color: .orange, value: enrolled, label: "In review")
-                        StatDot(color: .brand,  value: mature,   label: "Mastered")
-                        StatDot(color: Color.secondary, value: due, label: "Due")
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.top, 14)
-                }
-            }
+        .confirmationDialog(
+            "\(targetStore.target?.surahName ?? "Surah") memorized",
+            isPresented: $showSurahComplete,
+            titleVisibility: .visible
+        ) {
+            Button("Start meaning review") { enrollForMeaning() }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text("Go back through it with meaning flashcards to lock in each ayah?")
         }
     }
 
     // MARK: - Review
 
+    /// The one Review section, and the one empty state: "Nothing to review yet".
     @ViewBuilder
     private var reviewSection: some View {
+        let enrolled = srStore.totalCount
         let due = srStore.dueCount()
-        if due > 0 {
-            EditorialSection(title: "Review", icon: "arrow.triangle.2.circlepath",
-                             trailing: "\(due) due", trailingTint: .brand) {
-                Text("\(due) ayah\(due == 1 ? "" : "s") ready to recall")
-                    .font(.appSerif(17))
-                    .foregroundStyle(Color(.label).opacity(0.72))
-                    .padding(.bottom, 13)
 
-                OutlineButton(label: "Start review", on: true) {
-                    Haptics.tap()
-                    session = ReviewSessionConfig(cards: srStore.dueItems(), title: "Review")
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack {
+                Eyebrow("Review").accessibilityAddTraits(.isHeader)
+                Spacer(minLength: Spacing.xs)
+                if due > 0 {
+                    MetaText("\(due) due", tint: Palette.accent)
                 }
             }
-        } else if srStore.totalCount > 0 {
-            EditorialSection(title: "Review", icon: "checkmark.circle.fill") {
-                VStack(alignment: .leading, spacing: 4) {
+
+            if enrolled == 0 {
+                Text("Nothing to review yet")
+                    .font(TypeScale.rowTitle)
+                    .foregroundStyle(Palette.textPrimary)
+                    .frame(minHeight: MinSize.surahRow, alignment: .leading)
+            } else {
+                if due > 0 {
+                    Text("\(due) ayah\(due == 1 ? "" : "s") to review")
+                        .font(TypeScale.rowTitle)
+                        .foregroundStyle(Palette.textPrimary)
+                    OutlineButton(label: "Start review", on: true) {
+                        Haptics.tap()
+                        session = ReviewSessionConfig(cards: srStore.dueItems(), title: "Review")
+                    }
+                } else {
                     Text("All caught up")
-                        .font(.appSerif(21, weight: .medium))
+                        .font(TypeScale.rowTitle)
+                        .foregroundStyle(Palette.textPrimary)
                     if let next = nextDueText {
                         Text(next)
-                            .font(.appSerif(15, italic: true))
-                            .foregroundStyle(Color.secondary)
+                            .font(TypeScale.secondary)
+                            .foregroundStyle(Palette.textSecondary)
                     }
                 }
+
+                let mature = srStore.matureCount
+                RuleProgress(fraction: Double(mature) / Double(enrolled), tint: .brand)
+                    .padding(.top, Spacing.xs)
+                Text("\(mature) of \(enrolled) ayahs mastered")
+                    .font(TypeScale.secondary)
+                    .foregroundStyle(Palette.textSecondary)
+
+                reviewOneSurah
             }
         }
     }
@@ -176,256 +144,322 @@ struct MemorizationHubView: View {
         return "Next review in \(days) days"
     }
 
-    // MARK: - Focus a single surah
-
-    /// Lets the user drill one specific enrolled surah on demand — its due cards
-    /// if any, otherwise all of them — without waiting for the global queue. Only
-    /// shown once there are at least two surahs to choose between.
+    /// Review one enrolled surah on its own, ahead of the queue. Only offered once
+    /// there are two or more surahs to choose between.
     @ViewBuilder
-    private var focusSection: some View {
+    private var reviewOneSurah: some View {
         let enrolled = srStore.enrolledSurahs()
         if enrolled.count >= 2 {
             let progress = srStore.surahProgress()
-            EditorialSection(title: "Focus", icon: "scope") {
-                Menu {
-                    ForEach(enrolled, id: \.self) { n in
-                        let name = surahByNumber[n]?.englishName ?? "Surah \(n)"
-                        let due = progress[n]?.due ?? 0
-                        Button {
-                            Haptics.tap()
-                            focusReview(surah: n, name: name)
-                        } label: {
-                            Text(due > 0 ? "\(name) · \(due) due" : name)
-                        }
+            Menu {
+                ForEach(enrolled, id: \.self) { n in
+                    let name = surahByNumber[n]?.englishName ?? "Surah \(n)"
+                    let due = progress[n]?.due ?? 0
+                    Button {
+                        Haptics.tap()
+                        reviewSurah(n, name: name)
+                    } label: {
+                        Text(due > 0 ? "\(name) · \(due) due" : name)
                     }
-                } label: {
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Drill one surah")
-                                .font(.appSerif(17))
-                                .foregroundStyle(Color(.label))
-                            Text("On its own, ahead of the queue")
-                                .font(.appSerif(13.5, italic: true))
-                                .foregroundStyle(Color.secondary)
-                        }
-                        Spacer(minLength: 8)
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.label(9, weight: .bold))
-                            .foregroundStyle(Color(.tertiaryLabel))
-                    }
-                    .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Drill one surah")
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Text("Review one surah")
+                        .font(TypeScale.body)
+                        .foregroundStyle(Palette.accent)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: MinSize.hitTarget)
+                .contentShape(Rectangle())
             }
+            .accessibilityLabel("Review one surah")
         }
     }
 
-    /// Opens a review scoped to one surah: its due cards, or all of them when
-    /// nothing is due so the surah can still be drilled.
-    private func focusReview(surah: Int, name: String) {
+    /// A review scoped to one surah: its due cards, or all of them when nothing is due.
+    private func reviewSurah(_ surah: Int, name: String) {
         let due = srStore.dueItems(inSurah: surah)
         let all = srStore.cards(inSurah: surah)
         session = ReviewSessionConfig(cards: due.isEmpty ? all : due, title: name)
     }
 
-    // MARK: - Your surahs
+    // MARK: - Practice
 
-    /// The hub's surah list = every surah with ayahs enrolled in spaced
-    /// repetition, unioned with the surahs the user marked by hand. Sorted by
-    /// surah number so the picture is predictable.
-    private var trackedSurahs: [TrackedSurah] {
-        let progress = srStore.surahProgress()
-        let numbers = Set(srStore.enrolledSurahs()).union(memorizationStore.markedNumbers)
-        return numbers.sorted().map { n in
-            TrackedSurah(
-                number: n,
-                progress: progress[n] ?? SurahSRProgress(),
-                manualStatus: memorizationStore.manualStatus(for: n)
-            )
+    /// The ayah being learned, the three practice presets, and "Mark ayah learned".
+    /// A preset only sets the repeat state and plays from it (`startRepeat`).
+    private func practiceSection(_ t: MemorizationTarget) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Eyebrow("Practice").accessibilityAddTraits(.isHeader)
+
+            Text(t.surahName)
+                .font(TypeScale.rowTitle)
+                .foregroundStyle(Palette.textPrimary)
+            Text(t.isComplete ? "All \(t.totalAyahs) ayahs learned" : "Ayah \(t.workingAyah) of \(t.totalAyahs)")
+                .font(TypeScale.secondary)
+                .foregroundStyle(Palette.textSecondary)
+
+            RuleProgress(fraction: t.fraction, tint: .brand)
+                .padding(.vertical, Spacing.xxs)
+
+            OutlineButton(label: "Repeat this ayah", icon: "repeat") {
+                practice(.repeatThisAyah(surah: t.surah, ayah: t.workingAyah), t)
+            }
+            OutlineButton(label: "Listen, then recite", icon: "ear") {
+                practice(.listenThenRecite(surah: t.surah, ayah: t.workingAyah), t)
+            }
+            OutlineButton(label: "Join with previous 2", icon: "link") {
+                practice(.joinWithPrevious2(surah: t.surah, ayah: t.workingAyah), t)
+            }
+            if !t.isComplete {
+                OutlineButton(label: "Mark ayah learned", icon: "checkmark.circle", on: true) {
+                    markWorkingLearned()
+                }
+                .padding(.top, Spacing.xs)
+            }
+        }
+    }
+
+    private func practice(_ state: RepeatState, _ t: MemorizationTarget) {
+        guard let audioService else { return }
+        Haptics.tap()
+        audioService.startRepeat(state, totalAyahs: t.totalAyahs, surahName: t.surahName)
+    }
+
+    /// Mark the working ayah learned and advance to the next. When the whole surah
+    /// is done, the meaning-review offer (the method's last stage) is raised.
+    private func markWorkingLearned() {
+        targetStore.markWorkingAyahLearned()
+        StreakService.shared.recordRead()
+        Haptics.success()
+        if targetStore.target?.isComplete == true {
+            showSurahComplete = true
+        }
+    }
+
+    /// Enroll every ayah of the finished surah in meaning-only review.
+    private func enrollForMeaning() {
+        guard let t = targetStore.target else { return }
+        Task {
+            guard let ayahs = try? await QuranAPIService.shared.fetchAyahs(surahNumber: t.surah) else { return }
+            let seeds = ayahs.map {
+                MemorizationSRStore.AyahSeed(
+                    ayah: $0.numberInSurah, arabic: $0.arabic,
+                    translation: $0.translation, transliteration: $0.transliteration
+                )
+            }
+            srStore.enrollSurah(surah: t.surah, surahName: t.surahName, ayahs: seeds, goal: .meaning)
+            memorizationStore.set(.memorized, for: t.surah)
+            Haptics.success()
+        }
+    }
+
+    // MARK: - Surahs by status
+
+    private func surahs(with status: MemorizationStatus) -> [Surah] {
+        surahs.filter { memorizationStore.status(for: $0.number) == status }
+    }
+
+    @ViewBuilder
+    private var statusGroups: some View {
+        let learning = surahs(with: .inProgress)
+        let memorized = surahs(with: .memorized)
+        let notStarted = surahs(with: .notStarted)
+
+        if !learning.isEmpty {
+            group("Learning", surahs: learning)
+        }
+        if !memorized.isEmpty {
+            group("Memorized", surahs: memorized)
+        }
+        if !notStarted.isEmpty {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Button {
+                    Haptics.selection()
+                    withAnimation(Motion.standard) { showNotStarted.toggle() }
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        Eyebrow("Not started")
+                        MetaText("\(notStarted.count)")
+                        Spacer(minLength: 0)
+                        Image(systemName: showNotStarted ? "chevron.up" : "chevron.down")
+                            .font(TypeScale.caption)
+                            .foregroundStyle(Palette.textSecondary)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(minHeight: MinSize.hitTarget)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityValue(showNotStarted ? "Expanded" : "Collapsed")
+
+                if showNotStarted {
+                    rows(notStarted)
+                }
+            }
+        }
+    }
+
+    private func group(_ title: String, surahs: [Surah]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.xs) {
+                Eyebrow(title)
+                MetaText("\(surahs.count)")
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+            rows(surahs)
+        }
+    }
+
+    private func rows(_ list: [Surah]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(list.enumerated()), id: \.element.number) { index, s in
+                if index > 0 { Hairline() }
+                SurahStatusRow(surah: s, surahs: surahs,
+                               onChange: { setStatus($0, for: s) },
+                               onWorkOn: { workOn(s) })
+            }
+        }
+    }
+
+    // MARK: - Status changes
+
+    /// Choosing Learning with nothing being learned yet makes that surah the one
+    /// Practice works on; Not started or Memorized on the working surah clears it.
+    private func setStatus(_ status: MemorizationStatus, for surah: Surah) {
+        Haptics.selection()
+        withAnimation(Motion.standard) {
+            memorizationStore.set(status, for: surah.number)
+            switch status {
+            case .inProgress:
+                if targetStore.target == nil {
+                    targetStore.start(surah: surah.number, surahName: surah.englishName,
+                                      totalAyahs: surah.numberOfAyahs)
+                }
+            case .notStarted, .memorized:
+                if targetStore.target?.surah == surah.number { targetStore.clear() }
+            }
+        }
+    }
+
+    /// Make a Learning surah the one Practice works on.
+    private func workOn(_ surah: Surah) {
+        Haptics.tap()
+        targetStore.start(surah: surah.number, surahName: surah.englishName,
+                          totalAyahs: surah.numberOfAyahs)
+    }
+}
+
+// MARK: - Surah row with a status control
+
+/// The standard surah row shape (number, title and subtitle, Arabic name) with a
+/// status menu where the play button would be: Not started, Learning, Memorized.
+/// Tapping the text opens the surah's review page (Learning, Memorized) or the
+/// reader (Not started).
+private struct SurahStatusRow: View {
+    let surah: Surah
+    let surahs: [Surah]
+    let onChange: (MemorizationStatus) -> Void
+    let onWorkOn: () -> Void
+
+    @EnvironmentObject private var srStore: MemorizationSRStore
+    @EnvironmentObject private var memorizationStore: MemorizationStore
+    @EnvironmentObject private var targetStore: MemorizationTargetStore
+    @AppStorage("readingFace")  private var readingFace = ReadingFace.newYork.rawValue
+    @AppStorage("arabicScript") private var arabicScript = ArabicScript.system.rawValue
+
+    private var status: MemorizationStatus { memorizationStore.status(for: surah.number) }
+
+    private var subtitle: String {
+        let p = srStore.surahProgress()[surah.number]
+        if let p, p.enrolled > 0 {
+            let base = "\(p.mature)/\(p.enrolled) mastered"
+            return p.due > 0 ? "\(base) · \(p.due) due" : base
+        }
+        if status == .inProgress, let t = targetStore.target, t.surah == surah.number {
+            return "Ayah \(t.workingAyah) of \(t.totalAyahs)"
+        }
+        return "\(surah.englishNameTranslation) · \(surah.numberOfAyahs) ayahs"
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            NavigationLink {
+                destination
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    Text("\(surah.number)")
+                        .font(TypeScale.secondary.monospacedDigit())
+                        .foregroundStyle(Palette.textSecondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .frame(width: 28, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(surah.englishName)
+                            .font(TypeScale.rowTitle)
+                            .foregroundStyle(Palette.textPrimary)
+                            .multilineTextAlignment(.leading)
+                        Text(subtitle)
+                            .font(TypeScale.secondary)
+                            .foregroundStyle(Palette.textSecondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(SurahRow.shortArabic(surah.name))
+                        .font(TypeScale.arabicList)
+                        .foregroundStyle(Palette.textPrimary)
+                        .environment(\.layoutDirection, .rightToLeft)
+                        .fixedSize()
+                }
+                .padding(.vertical, Spacing.xs)
+                .frame(minHeight: MinSize.surahRow)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Menu {
+                ForEach([MemorizationStatus.notStarted, .inProgress, .memorized], id: \.self) { option in
+                    Button {
+                        onChange(option)
+                    } label: {
+                        if option == status {
+                            Label(option.label, systemImage: "checkmark")
+                        } else {
+                            Text(option.label)
+                        }
+                    }
+                }
+                if status == .inProgress, targetStore.target?.surah != surah.number {
+                    Divider()
+                    Button("Practice this surah", action: onWorkOn)
+                }
+            } label: {
+                Image(systemName: status.icon)
+                    .font(TypeScale.heading)
+                    .foregroundStyle(status == .notStarted ? Palette.textSecondary : Palette.accent)
+                    .frame(width: MinSize.listPlayButton, height: MinSize.listPlayButton)
+                    .contentShape(Rectangle())
+            }
+            .padding(.leading, Spacing.sm)
+            .accessibilityLabel("\(surah.englishName) status")
+            .accessibilityValue(status.label)
         }
     }
 
     @ViewBuilder
-    private var surahsSection: some View {
-        let tracked = trackedSurahs
-
-        EditorialSection(title: "Your surahs", icon: "book.closed.fill",
-                         trailing: tracked.isEmpty ? nil : "\(tracked.count)") {
-            if tracked.isEmpty {
-                HubEmptyState(onLearnMore: { showGuide = true })
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(tracked.enumerated()), id: \.element.id) { index, t in
-                        if index > 0 {
-                            Hairline(opacity: 0.6).padding(.vertical, 14)
-                        }
-                        NavigationLink {
-                            SurahReviewDetailView(surahNumber: t.number, surah: surahByNumber[t.number])
-                        } label: {
-                            TrackedSurahRow(
-                                tracked: t,
-                                surah: surahByNumber[t.number],
-                                goal: srStore.goal(forSurah: t.number) ?? .both
-                            )
-                        }
-                        .buttonStyle(CardButtonStyle(scale: 0.985))
-                    }
-                }
-            }
+    private var destination: some View {
+        if status == .notStarted, let idx = surahs.firstIndex(where: { $0.number == surah.number }) {
+            SurahPageView(surahs: surahs, startIndex: idx)
+        } else {
+            SurahReviewDetailView(surahNumber: surah.number, surah: surah)
         }
-    }
-}
-
-// MARK: - Tracked surah model
-
-/// A surah shown in the hub list. It is either enrolled in spaced repetition
-/// (`progress.enrolled > 0`, rendered with ayah-level progress) or only carries
-/// a manual mark (rendered with its status instead).
-private struct TrackedSurah: Identifiable {
-    let number: Int
-    let progress: SurahSRProgress
-    let manualStatus: MemorizationStatus
-
-    var id: Int { number }
-    var isEnrolled: Bool { progress.enrolled > 0 }
-}
-
-// MARK: - Surah row
-
-/// One ruled line per surah: the number in the margin, the name, and either the
-/// ayah-level progress rule (enrolled) or the hand-set mark (not enrolled).
-private struct TrackedSurahRow: View {
-    let tracked: TrackedSurah
-    let surah: Surah?
-    let goal: MemorizationGoal
-
-    private var fraction: Double {
-        tracked.progress.enrolled > 0
-            ? Double(tracked.progress.mature) / Double(tracked.progress.enrolled)
-            : 0
-    }
-
-    private var subtitle: String {
-        if tracked.isEnrolled {
-            return "\(tracked.progress.mature)/\(tracked.progress.enrolled) mastered"
-        }
-        return tracked.manualStatus == .memorized
-            ? "Marked memorized · not in review"
-            : "Marked in progress · not in review"
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Text("\(tracked.number)")
-                .font(.label(11, weight: .bold).monospacedDigit())
-                .kerning(0.6)
-                .foregroundStyle(.brand)
-                .frame(minWidth: 22, alignment: .leading)
-                .padding(.top, 5)
-
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(surah?.englishName ?? "Surah \(tracked.number)")
-                        .font(.appSerif(18, weight: .medium))
-                        .foregroundStyle(Color(.label))
-                    if tracked.isEnrolled {
-                        MetaText(goal.shortTitle.uppercased(), tint: .brand, size: 8.5)
-                    } else {
-                        MetaText(tracked.manualStatus.label.uppercased(),
-                                 tint: tracked.manualStatus.color, size: 8.5)
-                    }
-                    Spacer(minLength: 6)
-                    if tracked.progress.due > 0 {
-                        MetaText("\(tracked.progress.due) DUE", tint: .brand, size: 9)
-                    }
-                    Image(systemName: "chevron.right")
-                        .font(.label(9, weight: .bold))
-                        .foregroundStyle(Color(.tertiaryLabel))
-                }
-
-                if tracked.isEnrolled {
-                    RuleProgress(fraction: fraction, tint: .brand)
-                        .padding(.top, 9)
-                }
-
-                Text(subtitle)
-                    .font(.appSerif(13.5, italic: true))
-                    .foregroundStyle(Color.secondary)
-                    .padding(.top, tracked.isEnrolled ? 8 : 2)
-            }
-        }
-        .contentShape(Rectangle())
-    }
-}
-
-// MARK: - Empty state
-
-private struct HubEmptyState: View {
-    var onLearnMore: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Nothing in review yet.")
-                .font(.appSerif(21, weight: .medium))
-                .padding(.bottom, 5)
-            Text("Pick a few ayahs and let spaced repetition do the remembering for you.")
-                .font(.appSerif(15))
-                .foregroundStyle(Color.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.bottom, 20)
-
-            EmptyStep(number: 1, text: "Open any surah from the Qur’an tab.")
-            EmptyStep(number: 2, text: "Long-press an ayah and choose “Add to review”, or “Memorize this Surah” from the ⋯ menu.")
-            EmptyStep(number: 3, text: "Come back here each day to review what’s due.")
-
-            OutlineButton(label: "See how it works", action: onLearnMore)
-                .padding(.top, 18)
-        }
-    }
-}
-
-/// A single numbered step in the onboarding empty state.
-private struct EmptyStep: View {
-    let number: Int
-    let text: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Text("\(number)")
-                .font(.label(11, weight: .bold).monospacedDigit())
-                .foregroundStyle(.brand)
-                .frame(minWidth: 22, alignment: .leading)
-                .padding(.top, 3)
-            Text(text)
-                .font(.appSerif(15))
-                .foregroundStyle(Color(.label).opacity(0.65))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(.bottom, 12)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Step \(number). \(text)")
-    }
-}
-
-// MARK: - Goal badge
-
-/// Kept for the reader's goal chooser, which still labels options inline.
-struct GoalBadge: View {
-    let goal: MemorizationGoal
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: goal.icon)
-                .font(.label(8, weight: .bold))
-            Text(goal.shortTitle.uppercased())
-                .font(.label(8.5, weight: .semibold))
-                .kerning(0.8)
-        }
-        .foregroundStyle(.brand)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .overlay(Rectangle().strokeBorder(Color.brand.opacity(0.4), lineWidth: 1))
     }
 }
 
@@ -467,7 +501,7 @@ struct SurahReviewDetailView: View {
             VStack(alignment: .leading, spacing: 26) {
                 header
 
-                // The goal only steers the review drills, so it's only meaningful
+                // The goal only steers the review modes, so it's only meaningful
                 // once at least one ayah is enrolled in spaced repetition.
                 if !cards.isEmpty {
                     EditorialSection(title: "Goal", icon: "target") {
@@ -475,7 +509,6 @@ struct SurahReviewDetailView: View {
                             selection: goalBinding,
                             options: MemorizationGoal.allCases.map { .init($0, $0.shortTitle) }
                         )
-                        Footnote(goalBinding.wrappedValue.caption + ". The review drills adapt to this.")
                     }
                 }
 
@@ -483,10 +516,9 @@ struct SurahReviewDetailView: View {
                     EditorialSegmented(
                         selection: statusBinding,
                         options: [.init(MemorizationStatus.notStarted, "Not started"),
-                                  .init(MemorizationStatus.inProgress, "In progress"),
+                                  .init(MemorizationStatus.inProgress, "Learning"),
                                   .init(MemorizationStatus.memorized, "Memorized")]
                     )
-                    Footnote("Overrides the status by hand. Marking “Memorized” always counts as done.")
                 }
 
                 if !cards.isEmpty {
@@ -554,7 +586,7 @@ struct SurahReviewDetailView: View {
             }
             Button("Keep", role: .cancel) {}
         } message: {
-            Text("Their review schedules are discarded. Your manual mark stays.")
+            Text("Their review schedules are discarded.")
         }
     }
 
@@ -574,11 +606,9 @@ struct SurahReviewDetailView: View {
                 // how to bring it into spaced-repetition review.
                 HStack(spacing: 9) {
                     Image(systemName: manualStatus.icon)
-                        .font(.label(11, weight: .semibold))
+                        .font(TypeScale.caption)
                         .foregroundStyle(manualStatus.color)
-                    Text(manualStatus == .memorized
-                         ? "Marked memorized. Enroll its ayahs from the reader to review them."
-                         : "Marked in progress. Enroll its ayahs from the reader to start review.")
+                    Text("\(manualStatus.label), not in review")
                         .font(.appSerif(15))
                         .foregroundStyle(Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -591,7 +621,7 @@ struct SurahReviewDetailView: View {
                         .foregroundStyle(Color.secondary)
                     Spacer()
                     if progress.due > 0 {
-                        MetaText("\(progress.due) DUE", tint: .brand, size: 9.5)
+                        MetaText("\(progress.due) due", tint: Palette.accent)
                     }
                 }
                 .padding(.top, 12)
@@ -615,7 +645,7 @@ private struct AyahReviewRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(card.ayah)")
-                .font(.label(11, weight: .bold).monospacedDigit())
+                .font(TypeScale.caption.monospacedDigit())
                 .foregroundStyle(card.isDue() ? .brand : Color.secondary)
                 .frame(minWidth: 22, alignment: .leading)
                 .padding(.top, 6)
@@ -630,12 +660,10 @@ private struct AyahReviewRow: View {
                 HStack(spacing: 8) {
                     if card.isMature {
                         Image(systemName: "checkmark.seal.fill")
-                            .font(.label(9))
+                            .font(TypeScale.caption)
                             .foregroundStyle(.brand)
                     }
-                    MetaText(dueText.uppercased(),
-                             tint: card.isDue() ? .brand : Color.secondary,
-                             size: 9)
+                    MetaText(dueText, tint: card.isDue() ? Palette.accent : Palette.textSecondary)
                 }
             }
         }

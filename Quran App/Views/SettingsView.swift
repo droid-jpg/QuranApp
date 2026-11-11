@@ -10,16 +10,6 @@ struct SettingsView: View {
     @AppStorage("colorSchemePreference") private var colorSchemeRaw = "system"
     @AppStorage("selectedReciterId")     private var selectedReciterId = 7
     @AppStorage("selectedTranslationId") private var translationId = Translation.fallbackId
-    @AppStorage("notifEnabled")          private var notifEnabled = false
-    @AppStorage("notifFajr")             private var notifFajr = true
-    @AppStorage("notifDhuhr")            private var notifDhuhr = true
-    @AppStorage("notifAsr")              private var notifAsr = true
-    @AppStorage("notifMaghrib")          private var notifMaghrib = true
-    @AppStorage("notifIsha")             private var notifIsha = true
-    @AppStorage("notifSunrise")          private var notifSunrise = true
-    @AppStorage("notifMidnight")         private var notifMidnight = true
-    @AppStorage("notifPreReminder")      private var notifPreReminder = 10
-    @AppStorage("liveActivityEnabled")   private var liveActivityEnabled = false
     @AppStorage("prayerCalcMethod")      private var prayerCalcMethod = 2
     @AppStorage("prayerAsrSchool")       private var prayerAsrSchool = 0
 
@@ -40,6 +30,7 @@ struct SettingsView: View {
     @EnvironmentObject private var prayerService: PrayerTimesService
     @State private var theme = AppTheme.current
     @State private var showReadingType = false
+    @State private var notificationsDenied = false
 
     /// Picking a language selects that language's first translation. The getter
     /// derives the current language from the selected edition, so no extra state.
@@ -199,9 +190,81 @@ struct SettingsView: View {
                 }
 
                 // ── Prayer notifications ──────────────────────────────────
+                PrayerNotificationsSection()
+
+                // ── About ─────────────────────────────────────────────────
+                EditorialSection(title: "About", icon: "info.circle.fill") {
+                    EditorialValueRow(title: "Data source", value: "alquran.cloud")
+                    Hairline().padding(.vertical, 13)
+                    EditorialValueRow(title: "Audio source", value: "everyayah.com")
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
+        }
+        .navigationTitle("Settings")
+        .sheet(isPresented: $showReadingType) {
+            ReadingTypeSheet()
+        }
+        .notificationsDeniedAlert(isPresented: $notificationsDenied)
+    }
+
+    /// DatePicker works in `Date`; the reminder is stored as hour/minute so it's
+    /// timezone-agnostic. This bridges the two.
+    private var reminderTime: Binding<Date> {
+        Binding(
+            get: {
+                var c = DateComponents(); c.hour = memoReminderHour; c.minute = memoReminderMinute
+                return Calendar.current.date(from: c) ?? Date()
+            },
+            set: { newDate in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                memoReminderHour = c.hour ?? 19
+                memoReminderMinute = c.minute ?? 0
+            }
+        )
+    }
+
+    /// Turning the reminder on is what asks for notification permission; if it is
+    /// refused the switch goes back off, so it never claims a reminder that cannot fire.
+    private func rescheduleMemoReminder() {
+        Task {
+            if memoReminderEnabled {
+                let permission = await NotificationService.shared.ensurePermission()
+                if permission != .granted { memoReminderEnabled = false }
+                if permission == .denied { notificationsDenied = true }
+            }
+            NotificationService.shared.scheduleMemorizationReminder()
+        }
+    }
+}
+
+// MARK: - Prayer notifications
+
+/// The prayer notification switches. One view, shown in Settings and pushed from
+/// Prayer Times ("Notifications"), so the two never drift apart. Turning the main
+/// switch (or any prayer) on is what asks the system for permission; a refusal puts
+/// the switch back off.
+struct PrayerNotificationsSection: View {
+    @AppStorage("notifEnabled")          private var notifEnabled = false
+    @AppStorage("notifFajr")             private var notifFajr = true
+    @AppStorage("notifDhuhr")            private var notifDhuhr = true
+    @AppStorage("notifAsr")              private var notifAsr = true
+    @AppStorage("notifMaghrib")          private var notifMaghrib = true
+    @AppStorage("notifIsha")             private var notifIsha = true
+    @AppStorage("notifSunrise")          private var notifSunrise = true
+    @AppStorage("notifMidnight")         private var notifMidnight = true
+    @AppStorage("notifPreReminder")      private var notifPreReminder = 10
+    @AppStorage("liveActivityEnabled")   private var liveActivityEnabled = false
+
+    @EnvironmentObject private var prayerService: PrayerTimesService
+    @State private var denied = false
+
+    var body: some View {
                 EditorialSection(title: "Prayer notifications", icon: "bell.fill") {
                     EditorialToggle(title: "Enable notifications", isOn: $notifEnabled)
-                        .onChange(of: notifEnabled) { reschedule() }
+                        .onChange(of: notifEnabled) { _, on in reschedule(askingPermission: on) }
 
                     if notifEnabled {
                         Hairline().padding(.vertical, 13)
@@ -231,27 +294,7 @@ struct SettingsView: View {
                         Footnote("Notifications use your local prayer times based on location.")
                     }
                 }
-
-                // ── About ─────────────────────────────────────────────────
-                EditorialSection(title: "About", icon: "info.circle.fill") {
-                    EditorialValueRow(title: "Data source", value: "alquran.cloud")
-                    Hairline().padding(.vertical, 13)
-                    EditorialValueRow(title: "Audio source", value: "everyayah.com")
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 8)
-            .padding(.bottom, 40)
-        }
-        .navigationTitle("Settings")
-        .sheet(isPresented: $showReadingType) {
-            ReadingTypeSheet()
-        }
-        .task {
-            if notifEnabled {
-                _ = await NotificationService.shared.requestPermission()
-            }
-        }
+        .notificationsDeniedAlert(isPresented: $denied)
     }
 
     @ViewBuilder
@@ -271,41 +314,38 @@ struct SettingsView: View {
                 .frame(width: 46, alignment: .trailing)
         }
         .padding(.bottom, 4)
-        .onChange(of: binding.wrappedValue) { reschedule() }
+        .onChange(of: binding.wrappedValue) { _, on in reschedule(askingPermission: on) }
         .accessibilityElement(children: .combine)
     }
 
-    private func reschedule() {
+    /// Reschedules from the current switches. When something was just turned on,
+    /// permission is requested first (the system alert, once); if refused, the main
+    /// switch goes back off and nothing is scheduled.
+    private func reschedule(askingPermission: Bool = false) {
         Task {
-            if notifEnabled {
-                _ = await NotificationService.shared.requestPermission()
+            if askingPermission, notifEnabled {
+                let permission = await NotificationService.shared.ensurePermission()
+                if permission != .granted { notifEnabled = false }
+                if permission == .denied { denied = true }
             }
             prayerService.rescheduleNotifications()
         }
     }
+}
 
-    /// DatePicker works in `Date`; the reminder is stored as hour/minute so it's
-    /// timezone-agnostic. This bridges the two.
-    private var reminderTime: Binding<Date> {
-        Binding(
-            get: {
-                var c = DateComponents(); c.hour = memoReminderHour; c.minute = memoReminderMinute
-                return Calendar.current.date(from: c) ?? Date()
-            },
-            set: { newDate in
-                let c = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                memoReminderHour = c.hour ?? 19
-                memoReminderMinute = c.minute ?? 0
+/// "Notifications are off" with a way to the system settings, shown when the user
+/// turns something on after refusing permission.
+extension View {
+    func notificationsDeniedAlert(isPresented: Binding<Bool>) -> some View {
+        alert("Notifications are off", isPresented: isPresented) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
             }
-        )
-    }
-
-    private func rescheduleMemoReminder() {
-        Task {
-            if memoReminderEnabled {
-                _ = await NotificationService.shared.requestPermission()
-            }
-            NotificationService.shared.scheduleMemorizationReminder()
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text("Allow notifications for Quran App in Settings to turn this on.")
         }
     }
 }

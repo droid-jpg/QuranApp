@@ -10,11 +10,23 @@ class PrayerTimesService: NSObject, ObservableObject {
     @Published var locationError: String?
     @Published var dailyTimings: [Int: PrayerTimes] = [:]
 
-    enum FetchStatus { case notDetermined, denied, fetching, ready }
+    /// `failed` is a visible dead end ("Couldn't load prayer times" + Try again): a
+    /// fetch that cannot finish ends here rather than spinning forever.
+    enum FetchStatus { case notDetermined, denied, fetching, ready, failed }
 
     private let manager = CLLocationManager()
     private var lastLat: Double = 0
     private var lastLon: Double = 0
+    /// Gives up on a fetch (location or network) that never answers.
+    private var watchdog: Task<Void, Never>?
+    private static let fetchTimeout: TimeInterval = 20
+
+    /// Whether the times held are for today. They are parsed onto "today" when
+    /// fetched, so after midnight they describe yesterday and must be refetched.
+    var hasTodaysTimes: Bool {
+        guard let t = prayerTimes else { return false }
+        return Calendar.current.isDateInToday(t.fajr)
+    }
 
     /// Aladhan query params from the user's chosen calculation method + Asr school.
     private var calcParams: String {
@@ -26,9 +38,10 @@ class PrayerTimesService: NSObject, ObservableObject {
     func refetchForSettingsChange() {
         dailyTimings.removeAll()
         if lastLat != 0 || lastLon != 0 {
+            fetchStatus = .fetching
             Task { await fetchTimes(lat: lastLat, lon: lastLon) }
         } else {
-            requestAndFetch()
+            refreshIfNeeded()
         }
     }
 
@@ -36,18 +49,64 @@ class PrayerTimesService: NSObject, ObservableObject {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyKilometer
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways: fetchStatus = .fetching
+        case .denied, .restricted:                     fetchStatus = .denied
+        default:                                       fetchStatus = .notDetermined
+        }
     }
 
+    /// The user-chosen path ("Allow location", "Try again"): asks for location
+    /// permission if it has never been asked, then fetches.
     func requestAndFetch() {
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
         case .authorizedWhenInUse, .authorizedAlways:
-            fetchStatus = .fetching
-            manager.requestLocation()
+            beginFetch()
         default:
             fetchStatus = .denied
         }
+    }
+
+    /// The silent path (launch, returning to the foreground, the Prayer Times screen
+    /// appearing): never prompts. Fetches when there are no times, when they are
+    /// from an earlier day, or when the last attempt failed; otherwise does nothing.
+    func refreshIfNeeded() {
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            if fetchStatus == .fetching, watchdog != nil { return }   // already in flight
+            if fetchStatus == .ready, hasTodaysTimes { return }
+            beginFetch()
+        case .denied, .restricted:
+            fetchStatus = .denied
+        default:
+            fetchStatus = .notDetermined
+        }
+    }
+
+    private func beginFetch() {
+        fetchStatus = .fetching
+        watchdog?.cancel()
+        watchdog = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.fetchTimeout))
+            guard !Task.isCancelled, let self, self.fetchStatus == .fetching else { return }
+            self.fail()
+        }
+        manager.requestLocation()
+    }
+
+    /// Ends the current attempt visibly. Times already held for today stay usable.
+    private func fail() {
+        watchdog?.cancel()
+        watchdog = nil
+        fetchStatus = hasTodaysTimes ? .ready : .failed
+    }
+
+    private func succeed() {
+        watchdog?.cancel()
+        watchdog = nil
+        fetchStatus = .ready
     }
 
     func rescheduleNotifications() {
@@ -60,15 +119,16 @@ class PrayerTimesService: NSObject, ObservableObject {
         self.lastLat = lat
         self.lastLon = lon
         let urlStr = "https://api.aladhan.com/v1/timings?latitude=\(lat)&longitude=\(lon)\(calcParams)"
-        guard let url = URL(string: urlStr) else { return }
+        guard let url = URL(string: urlStr) else { fail(); return }
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, _) = try await URLSession.shared.data(for: Self.request(url))
             guard
                 let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let dataObj = root["data"] as? [String: Any],
                 let timings = dataObj["timings"] as? [String: String]
             else {
                 locationError = "Unexpected prayer times format"
+                fail()
                 return
             }
 
@@ -90,7 +150,10 @@ class PrayerTimesService: NSObject, ObservableObject {
                 islamicMidnight: islamicMidnight
             )
             prayerTimes = parsed
-            fetchStatus = .ready
+            // Other days are cached by offset from today, so a new today voids them.
+            dailyTimings.removeAll()
+            succeed()
+            // Cancel + add: the daily triggers are rebuilt from these fresh times.
             NotificationService.shared.scheduleIfEnabled(for: parsed)
             PrayerLiveActivityService.shared.scheduleAll(for: parsed)
             // Share ALL times with widget — Sunrise and Midnight are included so the
@@ -111,8 +174,13 @@ class PrayerTimesService: NSObject, ObservableObject {
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
             locationError = error.localizedDescription
-            fetchStatus = .ready
+            fail()
         }
+    }
+
+    /// A request that gives up after 15 s instead of the system's 60.
+    private static func request(_ url: URL) -> URLRequest {
+        URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
     }
 
     private func parseTime(_ str: String) -> Date {
@@ -135,7 +203,7 @@ class PrayerTimesService: NSObject, ObservableObject {
         let urlStr = "https://api.aladhan.com/v1/timings/\(dateStr)?latitude=\(lastLat)&longitude=\(lastLon)\(calcParams)"
         guard let url = URL(string: urlStr) else { return nil }
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, _) = try await URLSession.shared.data(for: Self.request(url))
             guard
                 let root    = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let dataObj = root["data"] as? [String: Any],
@@ -181,7 +249,7 @@ extension PrayerTimesService: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor [weak self] in
             self?.locationError = error.localizedDescription
-            self?.fetchStatus = .ready
+            self?.fail()
         }
     }
 
@@ -190,8 +258,7 @@ extension PrayerTimesService: CLLocationManagerDelegate {
             guard let self else { return }
             switch manager.authorizationStatus {
             case .authorizedWhenInUse, .authorizedAlways:
-                self.fetchStatus = .fetching
-                manager.requestLocation()
+                self.beginFetch()
             case .denied, .restricted:
                 self.fetchStatus = .denied
             default: break

@@ -158,7 +158,10 @@ struct QuranAppApp: App {
                 OnboardingView {
                     didOnboard = true
                     showOnboarding = false
-                    prayerTimesService.requestAndFetch()
+                    // Never prompts: location was asked in onboarding's own step if
+                    // the user chose "Allow Location"; otherwise it waits for the
+                    // "Allow location" button on the prayer card or Prayer Times.
+                    prayerTimesService.refreshIfNeeded()
                     NotificationService.shared.scheduleMemorizationReminder()
                 }
                 .environmentObject(prayerTimesService)
@@ -189,7 +192,7 @@ struct QuranAppApp: App {
                     // No permission prompt here: it is asked in onboarding and when a
                     // notification is switched on in Settings, never cold at launch.
                     NotificationService.shared.scheduleMemorizationReminder()
-                    prayerTimesService.requestAndFetch()
+                    prayerTimesService.refreshIfNeeded()
                 }
 
                 await DailyVerseService.shared.loadIfNeeded()
@@ -212,7 +215,12 @@ struct QuranAppApp: App {
                 themeEpoch += 1
             }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { performPendingHifzAction() }
+                if phase == .active {
+                    performPendingHifzAction()
+                    // A new day since the last fetch: refetch, which also rebuilds
+                    // the prayer notifications from the new day's times.
+                    prayerTimesService.refreshIfNeeded()
+                }
                 // Leaving the app is the last chance to record exactly where
                 // listening got to, so Home can resume to the second.
                 if phase == .background { ListeningSessionStore.shared.flush() }

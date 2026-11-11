@@ -145,7 +145,7 @@ struct SurahPageView: View {
     // MARK: Reader options
 
     /// The reader's `…`: Mushaf view, Download, Hide controls while reading, then
-    /// the surah's memorization actions. The app's own panel, not a UIKit menu.
+    /// the surah's flashcard actions. The app's own panel, not a UIKit menu.
     private func presentReaderMenu() {
         let dm = DownloadManager.shared
         let prog = dm.progress[surah.number]
@@ -181,9 +181,6 @@ struct SurahPageView: View {
         let due = srStore.dueItems(inSurah: surah.number).count
         let enrolled = srStore.goal(forSurah: surah.number) != nil
         let memorize: [EditorialAction] = [
-            EditorialAction("Memorize this surah", icon: "target", kind: .accent) {
-                startMemorizingSurah()
-            },
             EditorialAction(
                 enrolled ? "Review this surah" : "Set up flashcards",
                 icon: "graduationcap",
@@ -200,18 +197,6 @@ struct SurahPageView: View {
             eyebrow: "\(surah.englishName) · \(surah.numberOfAyahs) ayahs",
             groups: [reading, memorize]
         ))
-    }
-
-    /// Begin (or resume) memorizing this whole surah — sets it as the active target,
-    /// resuming at the first un-learned ayah.
-    private func startMemorizingSurah() {
-        targetStore.start(surah: surah.number, surahName: surah.englishName,
-                          totalAyahs: surah.numberOfAyahs)
-        if memorizationStore.manualStatus(for: surah.number) == .notStarted {
-            memorizationStore.set(.inProgress, for: surah.number)
-        }
-        StreakService.shared.recordRead()
-        Haptics.success()
     }
 
     /// The first time (no goal set yet) this opens the goal sheet to enroll, then

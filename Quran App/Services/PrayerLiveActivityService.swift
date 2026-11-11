@@ -72,7 +72,6 @@ final class PrayerLiveActivityService {
             await activity.end(content, dismissalPolicy: .after(time))
         } catch {
             activePrayerName = nil
-            print("[LiveActivity] Failed to start: \(error)")
         }
     }
 

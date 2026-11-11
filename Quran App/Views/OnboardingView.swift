@@ -73,7 +73,7 @@ struct OnboardingView: View {
             subtitle: "A calm, focused way to read, listen to, and memorize the Qur'an — built around how memorization actually works."
         ) {
             VStack(alignment: .leading, spacing: 14) {
-                FeatureLine(icon: "repeat", text: "Loop any ayah to listen, recite, and chain it onto the ones before.")
+                FeatureLine(icon: "repeat", text: "Repeat any ayah to listen, recite, and join it with the ones before.")
                 FeatureLine(icon: "graduationcap.fill", text: "Track a working ayah and let spaced repetition lock in the meaning.")
                 FeatureLine(icon: "wifi.slash", text: "The full Qur'an is built in — read anywhere, no connection needed.")
             }

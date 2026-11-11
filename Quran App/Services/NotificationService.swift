@@ -12,6 +12,25 @@ class NotificationService {
         return granted ?? false
     }
 
+    /// `denied`: refused earlier, so the system will not ask again (offer Settings).
+    /// `declined`: refused just now, in the system alert (nothing more to say).
+    enum Permission { case granted, denied, declined }
+
+    /// Asks only when it has never been asked; answers from the stored choice
+    /// otherwise. Call it when the user turns something on, never at launch, and
+    /// turn the control back off on `.denied`.
+    func ensurePermission() async -> Permission {
+        let center = UNUserNotificationCenter.current()
+        switch await center.notificationSettings().authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            return .granted
+        case .notDetermined:
+            return await requestPermission() ? .granted : .declined
+        default:
+            return .denied
+        }
+    }
+
     func scheduleIfEnabled(for times: PrayerTimes) {
         let center = UNUserNotificationCenter.current()
 

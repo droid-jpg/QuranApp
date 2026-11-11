@@ -143,7 +143,7 @@ enum ReviewGrade: String, CaseIterable {
         case .again: return "You blanked. The ayah resets and comes back today."
         case .hard:  return "You got it, but it was a struggle — a short wait until next time."
         case .good:  return "Solid recall. The gap until you see it again grows."
-        case .easy:  return "Effortless. The gap jumps ahead so you're not over-drilling it."
+        case .easy:  return "Effortless. The gap jumps ahead so you're not over-reviewing it."
         }
     }
 }
