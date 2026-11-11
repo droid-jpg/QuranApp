@@ -1,15 +1,36 @@
 import SwiftUI
+import Combine
+
+/// The Quran tab's request to focus its search field. Today sets it, then asks the
+/// root to switch tabs; the list consumes it when it appears (it may not exist
+/// until the tab is first shown).
+@MainActor
+final class QuranSearchRequest: ObservableObject {
+    static let shared = QuranSearchRequest()
+    @Published var pending = false
+    private init() {}
+
+    /// Switch to the Quran tab with its search field focused and the keyboard up.
+    func open() {
+        pending = true
+        NotificationCenter.default.post(name: .showQuranTab, object: nil)
+    }
+}
+
+extension Notification.Name {
+    static let showQuranTab = Notification.Name("showQuranTab")
+}
 
 struct SurahListView: View {
     @StateObject private var viewModel = SurahListViewModel()
     @EnvironmentObject private var store: MemorizationStore
-    /// Commands only (the context menu); the list doesn't redraw on playback.
-    @Environment(\.audioServiceRef) private var audioService
     @ObservedObject private var downloadManager = DownloadManager.shared
+    @ObservedObject private var searchRequest = QuranSearchRequest.shared
     @AppStorage("selectedReciterId") private var selectedReciterId = 7
     @State private var showJuzBrowser  = false
     @State private var filter: SurahFilter = .all
     @State private var path = NavigationPath()
+    @FocusState private var searchFocused: Bool
 
     /// Search + status/download filter applied together.
     private var displayedSurahs: [Surah] {
@@ -23,23 +44,13 @@ struct SurahListView: View {
         }
     }
 
-    /// The count that sits at the end of the masthead rule: the whole book when
-    /// nothing is narrowing the list, otherwise how much of it is left showing.
-    private var countLabel: String {
-        let narrowed = filter != .all || !viewModel.searchText.isEmpty
-        guard !viewModel.surahs.isEmpty else { return "" }
-        return narrowed
-            ? "\(displayedSurahs.count) SHOWN"
-            : "\(viewModel.surahs.count) SURAHS"
-    }
-
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
                 SurahListTopBar(
-                    count: countLabel,
                     searchText: $viewModel.searchText,
                     filter: $filter,
+                    searchFocused: $searchFocused,
                     onJuz: {
                         Haptics.tap()
                         showJuzBrowser = true
@@ -48,16 +59,15 @@ struct SurahListView: View {
 
                 content
             }
-            // The system bar drew a large SF title, a grey capsule search field
-            // and a popover menu — the last stretch of stock iOS in the tab.
-            // `SurahListTopBar` replaces it from inside the layout.
+            .background(Palette.background)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Int.self) { idx in
                 SurahPageView(surahs: viewModel.surahs, startIndex: idx)
             }
+            // Audio failure: a banner above the mini player (it observes, this view doesn't).
+            .safeAreaInset(edge: .bottom, spacing: 0) { PlaybackErrorBanner() }
             .sensoryFeedback(.selection, trigger: filter)
-            // Light tap on push only. Replaces a per-row gesture that, on List
-            // rows, fired the haptic on the content but didn't navigate.
+            // Light tap on push only.
             .sensoryFeedback(trigger: path) { old, new in
                 new.count > old.count ? .impact(weight: .light) : nil
             }
@@ -67,6 +77,16 @@ struct SurahListView: View {
             }
             .onChange(of: selectedReciterId) { _, _ in
                 downloadManager.syncCurrentReciter()
+            }
+            // Today's search field lands here with the keyboard up.
+            .onChange(of: searchRequest.pending, initial: true) { _, pending in
+                guard pending else { return }
+                searchRequest.pending = false
+                path = NavigationPath()
+                Task {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    searchFocused = true
+                }
             }
             .sheet(isPresented: $showJuzBrowser) {
                 JuzBrowserView(surahs: viewModel.surahs)
@@ -79,51 +99,32 @@ struct SurahListView: View {
     @ViewBuilder
     private var content: some View {
         if viewModel.isLoading && viewModel.surahs.isEmpty {
-            ProgressView("Loading Surahs…")
+            ProgressView("Loading surahs…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let err = viewModel.error, viewModel.surahs.isEmpty {
             ErrorView(message: err) { Task { await viewModel.load() } }
         } else {
             List {
                 if displayedSurahs.isEmpty {
-                    FilterEmptyState(filter: filter)
+                    FilterEmptyState(filter: filter, search: viewModel.searchText)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 } else {
                     ForEach(displayedSurahs) { surah in
                         let idx = viewModel.surahs.firstIndex(where: { $0.number == surah.number }) ?? 0
-                        NavigationLink(value: idx) {
-                            SurahRowView(
-                                surah: surah,
-                                status: store.status(for: surah.number)
-                            )
-                        }
-                        .contextMenu {
-                            if let audioService {
-                                SurahQuickActions(
-                                    surah: surah,
-                                    store: store,
-                                    downloadManager: downloadManager,
-                                    audioService: audioService
-                                )
-                            }
-                        }
-                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                            let next = store.status(for: surah.number).next
-                            Button {
-                                Haptics.impact()
-                                withAnimation { store.cycle(for: surah.number) }
-                            } label: {
-                                Label(next.label, systemImage: next.icon)
-                            }
-                            .tint(next.color)
-                        }
+                        SurahRowView(surah: surah, onOpen: { path.append(idx) })
+                            .listRowInsets(EdgeInsets(top: 0, leading: Spacing.screenMargin,
+                                                      bottom: 0, trailing: Spacing.screenMargin))
+                            .listRowBackground(Palette.background)
+                            .listRowSeparatorTint(Palette.separator)
+                            .contextMenu { SurahQuickActions(surah: surah) }
                     }
                 }
             }
             .listStyle(.plain)
-            // The search field is ours now and sits above the list, so a scroll
-            // is the only way left to put the keyboard away.
+            .scrollContentBackground(.hidden)
+            // The search field is ours and sits above the list, so a scroll is the
+            // way to put the keyboard away.
             .scrollDismissesKeyboard(.immediately)
         }
     }
@@ -131,196 +132,118 @@ struct SurahListView: View {
 
 // MARK: - Top bar
 
-/// The Qur'an tab's own bar, in place of the system's large title, search field
-/// and toolbar menu: a wordmark ruled across to the count, the search field set
-/// in the reading serif, and the filter as segments rather than a popover.
+/// The Quran tab's own opaque header: the title with the Juz button and Filter
+/// menu, then the search field.
 private struct SurahListTopBar: View {
-    let count: String
     @Binding var searchText: String
     @Binding var filter: SurahFilter
+    var searchFocused: FocusState<Bool>.Binding
     let onJuz: () -> Void
 
-    /// Read during body so a change of reading face repaints the wordmark here
-    /// and now, rather than on the next visit to the tab.
-    var type = ReadingType()
-
-    private var filterOptions: [EditorialOption<SurahFilter>] {
-        SurahFilter.allCases.map { EditorialOption($0, $0.shortLabel) }
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("Qur’an")
-                    .font(type.serif(32, weight: .medium))
-                    .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
+                Text("Quran")
+                    .font(TypeScale.display)
+                    .foregroundStyle(Palette.textPrimary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
                     .layoutPriority(1)
                     .accessibilityAddTraits(.isHeader)
 
-                Rectangle()
-                    .fill(Color.rule)
-                    .frame(height: 1)
-                    .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 5 }
+                Spacer(minLength: Spacing.xs)
 
-                if !count.isEmpty {
-                    MetaText(count)
-                        .fixedSize()
-                        .contentTransition(.numericText())
-                        .animation(AppAnim.smooth, value: count)
+                Button(action: onJuz) {
+                    Text("Juz")
+                        .font(TypeScale.body)
+                        .foregroundStyle(Palette.accent)
+                        .padding(.horizontal, Spacing.xs)
+                        .frame(minHeight: MinSize.hitTarget)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
 
-                BarButton(icon: "list.number", label: "Browse by juz", action: onJuz)
-                    // The glyph's own 44pt box would otherwise push the bar's
-                    // baseline around; pin it to the wordmark's instead.
-                    .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 12 }
+                Menu {
+                    Picker("Filter", selection: $filter) {
+                        ForEach(SurahFilter.allCases) { option in
+                            Label(option.label, systemImage: option.icon).tag(option)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 22))
+                        .foregroundStyle(Palette.accent)
+                        .overlay(alignment: .topTrailing) {
+                            if filter != .all {
+                                Circle()
+                                    .fill(Palette.accent)
+                                    .frame(width: 10, height: 10)
+                                    .overlay(Circle().strokeBorder(Palette.surface, lineWidth: 2))
+                                    .offset(x: 3, y: -3)
+                            }
+                        }
+                        .frame(width: MinSize.hitTarget, height: MinSize.hitTarget)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Filter")
+                .accessibilityValue(filter == .all ? "" : filter.label)
             }
-            .padding(.leading, 24)
-            .padding(.trailing, 12)
-            .padding(.top, 8)
 
-            SurahSearchField(text: $searchText)
-                .padding(.horizontal, 24)
-                .padding(.top, 14)
-
-            EditorialSegmented(selection: $filter, options: filterOptions)
-                .padding(.horizontal, 24)
-                .padding(.top, 10)
-                .padding(.bottom, 14)
+            SurahSearchField(text: $searchText, focused: searchFocused)
         }
+        .padding(.horizontal, Spacing.screenMargin)
+        .padding(.top, Spacing.xs)
+        .padding(.bottom, Spacing.sm)
         .opaqueBar()
     }
 }
 
-/// The ruled search field. `.searchable` draws UIKit's grey capsule inside the
-/// navigation bar — this is the same job done in the app's own hand.
+/// The search field: name, meaning or number.
 private struct SurahSearchField: View {
     @Binding var text: String
-    @FocusState private var focused: Bool
+    var focused: FocusState<Bool>.Binding
 
     var body: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: Spacing.xs) {
             Image(systemName: "magnifyingglass")
-                .font(.label(12, weight: .semibold))
-                .foregroundStyle(focused || !text.isEmpty
-                                 ? Color.brand
-                                 : Color(.placeholderText))
+                .font(TypeScale.secondary)
+                .foregroundStyle(focused.wrappedValue ? Palette.accent : Palette.textSecondary)
 
-            ZStack(alignment: .leading) {
-                if text.isEmpty {
-                    // Says what the search matches, as the HIG asks of a placeholder.
-                    Text("Name, meaning or number")
-                        .font(.appSerif(15.5, italic: true))
-                        .foregroundStyle(Color(.placeholderText))
-                        .lineLimit(1)
-                        .allowsHitTesting(false)
-                }
-                TextField("", text: $text)
-                    .font(.appSerif(15.5))
-                    .textFieldStyle(.plain)
-                    .tint(.brand)
-                    .focused($focused)
-                    .submitLabel(.search)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.words)
-                    .accessibilityLabel("Search surahs by name, meaning or number")
-            }
+            TextField("", text: $text,
+                      prompt: Text("Search surahs").foregroundColor(Palette.textSecondary))
+                .font(TypeScale.body)
+                .foregroundStyle(Palette.textPrimary)
+                .tint(Palette.accent)
+                .focused(focused)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.words)
+                .accessibilityLabel("Search surahs")
 
             if !text.isEmpty {
                 Button {
                     Haptics.tap()
                     text = ""
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.label(10, weight: .bold))
-                        .foregroundStyle(Color.secondary)
-                        // A 44 pt target that doesn't make the field any taller.
-                        .frame(width: 44, height: 44)
+                    Image(systemName: "xmark.circle.fill")
+                        .font(TypeScale.body)
+                        .foregroundStyle(Palette.textSecondary)
+                        .frame(width: MinSize.hitTarget, height: MinSize.hitTarget)
                         .contentShape(Rectangle())
-                        .padding(.vertical, -10)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
-                .transition(.opacity)
             }
         }
-        .padding(.leading, 12)
-        .padding(.trailing, text.isEmpty ? 12 : 4)
-        .padding(.vertical, 9)
+        .padding(.leading, Spacing.sm)
+        .padding(.trailing, text.isEmpty ? Spacing.sm : 0)
+        .frame(minHeight: MinSize.hitTarget)
+        .background(Palette.background, in: RoundedRectangle(cornerRadius: Spacing.xs))
         .overlay(
-            Rectangle().strokeBorder(
-                focused ? Color.brand.opacity(0.65) : Color(.label).opacity(0.18),
-                lineWidth: 1
-            )
+            RoundedRectangle(cornerRadius: Spacing.xs)
+                .strokeBorder(focused.wrappedValue ? Palette.accent : Palette.separator, lineWidth: 1)
         )
-        .animation(AppAnim.smooth, value: focused)
-        .animation(AppAnim.smooth, value: text.isEmpty)
         .contentShape(Rectangle())
-        .onTapGesture { focused = true }
-    }
-}
-
-// MARK: - Row
-
-struct SurahRowView: View {
-    let surah: Surah
-    let status: MemorizationStatus
-    @ObservedObject private var downloadManager = DownloadManager.shared
-
-    // Declared so the list follows a change of reading face or script.
-    @AppStorage("readingFace")  private var readingFace = ReadingFace.newYork.rawValue
-    @AppStorage("arabicScript") private var arabicScript = ArabicScript.system.rawValue
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            // The numeral carries the index — a seal badge was a lot of
-            // furniture for a number the eye only scans.
-            Text("\(surah.number)")
-                .font(.label(11, weight: .bold).monospacedDigit())
-                .kerning(0.6)
-                .foregroundStyle(.brand)
-                .frame(width: 22, alignment: .leading)
-                .padding(.top, 5)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(surah.englishName)
-                    .font(.appSerif(19, weight: .medium))
-                Text(surah.englishNameTranslation)
-                    .font(.appSerif(14, italic: true))
-                    .foregroundStyle(Color.secondary)
-            }
-
-            Spacer(minLength: 8)
-
-            VStack(alignment: .trailing, spacing: 5) {
-                Text(surah.name)
-                    .font(.appArabic(19))
-                    // Shrinks a little at large text sizes rather than breaking the name in two.
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .environment(\.layoutDirection, .rightToLeft)
-
-                HStack(spacing: 6) {
-                    if downloadManager.isDownloaded(surah.number) {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.label(10))
-                            .foregroundStyle(.brand)
-                            .accessibilityLabel("Downloaded")
-                    }
-                    if status != .notStarted {
-                        Image(systemName: status.icon)
-                            .font(.label(11))
-                            .foregroundStyle(status.color)
-                            .accessibilityLabel(status.label)
-                    } else {
-                        MetaText("\(surah.numberOfAyahs) AYAHS")
-                            .accessibilityLabel("\(surah.numberOfAyahs) ayahs")
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 8)
+        .onTapGesture { focused.wrappedValue = true }
     }
 }
 
@@ -333,20 +256,8 @@ enum SurahFilter: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .all:        "All Surahs"
-        case .downloaded: "Downloaded"
-        case .memorized:  "Memorized"
-        case .inProgress: "In Progress"
-        }
-    }
-
-    /// What the segmented filter says. "All Surahs" and "In Progress" don't fit
-    /// four across at small caps, and the segment is already labelled by context.
-    var shortLabel: String {
-        switch self {
         case .all:        "All"
-        // "Saved" read as bookmarks, which live in More.
-        case .downloaded: "Offline"
+        case .downloaded: "Downloaded"
         case .memorized:  "Memorized"
         case .inProgress: "Learning"
         }
@@ -364,64 +275,48 @@ enum SurahFilter: String, CaseIterable, Identifiable {
 
 struct FilterEmptyState: View {
     let filter: SurahFilter
+    var search = ""
 
     private var message: String {
+        if !search.isEmpty { return "No surahs match “\(search)”" }
         switch filter {
-        case .downloaded: "No downloaded surahs yet. Tap and hold a surah to download it."
-        case .memorized:  "No memorized surahs yet."
-        case .inProgress: "Nothing in progress yet."
-        case .all:        "No surahs found."
+        case .downloaded: return "No downloaded surahs yet"
+        case .memorized:  return "No memorized surahs yet"
+        case .inProgress: return "No surahs in Learning yet"
+        case .all:        return "No surahs yet"
         }
     }
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: filter.icon)
-                .font(.label(34))
-                .foregroundStyle(.secondary)
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+        Text(message)
+            .font(TypeScale.body)
+            .foregroundStyle(Palette.textSecondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.xl)
     }
 }
 
-// MARK: - Quick actions (long-press context menu)
+// MARK: - Context menu (long-press)
 
+/// Play, Download / Remove download, and the memorization status. Observes the
+/// stores itself, so the list doesn't; commands go through `audioServiceRef`.
 struct SurahQuickActions: View {
     let surah: Surah
-    @ObservedObject var store: MemorizationStore
-    @ObservedObject var downloadManager: DownloadManager
-    let audioService: AudioService
+
+    @Environment(\.audioServiceRef) private var audioService
+    @EnvironmentObject private var store: MemorizationStore
+    @ObservedObject private var downloadManager = DownloadManager.shared
 
     private var reciterSubfolder: String { Reciter.selected.subfolder }
 
     var body: some View {
-        // Memorization status (checkmark shows current selection)
-        Picker("Status", selection: Binding(
-            get: { store.status(for: surah.number) },
-            set: { Haptics.selection(); store.set($0, for: surah.number) }
-        )) {
-            Label("Not Started", systemImage: "circle").tag(MemorizationStatus.notStarted)
-            Label("In Progress", systemImage: "circle.dotted.and.circle").tag(MemorizationStatus.inProgress)
-            Label("Memorized", systemImage: "checkmark.circle.fill").tag(MemorizationStatus.memorized)
-        }
-
-        Divider()
-
-        Button {
-            Haptics.tap()
-            audioService.play(
-                surah: surah.number,
-                startAyah: 1,
-                totalAyahs: surah.numberOfAyahs,
-                surahName: surah.englishName
-            )
-        } label: {
-            Label("Play Audio", systemImage: "play.circle")
+        if let audioService {
+            Button {
+                SurahPlayer.toggle(surah, audio: audioService)
+            } label: {
+                Label("Play", systemImage: "play.circle")
+            }
         }
 
         if downloadManager.isDownloaded(surah.number) {
@@ -429,7 +324,7 @@ struct SurahQuickActions: View {
                 Haptics.warning()
                 downloadManager.deleteSurah(surah.number, reciterSubfolder: reciterSubfolder)
             } label: {
-                Label("Remove Download", systemImage: "trash")
+                Label("Remove download", systemImage: "trash")
             }
         } else if (downloadManager.progress[surah.number] ?? 0) > 0 {
             Label("Downloading…", systemImage: "arrow.down.circle")
@@ -442,22 +337,32 @@ struct SurahQuickActions: View {
                     reciterSubfolder: reciterSubfolder
                 )
             } label: {
-                Label("Download Audio", systemImage: "arrow.down.circle")
+                Label("Download", systemImage: "arrow.down.circle")
+            }
+        }
+
+        Divider()
+
+        let status = store.status(for: surah.number)
+        if status != .memorized {
+            Button { set(.memorized) } label: {
+                Label("Mark as memorized", systemImage: "checkmark.circle")
+            }
+        }
+        if status != .inProgress {
+            Button { set(.inProgress) } label: {
+                Label("Mark as learning", systemImage: "circle.dotted.and.circle")
+            }
+        }
+        if status != .notStarted {
+            Button { set(.notStarted) } label: {
+                Label("Mark as not started", systemImage: "circle")
             }
         }
     }
-}
 
-/// Retired with the seal-badge era — surah numbers are set as plain marginal
-/// numerals now. Kept only until the last caller is gone.
-private struct NumberBadge: View {
-    let number: Int
-
-    var body: some View {
-        Text("\(number)")
-            .font(.label(11, weight: .bold).monospacedDigit())
-            .foregroundStyle(.brand)
-            .frame(minWidth: 22, alignment: .leading)
+    private func set(_ status: MemorizationStatus) {
+        Haptics.selection()
+        store.set(status, for: surah.number)
     }
 }
-

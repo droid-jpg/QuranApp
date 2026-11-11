@@ -1,64 +1,58 @@
 import SwiftUI
 
+/// The Juz sheet: one row per juz in the surah row's shape, with the same play
+/// button. Play starts at the juz's first surah and ayah and keeps going (playback
+/// rolls into the next surah by itself).
 struct JuzBrowserView: View {
     let surahs: [Surah]
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.audioServiceRef) private var audioService
     @State private var path = NavigationPath()
+
+    private func surah(_ number: Int) -> Surah? { surahs.first { $0.number == number } }
+
+    /// "An-Naba to An-Nas", with the app's own surah names; one name when the
+    /// juz lies inside a single surah.
+    private func subtitle(for b: JuzBoundary) -> String {
+        let start = surah(b.startSurah)?.englishName ?? "Surah \(b.startSurah)"
+        let end = surah(b.endSurah)?.englishName ?? "Surah \(b.endSurah)"
+        return start == end ? start : "\(start) to \(end)"
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
             List(JuzData.boundaries, id: \.juz) { boundary in
-                let startSurah = surahs.first { $0.number == boundary.startSurah }
-                let startIndex = startSurah.flatMap { s in
-                    surahs.firstIndex(where: { $0.number == s.number })
-                }
-                NavigationLink(value: JuzRoute(
-                    startIndex: startIndex,
-                    initialAyah: boundary.startAyah > 1 ? boundary.startAyah : nil
-                )) {
-                    HStack(spacing: 14) {
-                        // Juz number badge
-                        ZStack {
-                            Rectangle()
-                                .fill(Color.brand.opacity(0.12))
-                            Text("\(boundary.juz)")
-                                .font(.label(14, weight: .bold))
-                                .foregroundStyle(.brand)
-                        }
-                        .frame(width: 40, height: 40)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Juz \(boundary.juz)")
-                                .font(.appSerif(17, weight: .semibold))
-                            if let s = startSurah {
-                                Text("\(s.englishName) \(boundary.startAyah == 1 ? "" : "· Ayah \(boundary.startAyah)")")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        Spacer()
-
-                        if let s = startSurah {
-                            Text(s.name)
-                                .font(.label(18))
-                                .foregroundStyle(.secondary)
-                        }
+                let start = surah(boundary.startSurah)
+                SurahRow(
+                    leading: "\(boundary.juz)",
+                    title: "Juz \(boundary.juz)",
+                    subtitle: subtitle(for: boundary),
+                    arabic: start?.name ?? "",
+                    playSurah: boundary.startSurah,
+                    playName: "Juz \(boundary.juz)",
+                    onOpen: {
+                        guard let start,
+                              let idx = surahs.firstIndex(where: { $0.number == start.number })
+                        else { return }
+                        path.append(JuzRoute(startIndex: idx,
+                                             initialAyah: boundary.startAyah > 1 ? boundary.startAyah : nil))
+                    },
+                    onPlay: {
+                        guard let start, let audioService else { return }
+                        SurahPlayer.toggle(start, startAyah: boundary.startAyah, audio: audioService)
                     }
-                    .padding(.vertical, 4)
-                }
+                )
+                .listRowInsets(EdgeInsets(top: 0, leading: Spacing.screenMargin,
+                                          bottom: 0, trailing: Spacing.screenMargin))
+                .listRowBackground(Palette.background)
+                .listRowSeparatorTint(Palette.separator)
             }
             .listStyle(.plain)
-            .navigationTitle("Browse by Juz")
+            .scrollContentBackground(.hidden)
+            .navigationTitle("Juz")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: JuzRoute.self) { route in
-                if let idx = route.startIndex {
-                    SurahPageView(surahs: surahs, startIndex: idx, initialAyah: route.initialAyah)
-                } else {
-                    Text("Surah not loaded yet. Return to the main list and try again.")
-                        .foregroundStyle(.secondary)
-                        .padding()
-                }
+                SurahPageView(surahs: surahs, startIndex: route.startIndex, initialAyah: route.initialAyah)
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -66,8 +60,7 @@ struct JuzBrowserView: View {
                 }
             }
         }
-        // Light tap on push only. Replaces a per-row gesture that, on List
-        // rows, fired the haptic on the content but didn't navigate.
+        // Light tap on push only.
         .sensoryFeedback(trigger: path) { old, new in
             new.count > old.count ? .impact(weight: .light) : nil
         }
@@ -75,6 +68,6 @@ struct JuzBrowserView: View {
 }
 
 private struct JuzRoute: Hashable {
-    let startIndex: Int?
+    let startIndex: Int
     let initialAyah: Int?
 }

@@ -257,7 +257,7 @@ struct SettingsView: View {
     @ViewBuilder
     private func prayerToggle(_ name: String, _ binding: Binding<Bool>) -> some View {
         HStack(spacing: 11) {
-            Image(systemName: NextPrayerSection.prayerIcons[name] ?? "clock")
+            Image(systemName: PrayerIcons.names[name] ?? "clock")
                 .font(.label(12))
                 .foregroundStyle(binding.wrappedValue ? Color.brand : Color(.tertiaryLabel))
                 .frame(width: 18)

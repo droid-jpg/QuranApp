@@ -161,7 +161,12 @@ struct QuranAppApp: App {
                 }
                 .environmentObject(prayerTimesService)
             }
+            // Today's search field asks for the Quran tab.
+            .onReceive(NotificationCenter.default.publisher(for: .showQuranTab)) { _ in
+                selectedTab = .quran
+            }
             .task {
+                SurahPlaybackState.shared.bind(to: audioService)
                 CloudSync.shared.start()
                 CarPlayBridge.shared.audioService       = audioService
                 CarPlayBridge.shared.memorizationStore  = memorizationStore

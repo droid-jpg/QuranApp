@@ -1,290 +1,153 @@
 import SwiftUI
 import Combine
+import UIKit
 
-/// The three acquisition drills on Today (they move into Memorization later).
-enum PlayerDrill { case listen, repeatAfter, chain }
-
-/// The dashboard, rebuilt as a quiet editorial list. Everything that used to be
-/// a tinted card is now a ruled block: a hairline, a small-caps eyebrow, and the
-/// content set in the reading serif. The accent survives as a mark — the scrub
-/// line, the play circles, the working-ayah rule — and nothing else is filled.
+/// Today (REDESIGN §3.1): start listening in one tap, see the next prayer, read
+/// one verse. Top to bottom: greeting and date, a search field that hands over to
+/// the Quran tab, Recent (or Start listening), the next prayer, the verse of the
+/// day, and a memorization row when something is being learned.
+///
+/// This view holds only the plain `audioServiceRef`. Everything that draws
+/// playback (the rows' buttons, the verse's button) is a leaf that observes the
+/// player itself, so an ayah advance doesn't re-render Today.
 struct HomeView: View {
-    @EnvironmentObject private var memorizationStore: MemorizationStore
-    @EnvironmentObject private var srStore: MemorizationSRStore
-    @EnvironmentObject private var targetStore: MemorizationTargetStore
-    /// Commands only. Playback state lives in the app-wide mini player; the few
-    /// bits drawn here observe the service in leaf views, so an ayah advance
-    /// doesn't re-render the dashboard.
-    @Environment(\.audioServiceRef) private var audioService
-    @EnvironmentObject private var prayerService: PrayerTimesService
-    @StateObject private var listVM = SurahListViewModel()
-    @ObservedObject private var dailyVerse = DailyVerseService.shared
     @AppStorage("selectedTranslationId") private var translationId = Translation.fallbackId
-    // Declared so the dashboard repaints the moment the reading face changes.
+    // Declared so Today repaints the moment the reading face changes.
     @AppStorage("readingFace") private var readingFace = ReadingFace.newYork.rawValue
-    @State private var showReview = false
-    @State private var activeDrill: PlayerDrill? = nil
-
-    // MARK: - Listening actions
-
-    /// Run one of the three acquisition drills against the current target, straight
-    /// from the dashboard — the same presets the reader's player uses.
-    private func runDrill(_ drill: PlayerDrill, target t: MemorizationTarget) {
-        Haptics.impact(.light)
-        withAnimation(AppAnim.springFast) { activeDrill = drill }
-        let state: RepeatState
-        switch drill {
-        case .listen:      state = .repeatThisAyah(surah: t.surah, ayah: t.workingAyah)
-        case .repeatAfter: state = .listenThenRecite(surah: t.surah, ayah: t.workingAyah)
-        case .chain:       state = .joinWithPrevious2(surah: t.surah, ayah: t.workingAyah)
-        }
-        audioService?.startRepeat(state, totalAyahs: t.totalAyahs, surahName: t.surahName)
-    }
-
-    private func ayahCount(of surah: Int) -> Int? {
-        listVM.surahs.first { $0.number == surah }?.numberOfAyahs
-    }
-
-    /// One-tap starts. Takes the saved session from `QuickStartsSlot`, which
-    /// observes it, so Today doesn't re-render on every ayah.
-    private func quickStarts(session: ListeningSession?) -> [QuickStartRail.QuickStart] {
-        var items: [QuickStartRail.QuickStart] = []
-
-        if let v = dailyVerse.verse, let total = ayahCount(of: v.surahNumber) {
-            items.append(.init(id: "votd", label: "Verse of day",
-                               icon: "sun.horizon.fill", tint: .orange) {
-                Haptics.tap()
-                activeDrill = nil
-                audioService?.play(surah: v.surahNumber, startAyah: v.ayahNumber,
-                                   totalAyahs: total, surahName: v.surahName)
-            })
-        }
-
-        if let s = session, s.isLoop {
-            items.append(.init(id: "lastloop", label: s.loopLabel, icon: "repeat") {
-                Haptics.tap()
-                activeDrill = nil
-                audioService?.startRepeat(s.repeatState, totalAyahs: s.totalAyahs,
-                                          surahName: s.surahName)
-            })
-        }
-
-        if let juz = JuzData.boundaries.first(where: { $0.juz == 30 }),
-           let total = ayahCount(of: juz.startSurah) {
-            let name = listVM.surahs.first { $0.number == juz.startSurah }?.englishName ?? ""
-            items.append(.init(id: "juz30", label: "Juz 30") {
-                Haptics.tap()
-                activeDrill = nil
-                // Sequential mode rolls on through the following surahs on its own.
-                audioService?.play(surah: juz.startSurah, startAyah: juz.startAyah,
-                                   totalAyahs: total, surahName: name)
-            })
-        }
-
-        return items
-    }
+    /// The bundled surah list: Today never waits on the network for its rows.
+    @State private var surahs = QuranOfflineStore.shared.surahs()
+    @State private var path = NavigationPath()
 
     private var greeting: String {
-        let h = Calendar.current.component(.hour, from: Date())
-        switch h {
-        case 5..<12:  return "Good morning."
-        case 12..<17: return "Good afternoon."
-        case 17..<21: return "Good evening."
-        default:      return "Good night."
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 5..<12:  return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<21: return "Good evening"
+        default:      return "Good night"
         }
-    }
-
-    /// A notable (non-recurring) Islamic event happening today or tomorrow, for the
-    /// home line. Recurring fasts (Mon/Thu, White Days) are excluded so it only
-    /// surfaces genuine occasions.
-    private var featuredEvent: (occ: EventOccurrence, isToday: Bool)? {
-        let cal = Calendar.current
-        let today = Date()
-        if let occ = IslamicEvent.events(on: today).first(where: { $0.event.recurrence == .none }) {
-            return (occ, true)
-        }
-        if let tomorrow = cal.date(byAdding: .day, value: 1, to: today),
-           let occ = IslamicEvent.events(on: tomorrow).first(where: { $0.event.recurrence == .none }) {
-            return (occ, false)
-        }
-        return nil
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-
-                    // ── Masthead ──────────────────────────────────────────
-                    Masthead(streak: StreakService.shared.currentStreak)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 18)
-                        .staggeredAppear(delay: 0.04)
-
-                    // ── Greeting ──────────────────────────────────────────
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(greeting)
-                            .font(.appSerif(27))
-                            .foregroundStyle(.primary)
-                        Eyebrow(HomeDates.today)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 20)
-                    .padding(.bottom, 18)
-                    .staggeredAppear(delay: 0.06)
-
-                    // ── Holiday line (today / tomorrow) ───────────────────
-                    if let ev = featuredEvent {
-                        HolidayLine(occurrence: ev.occ, isToday: ev.isToday)
-                            .padding(.horizontal, 24)
-                            .padding(.bottom, 18)
-                            .staggeredAppear(delay: 0.07)
+                VStack(alignment: .leading, spacing: Spacing.sectionGap) {
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        header
+                        searchField
                     }
 
-                    // ── One-tap starts ────────────────────────────────────
-                    // Now playing and resume are the app-wide mini player's.
-                    QuickStartsSlot(items: quickStarts(session:))
+                    RecentSection(surahs: surahs) { number in open(surah: number) }
 
-                    // ── Memorizing (current target) ───────────────────────
-                    if let t = targetStore.target,
-                       let idx = listVM.surahs.firstIndex(where: { $0.number == t.surah }) {
-                        MemorizingSection(
-                            target: t,
-                            surahs: listVM.surahs,
-                            startIndex: idx,
-                            activeDrill: activeDrill,
-                            onDrill: { runDrill($0, target: t) }
-                        )
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 18)
-                        .staggeredAppear(delay: 0.11)
-                    }
+                    PrayerCard()
 
-                    // ── Next prayer ───────────────────────────────────────
-                    if prayerService.fetchStatus == .ready {
-                        NextPrayerSection(times: prayerService.prayerTimes)
-                            .padding(.horizontal, 24)
-                            .padding(.bottom, 18)
-                            .staggeredAppear(delay: 0.13)
-                    }
+                    VerseCard(surahs: surahs) { number, ayah in open(surah: number, ayah: ayah) }
 
-                    // ── Verse of the day ──────────────────────────────────
-                    // Hidden entirely when the verse hasn't arrived — a lone
-                    // eyebrow over nothing reads as a broken section.
-                    if dailyVerse.verse != nil || dailyVerse.isLoading {
-                        VerseOfDaySection(
-                            surahs: listVM.surahs,
-                            onPlay: { verse in
-                                guard let audioService else { return }
-                                // The button shows pause while the verse plays, so it pauses (and
-                                // resumes) it rather than starting it over.
-                                if audioService.currentSurah == verse.surahNumber
-                                    && audioService.currentAyah == verse.ayahNumber {
-                                    Haptics.tap()
-                                    audioService.togglePlayPause()
-                                    return
-                                }
-                                guard let total = ayahCount(of: verse.surahNumber) else { return }
-                                Haptics.tap()
-                                activeDrill = nil
-                                audioService.play(
-                                    surah: verse.surahNumber, startAyah: verse.ayahNumber,
-                                    totalAyahs: total, surahName: verse.surahName
-                                )
-                            }
-                        )
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 18)
-                        .staggeredAppear(delay: 0.16)
-                    }
-
-                    // ── Due for review ────────────────────────────────────
-                    if srStore.dueCount() > 0 {
-                        DueReviewSection(count: srStore.dueCount()) {
-                            Haptics.tap()
-                            showReview = true
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 18)
-                        .staggeredAppear(delay: 0.19)
-                    }
-
-                    // ── Other surahs in progress ──────────────────────────
-                    // The active target already has its own block above, so it
-                    // is excluded here — this row is the rest of the backlog.
-                    let otherInProgress = memorizationStore.inProgressNumbers
-                        .filter { $0 != targetStore.target?.surah }
-                    if !otherInProgress.isEmpty && !listVM.surahs.isEmpty {
-                        EditorialSection(title: "In progress",
-                                         icon: "circle.dotted.and.circle",
-                                         iconTint: .orange,
-                                         trailing: "\(otherInProgress.count)") {
-                            EmptyView()
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 13)
-                        .staggeredAppear(delay: 0.21)
-
-                        InProgressRail(numbers: otherInProgress, surahs: listVM.surahs)
-                            .padding(.bottom, 18)
-                            .staggeredAppear(delay: 0.23)
-                    }
-
-                    // ── Progress summary ──────────────────────────────────
-                    ProgressSection(store: memorizationStore, surahs: listVM.surahs)
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 8)
-                        .staggeredAppear(delay: 0.26)
+                    MemorizationRow()
                 }
-                .padding(.bottom, Spacing.md)
+                .padding(.horizontal, Spacing.screenMargin)
+                .padding(.top, Spacing.md)
+                .padding(.bottom, Spacing.lg)
             }
-            // The masthead is the title now — the nav bar would only repeat it.
+            .background(Palette.background)
+            // No bar on Today, so cover the status bar: content scrolls under it otherwise.
+            .overlay(alignment: .top) {
+                GeometryReader { geo in
+                    Palette.background
+                        .frame(height: geo.safeAreaInsets.top)
+                        .offset(y: -geo.safeAreaInsets.top)
+                }
+                .frame(height: 0)
+                .accessibilityHidden(true)
+            }
             .toolbar(.hidden, for: .navigationBar)
-            .task { await listVM.load() }
+            .navigationDestination(for: TodayRoute.self) { route in
+                switch route {
+                case .calendar:     IslamicCalendarView()
+                case .prayerTimes:  PrayerTimesScreen()
+                case .memorization: MemorizationHubView()
+                case .reader(let number, let ayah):
+                    if let idx = surahs.firstIndex(where: { $0.number == number }) {
+                        SurahPageView(surahs: surahs, startIndex: idx, initialAyah: ayah)
+                    }
+                }
+            }
+            .task {
+                if surahs.isEmpty {
+                    surahs = (try? await QuranAPIService.shared.fetchSurahList()) ?? []
+                }
+            }
             .onChange(of: translationId) {
-                Task { await dailyVerse.loadIfNeeded() }
-            }
-            // A publisher, not an observed property: Today hears only this one change.
-            .onReceive(audioService?.$currentAyah.eraseToAnyPublisher()
-                       ?? Empty().eraseToAnyPublisher()) { ayah in
-                if ayah == nil, activeDrill != nil { activeDrill = nil }
-            }
-            .fullScreenCover(isPresented: $showReview) {
-                ReviewSessionView(store: srStore, initialCards: srStore.dueItems())
+                Task { await DailyVerseService.shared.loadIfNeeded() }
             }
         }
+        // Light tap on push only.
+        .sensoryFeedback(trigger: path) { old, new in
+            new.count > old.count ? .impact(weight: .light) : nil
+        }
+    }
+
+    private func open(surah number: Int, ayah: Int? = nil) {
+        path.append(TodayRoute.reader(surah: number, ayah: ayah))
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(greeting)
+                .font(TypeScale.display)
+                .foregroundStyle(Palette.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+
+            NavigationLink(value: TodayRoute.calendar) {
+                Text(HomeDates.today)
+                    .font(TypeScale.secondary)
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(minHeight: MinSize.hitTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// Looks like a field; tapping it opens the Quran tab with its search focused.
+    private var searchField: some View {
+        Button {
+            Haptics.tap()
+            QuranSearchRequest.shared.open()
+        } label: {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "magnifyingglass")
+                    .font(TypeScale.secondary)
+                Text("Search surahs")
+                    .font(TypeScale.body)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Palette.textSecondary)
+            .padding(.horizontal, Spacing.sm)
+            .frame(minHeight: MinSize.hitTarget)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: Spacing.xs))
+            .overlay(RoundedRectangle(cornerRadius: Spacing.xs).strokeBorder(Palette.separator, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
-// MARK: - One-tap starts
-
-/// Observes the saved session so the "last repeat" start stays current without
-/// Today itself re-rendering on every ayah (the session republishes per ayah).
-private struct QuickStartsSlot: View {
-    let items: (ListeningSession?) -> [QuickStartRail.QuickStart]
-    @ObservedObject private var listening = ListeningSessionStore.shared
-
-    var body: some View {
-        let list = items(listening.session)
-        if !list.isEmpty {
-            QuickStartRail(items: list)
-                .padding(.bottom, 18)
-                .staggeredAppear(delay: 0.09)
-        }
-    }
+/// Where Today pushes to.
+private enum TodayRoute: Hashable {
+    case calendar, prayerTimes, memorization
+    case reader(surah: Int, ayah: Int?)
 }
 
 // MARK: - Dates
 
 enum HomeDates {
-    // Abbreviated: at small-caps with letterspacing, the full "TUESDAY, 11
-    // AUGUST · 28 SAFAR" runs nearly the width of the page and reads as another
-    // paragraph rather than a dateline.
     private static let dayFmt: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "EEE d MMM"; return f
     }()
 
-    /// The Hijri half of the dateline. Umm al-Qura, the same civil calendar the
+    /// The Hijri half of the date line. Umm al-Qura, the same civil calendar the
     /// Islamic Calendar screen uses, so the two never disagree by a day.
     private static let hijriFmt: DateFormatter = {
         let f = DateFormatter()
@@ -293,126 +156,60 @@ enum HomeDates {
         return f
     }()
 
+    /// "Mon 9 Nov · 29 Jumada I"
     static var today: String {
         let now = Date()
         return "\(dayFmt.string(from: now)) · \(hijriFmt.string(from: now))"
     }
 }
 
-// MARK: - Masthead
+// MARK: - Recent / Start listening
 
-/// The wordmark, a rule that runs to the streak, and the streak itself. Replaces
-/// the large navigation title so the page starts as a page, not as chrome.
-private struct Masthead: View {
-    let streak: Int
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("Holy Quran")
-                .font(.appSerif(32, weight: .medium))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                // The rule gives way first; the wordmark only shrinks when there's no rule left.
-                .layoutPriority(1)
-                .accessibilityAddTraits(.isHeader)
-            Rectangle()
-                .fill(Color.rule)
-                .frame(height: 1)
-                .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 5 }
-            if streak > 0 {
-                MetaText("\(streak) DAY\(streak == 1 ? "" : "S")")
-                    .fixedSize()
-                    .accessibilityLabel("\(streak) day streak")
-            }
-        }
-    }
-}
-
-// MARK: - Holiday line
-
-private struct HolidayLine: View {
-    let occurrence: EventOccurrence
-    let isToday: Bool
-
-    var body: some View {
-        NavigationLink {
-            IslamicCalendarView()
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: occurrence.event.kind.icon)
-                    .font(.label(11, weight: .bold))
-                    .foregroundStyle(occurrence.event.kind.color)
-                Text(occurrence.event.name)
-                    .font(.appSerif(16))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                MetaText(isToday ? "TODAY" : "TOMORROW",
-                         tint: occurrence.event.kind.color)
-                Image(systemName: "chevron.right")
-                    .font(.label(9, weight: .bold))
-                    .foregroundStyle(Color(.tertiaryLabel))
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .overlay(Rectangle().strokeBorder(occurrence.event.kind.color.opacity(0.35), lineWidth: 1))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .hapticTap()
-    }
-}
-
-// MARK: - Memorizing
-
-/// The surah + ayah the user is actively memorizing. The heading opens the reader
-/// at the working ayah; underneath, the three acquisition drills — Listen, Repeat,
-/// Chain — start straight from the dashboard in the same language the reader's
-/// player uses, so a drill is one tap from opening the app.
-private struct MemorizingSection: View {
-    let target: MemorizationTarget
+/// The last three surahs listened to, each a surah row whose subtitle says where
+/// you were and whose play button resumes there (and with its repeat). With no
+/// history, four well-loved surahs to start with. Observes the history, so a
+/// change of ayah updates this leaf and not Today.
+private struct RecentSection: View {
     let surahs: [Surah]
-    let startIndex: Int
-    let activeDrill: PlayerDrill?
-    let onDrill: (PlayerDrill) -> Void
+    let onOpen: (Int) -> Void
+
+    @ObservedObject private var listening = ListeningSessionStore.shared
+
+    /// Al-Faatiha, Yaseen, Al-Kahf, Al-Mulk.
+    private static let starters = [1, 36, 18, 67]
+
+    private func surah(_ number: Int) -> Surah? { surahs.first { $0.number == number } }
+
+    /// "Ayah 142", or "Ayahs 255–257, repeating".
+    private func subtitle(_ s: ListeningSession) -> String {
+        let r = s.repeatState
+        guard r.isOn else { return "Ayah \(s.ayah)" }
+        return r.isSingleAyah ? "Ayah \(r.from), repeating" : "Ayahs \(r.from)–\(r.to), repeating"
+    }
 
     var body: some View {
-        EditorialSection(title: "Memorizing",
-                         icon: "graduationcap.fill",
-                         trailing: "\(Int((target.fraction * 100).rounded()))%") {
-            VStack(alignment: .leading, spacing: 0) {
-                NavigationLink {
-                    SurahPageView(surahs: surahs, startIndex: startIndex, initialAyah: target.workingAyah)
-                } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(target.surahName)
-                            .font(.appSerif(21, weight: .medium))
-                            .foregroundStyle(.primary)
-                        Text(target.isComplete
-                             ? "memorized"
-                             : "ayah \(target.workingAyah) of \(target.totalAyahs)")
-                            .font(.appSerif(16))
-                            .foregroundStyle(Color.secondary)
-                        Spacer(minLength: 4)
-                        Image(systemName: "chevron.right")
-                            .font(.label(9, weight: .bold))
-                            .foregroundStyle(Color(.tertiaryLabel))
+        let recents = listening.recents.filter { surah($0.surah) != nil }
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Eyebrow(recents.isEmpty ? "Start listening" : "Recent")
+                .accessibilityAddTraits(.isHeader)
+
+            VStack(spacing: 0) {
+                if recents.isEmpty {
+                    ForEach(Array(Self.starters.enumerated()), id: \.element) { index, number in
+                        if let s = surah(number) {
+                            if index > 0 { Hairline() }
+                            SurahRowView(surah: s, onOpen: { onOpen(number) })
+                        }
                     }
-                    .contentShape(Rectangle())
+                } else {
+                    ForEach(Array(recents.enumerated()), id: \.element.surah) { index, session in
+                        if let s = surah(session.surah) {
+                            if index > 0 { Hairline() }
+                            SurahRowView(surah: s, subtitle: subtitle(session), resume: session,
+                                         onOpen: { onOpen(s.number) })
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
-                .hapticTap()
-
-                RuleProgress(fraction: target.fraction)
-                    .padding(.top, 13)
-
-                HStack(spacing: 8) {
-                    OutlineButton(label: "Listen", on: activeDrill == .listen) { onDrill(.listen) }
-                    OutlineButton(label: "Repeat", on: activeDrill == .repeatAfter) { onDrill(.repeatAfter) }
-                    OutlineButton(label: "Chain", on: activeDrill == .chain) { onDrill(.chain) }
-                }
-                .padding(.top, 15)
             }
         }
     }
@@ -420,88 +217,138 @@ private struct MemorizingSection: View {
 
 // MARK: - Next prayer
 
-/// The upcoming prayer, its countdown, and the rest of the day as one ruled
-/// line of metadata. No expansion: the whole day already fits.
-struct NextPrayerSection: View {
-    let times: PrayerTimes?
+/// The next prayer, its time and a countdown; the whole card opens Prayer Times.
+/// Every state keeps the card's height, so the page below doesn't jump.
+private struct PrayerCard: View {
+    @EnvironmentObject private var service: PrayerTimesService
     @State private var now = Date()
-    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let ticker = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
-    private var nextEntry: (name: String, time: Date)? {
-        guard let t = times else { return nil }
-        let canonical: [(String, Date)] = [
-            ("Fajr", t.fajr), ("Dhuhr", t.dhuhr),
-            ("Asr",  t.asr),  ("Maghrib", t.maghrib), ("Isha", t.isha),
-        ]
-        for (name, date) in canonical where date > now { return (name, date) }
-        // After Isha — next Fajr is +1 day
-        return ("Fajr", t.fajr.addingTimeInterval(86_400))
-    }
+    /// Tall enough for the "Allow location" state, the tallest.
+    private static let height: CGFloat = 104
 
-    var body: some View {
-        Group {
-            if let entry = nextEntry, let t = times {
-                EditorialSection(title: "Next prayer",
-                                 // The prayer's own symbol, so the section is
-                                 // recognisable before the name is read.
-                                 icon: Self.prayerIcons[entry.name] ?? "clock",
-                                 trailing: "in \(countdown(to: entry.time))",
-                                 trailingTint: .brand) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text(entry.name)
-                                .font(.appSerif(21, weight: .medium))
-                            Text(Self.timeFmt.string(from: entry.time))
-                                .font(.appSerif(17).monospacedDigit())
-                                .foregroundStyle(Color.secondary)
-                        }
-
-                        Text(restOfDay(t, excluding: entry.name))
-                            .font(.label(9.5, weight: .semibold).monospacedDigit())
-                            .kerning(0.9)
-                            .foregroundStyle(Color.secondary)
-                            .padding(.top, 11)
-                    }
-                }
-            }
-        }
-        .onReceive(ticker) { now = $0 }
-    }
-
-    /// "FAJR 5:12 · DHUHR 1:24 · ASR 5:02 · ISHA 9:41" — the day at a glance,
-    /// minus whichever prayer is already spelled out above.
-    private func restOfDay(_ t: PrayerTimes, excluding: String) -> String {
-        let canonical: [(String, Date)] = [
-            ("Fajr", t.fajr), ("Dhuhr", t.dhuhr),
-            ("Asr", t.asr), ("Maghrib", t.maghrib), ("Isha", t.isha),
-        ]
-        return canonical
-            .filter { $0.0 != excluding }
-            .map { "\($0.0.uppercased()) \(Self.compactFmt.string(from: $0.1))" }
-            .joined(separator: " · ")
-    }
-
-    private func countdown(to date: Date) -> String {
-        let secs = max(0, Int(date.timeIntervalSince(now)))
-        let h = secs / 3600
-        let m = (secs % 3600) / 60
-        let s = secs % 60
-        if h > 0 { return "\(h)h \(m)m" }
-        if m > 0 { return "\(m)m \(s)s" }
-        return "\(s)s"
-    }
-
-    // Static: called every ticker tick while visible, so a per-call formatter
-    // would churn.
     private static let timeFmt: DateFormatter = {
         let f = DateFormatter(); f.timeStyle = .short; return f
     }()
 
-    private static let compactFmt: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "h:mm"; return f
-    }()
+    var body: some View {
+        Group {
+            switch service.fetchStatus {
+            case .ready:
+                if let times = service.prayerTimes {
+                    ready(times)
+                } else {
+                    message("Couldn’t load prayer times", action: "Try again") {
+                        service.requestAndFetch()
+                    }
+                }
+            case .fetching:
+                HStack(spacing: Spacing.sm) {
+                    ProgressView()
+                    Text("Getting prayer times…")
+                        .font(TypeScale.body)
+                        .foregroundStyle(Palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(Spacing.cardPadding)
+            case .notDetermined, .denied:
+                message("Prayer times need your location", action: "Allow location") {
+                    if service.fetchStatus == .denied,
+                       let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    } else {
+                        service.requestAndFetch()
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: Self.height, alignment: .leading)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: Spacing.sm))
+        .overlay(RoundedRectangle(cornerRadius: Spacing.sm).strokeBorder(Palette.separator, lineWidth: 1))
+        .onReceive(ticker) { now = $0 }
+    }
 
-    static let prayerIcons: [String: String] = [
+    private func ready(_ times: PrayerTimes) -> some View {
+        let next = times.upcomingPrayer(at: now)
+        return NavigationLink(value: TodayRoute.prayerTimes) {
+            HStack(spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(next.name)
+                            .font(TypeScale.heading)
+                            .foregroundStyle(Palette.textPrimary)
+                        Spacer(minLength: Spacing.xs)
+                        Text(Self.timeFmt.string(from: next.date))
+                            .font(TypeScale.heading.monospacedDigit())
+                            .foregroundStyle(Palette.textPrimary)
+                    }
+                    Text("in \(Self.countdown(to: next.date, from: now))")
+                        .font(TypeScale.secondary)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(Spacing.cardPadding)
+            .frame(maxWidth: .infinity, minHeight: Self.height, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func message(_ text: String, action: String, perform: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(text)
+                .font(TypeScale.body)
+                .foregroundStyle(Palette.textPrimary)
+            Button {
+                Haptics.tap()
+                perform()
+            } label: {
+                Text(action)
+                    .font(TypeScale.body)
+                    .foregroundStyle(Palette.accent)
+                    .frame(minHeight: MinSize.hitTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, Spacing.cardPadding)
+    }
+
+    /// "1 h 12 min", "12 min", "less than a minute".
+    private static func countdown(to date: Date, from now: Date) -> String {
+        let minutes = max(0, Int(date.timeIntervalSince(now) / 60))
+        let h = minutes / 60, m = minutes % 60
+        if h > 0 { return "\(h) h \(m) min" }
+        if m > 0 { return "\(m) min" }
+        return "less than a minute"
+    }
+}
+
+/// Prayer Times, pushed from Today. Prayer times live inline on More today (there
+/// is no separate screen yet), so this shows that same block on its own page.
+private struct PrayerTimesScreen: View {
+    @EnvironmentObject private var service: PrayerTimesService
+
+    var body: some View {
+        ScrollView {
+            PrayerTimesCardView(service: service)
+                .padding(.horizontal, Spacing.screenMargin)
+                .padding(.top, Spacing.md)
+                .padding(.bottom, Spacing.lg)
+        }
+        .background(Palette.background)
+        .navigationTitle("Prayer Times")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// The prayer symbols, shared with the notification toggles in Settings.
+enum PrayerIcons {
+    static let names: [String: String] = [
         "Fajr":     "moon.stars.fill",
         "Sunrise":  "sunrise.fill",
         "Dhuhr":    "sun.max.fill",
@@ -514,202 +361,112 @@ struct NextPrayerSection: View {
 
 // MARK: - Verse of the day
 
-/// Today's ayah set as scripture: Arabic at reading size, the translation in the
-/// serif underneath, and the reference as metadata. The whole block opens the
-/// reader; the play button is a sibling, because nested buttons swallow taps.
-private struct VerseOfDaySection: View {
+/// Today's ayah: Arabic, the translation, a 44 pt play button. The text opens the
+/// reader at that ayah; the button is its sibling so neither swallows the other's
+/// tap. Observes the player (this leaf only) for the button's icon and an error.
+private struct VerseCard: View {
     let surahs: [Surah]
-    let onPlay: (DailyVerse) -> Void
+    let onOpen: (_ surah: Int, _ ayah: Int) -> Void
 
     @ObservedObject private var service = DailyVerseService.shared
-    /// Observed here, in the leaf, rather than by Today.
     @EnvironmentObject private var audioService: AudioService
-
-    private func isPlaying(_ verse: DailyVerse) -> Bool {
-        audioService.isPlaying && audioService.currentSurah == verse.surahNumber
-            && audioService.currentAyah == verse.ayahNumber
-    }
     @AppStorage("arabicScript") private var arabicScript = ArabicScript.system.rawValue
 
-    private func startIndex(_ v: DailyVerse) -> Int? {
-        surahs.firstIndex { $0.number == v.surahNumber }
+    private func isCurrent(_ v: DailyVerse) -> Bool {
+        audioService.currentAyah == v.ayahNumber && audioService.currentSurah == v.surahNumber
+    }
+
+    private func play(_ v: DailyVerse) {
+        guard let surah = surahs.first(where: { $0.number == v.surahNumber }) else { return }
+        Haptics.tap()
+        if isCurrent(v) {
+            PlayerEngine(audioService: audioService).playPause()
+        } else {
+            audioService.play(surah: v.surahNumber, startAyah: v.ayahNumber,
+                              totalAyahs: surah.numberOfAyahs, surahName: v.surahName)
+        }
     }
 
     var body: some View {
-        EditorialSection(title: "Verse of the day",
-                         icon: "sun.horizon.fill",
-                         iconTint: .orange,
-                         trailing: service.verse.map { "\($0.surahName) \($0.ayahNumber)" }) {
-            Group {
-                if service.isLoading {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 24)
-                } else if let v = service.verse {
-                    ZStack(alignment: .bottomTrailing) {
-                        Group {
-                            if let idx = startIndex(v) {
-                                NavigationLink {
-                                    SurahPageView(surahs: surahs, startIndex: idx, initialAyah: v.ayahNumber)
-                                } label: { verse(v) }
-                                    .buttonStyle(.plain)
-                                    .hapticTap()
-                            } else {
-                                verse(v)
-                            }
-                        }
+        if let v = service.verse {
+            let reference = "\(v.surahName) \(v.ayahNumber)"
+            let playing = isCurrent(v) && audioService.isPlaying
+            let failed = isCurrent(v) && audioService.failedAyah != nil
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack(alignment: .firstTextBaseline) {
+                    Eyebrow("Verse of the day")
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: Spacing.xs)
+                    Text(reference)
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                }
 
-                        let playing = isPlaying(v)
-                        Button { onPlay(v) } label: {
-                            PlayCircle(playing: playing, size: 34)
-                        }
-                        .buttonStyle(CardButtonStyle(scale: 0.92))
-                        .accessibilityLabel(playing ? "Pause verse of the day" : "Play verse of the day")
+                Button { onOpen(v.surahNumber, v.ayahNumber) } label: {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text(v.arabic)
+                            .font(.appArabic(26))
+                            .foregroundStyle(Palette.textPrimary)
+                            .lineSpacing(Spacing.sm)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .environment(\.layoutDirection, .rightToLeft)
+                        Text(v.translation)
+                            .font(TypeScale.body)
+                            .foregroundStyle(Palette.textPrimary)
+                            .lineSpacing(Spacing.xxs)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                HStack(spacing: Spacing.xs) {
+                    Spacer(minLength: 0)
+                    if failed {
+                        Text("Couldn’t play. Try again")
+                            .font(TypeScale.secondary)
+                            .foregroundStyle(Palette.danger)
+                    }
+                    Button { play(v) } label: {
+                        PlayCircle(playing: playing, size: MinSize.listPlayButton)
+                            .frame(width: MinSize.listPlayButton, height: MinSize.listPlayButton)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(playing ? "Pause" : "Play") \(reference)")
                 }
             }
-        }
-    }
-
-    private func verse(_ v: DailyVerse) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(v.arabic)
-                .font(.appArabic(24))
-                .lineSpacing(14)
-                .multilineTextAlignment(.trailing)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .environment(\.layoutDirection, .rightToLeft)
-                .padding(.top, 4)
-
-            Text(v.translation)
-                .font(.appSerif(17))
-                .foregroundStyle(Color(.label).opacity(0.72))
-                .lineSpacing(3)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .lineLimit(4)
-                .padding(.top, 13)
-                .padding(.trailing, 44)   // room for the play circle
-        }
-        .contentShape(Rectangle())
-    }
-}
-
-// MARK: - Due for review
-
-private struct DueReviewSection: View {
-    let count: Int
-    let action: () -> Void
-
-    var body: some View {
-        EditorialSection(title: "Review",
-                         icon: "arrow.triangle.2.circlepath",
-                         trailing: "\(count) due", trailingTint: .brand) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("\(count) ayah\(count == 1 ? "" : "s") ready to recall")
-                    .font(.appSerif(17))
-                    .foregroundStyle(Color(.label).opacity(0.72))
-                Spacer(minLength: 8)
-            }
-            .padding(.bottom, 13)
-
-            OutlineButton(label: "Start review", on: true, action: action)
+        } else if service.isLoading {
+            ProgressView()
+                .frame(maxWidth: .infinity, minHeight: MinSize.surahRow)
         }
     }
 }
 
-// MARK: - In-progress rail
+// MARK: - Memorization
 
-private struct InProgressRail: View {
-    let numbers: [Int]
-    let surahs: [Surah]
-
-    private func surah(for n: Int) -> Surah? { surahs.first { $0.number == n } }
+/// Shown only while at least one surah is Learning; opens the Memorization hub.
+private struct MemorizationRow: View {
+    @EnvironmentObject private var store: MemorizationStore
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach(numbers, id: \.self) { n in
-                    if let s = surah(for: n),
-                       let idx = surahs.firstIndex(where: { $0.number == n }) {
-                        NavigationLink(destination: SurahPageView(surahs: surahs, startIndex: idx)) {
-                            MemorizationStatusCard(
-                                surah: s,
-                                accent: .orange,
-                                icon: "circle.dotted.and.circle",
-                                subtitle: "\(s.numberOfAyahs) ayahs · \(s.englishNameTranslation)"
-                            )
-                        }
-                        .buttonStyle(CardButtonStyle())
-                        .hapticTap()
-                    }
+        if store.inProgressCount > 0 {
+            NavigationLink(value: TodayRoute.memorization) {
+                HStack(spacing: Spacing.sm) {
+                    Text("\(Text("Memorization").foregroundStyle(Palette.textPrimary)) \(Text("· \(store.inProgressCount) learning, \(store.memorizedCount) memorized").foregroundStyle(Palette.textSecondary))")
+                        .font(TypeScale.body)
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: Spacing.xs)
+                    Image(systemName: "chevron.right")
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                        .accessibilityHidden(true)
                 }
+                .frame(minHeight: MinSize.moreRow)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 24)
-        }
-    }
-}
-
-// MARK: - Progress summary
-
-/// The whole-Quran picture, kept last because it's the slowest-moving number on
-/// the page. Taps into the juz-filterable overview.
-private struct ProgressSection: View {
-    @ObservedObject var store: MemorizationStore
-    let surahs: [Surah]
-    @State private var showOverview = false
-
-    private struct Stats {
-        let memorized: Int
-        let inProgress: Int
-        let total: Int
-    }
-
-    private var stats: Stats {
-        Stats(
-            memorized:  surahs.filter { store.status(for: $0.number) == .memorized  }.count,
-            inProgress: surahs.filter { store.status(for: $0.number) == .inProgress }.count,
-            total:      surahs.count
-        )
-    }
-
-    var body: some View {
-        let st = stats
-        let total = Double(max(st.total, 1))
-
-        Button { Haptics.tap(); showOverview = true } label: {
-            EditorialSection(title: "Memorization",
-                             icon: "square.grid.3x3.fill",
-                             iconTint: Color.secondary,
-                             trailing: "\(st.memorized)/\(st.total) surahs") {
-                VStack(alignment: .leading, spacing: 0) {
-                    GeometryReader { geo in
-                        HStack(spacing: 0) {
-                            Rectangle().fill(Color.brand)
-                                .frame(width: geo.size.width * Double(st.memorized) / total)
-                            Rectangle().fill(Color.orange)
-                                .frame(width: geo.size.width * Double(st.inProgress) / total)
-                            Rectangle().fill(Color(.label).opacity(0.16))
-                        }
-                    }
-                    .frame(height: 1.5)
-
-                    HStack(spacing: 16) {
-                        StatDot(color: .brand,  value: st.memorized,  label: "Memorized")
-                        StatDot(color: .orange, value: st.inProgress, label: "In progress")
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.label(9, weight: .bold))
-                            .foregroundStyle(Color(.tertiaryLabel))
-                    }
-                    .padding(.top, 13)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .sheet(isPresented: $showOverview) {
-            MemorizationOverviewSheet()
+            .buttonStyle(.plain)
         }
     }
 }

@@ -77,7 +77,18 @@ final class ListeningSessionStore: ObservableObject {
     /// re-render ten times a second behind the reader.
     @Published private(set) var session: ListeningSession?
 
+    /// The last few surahs listened to, most recent first, one entry per surah
+    /// (Today's "Recent"). `recents.first` is `session` while there is one. Like
+    /// `session` it republishes on a change of ayah or surah, not on every tick.
+    /// Closing the player clears `session` but keeps this history.
+    @Published private(set) var recents: [ListeningSession] = []
+
+    static let recentLimit = 3
+
     private let key = "quran_listening_session_v1"
+    /// Added with the history: an array of sessions. A store written before it
+    /// has only `key`; `load()` seeds the history from that one session.
+    private let recentsKey = "quran_listening_recents_v1"
     private var defaults: UserDefaults { UserDefaults(suiteName: sharedAppGroup) ?? .standard }
 
     /// Latest position reported by the player, published on `flush()`.
@@ -85,7 +96,16 @@ final class ListeningSessionStore: ObservableObject {
     private var lastWrite: Date = .distantPast
     private static let writeInterval: TimeInterval = 5
 
-    private init() { load() }
+    private init() {
+        #if DEBUG
+        // Test hook: launch with -ClearListeningHistory to see Today as on a fresh install.
+        if CommandLine.arguments.contains("-ClearListeningHistory") {
+            defaults.removeObject(forKey: key)
+            defaults.removeObject(forKey: recentsKey)
+        }
+        #endif
+        load()
+    }
 
     // MARK: - Recording
 
@@ -105,10 +125,13 @@ final class ListeningSessionStore: ObservableObject {
         let durationJustLearned = (pending?.duration ?? 0) == 0 && snapshot.duration > 0
         pending = snapshot
 
-        // A new ayah (or surah) is a real change of what's playing — publish it.
+        // A new ayah (or surah) or a changed repeat range is a real change of what's playing — publish it.
         // Everything else is just the playhead moving, so only touch disk.
-        if session?.surah != snapshot.surah || session?.ayah != snapshot.ayah {
-            session = snapshot
+        if session?.surah != snapshot.surah || session?.ayah != snapshot.ayah
+            || session?.repeatState.isOn != snapshot.repeatState.isOn
+            || session?.repeatState.from != snapshot.repeatState.from
+            || session?.repeatState.to != snapshot.repeatState.to {
+            commit(snapshot)
             save(snapshot)
         } else if durationJustLearned || Date().timeIntervalSince(lastWrite) >= Self.writeInterval {
             save(snapshot)
@@ -119,8 +142,21 @@ final class ListeningSessionStore: ObservableObject {
     /// resume card shows exactly where the user left off.
     func flush() {
         guard let p = pending else { return }
-        session = p
+        commit(p)
         save(p)
+    }
+
+    /// Publishes `snapshot` as the current session and as the newest recent.
+    private func commit(_ snapshot: ListeningSession) {
+        session = snapshot
+        recents = Self.upserting(snapshot, into: recents)
+    }
+
+    /// `list` with `snapshot` first and any earlier entry for its surah removed,
+    /// cut to `recentLimit`.
+    private static func upserting(_ snapshot: ListeningSession,
+                                  into list: [ListeningSession]) -> [ListeningSession] {
+        Array(([snapshot] + list.filter { $0.surah != snapshot.surah }).prefix(recentLimit))
     }
 
     func clear() {
@@ -136,14 +172,25 @@ final class ListeningSessionStore: ObservableObject {
         if let data = try? JSONEncoder().encode(s) {
             defaults.set(data, forKey: key)
         }
+        // The history on disk follows the playhead too; the published copy waits
+        // for the next ayah or flush.
+        if let data = try? JSONEncoder().encode(Self.upserting(s, into: recents)) {
+            defaults.set(data, forKey: recentsKey)
+        }
     }
 
     private func load() {
+        if let data = defaults.data(forKey: recentsKey),
+           let list = try? JSONDecoder().decode([ListeningSession].self, from: data) {
+            recents = Array(list.prefix(Self.recentLimit))
+        }
         guard
             let data = defaults.data(forKey: key),
             let decoded = try? JSONDecoder().decode(ListeningSession.self, from: data)
         else { return }
         session = decoded
         pending = decoded
+        // Migration: a single saved session becomes the history's first entry.
+        if recents.isEmpty { recents = [decoded] }
     }
 }
