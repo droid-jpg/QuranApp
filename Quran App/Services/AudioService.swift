@@ -1,6 +1,10 @@
 import AVFoundation
 import Combine
 import MediaPlayer
+import os
+
+/// Playback diagnostics: `log stream --predicate 'subsystem == "sami.Quran-App"'`.
+let playbackLog = Logger(subsystem: "sami.Quran-App", category: "playback")
 
 /// The playhead, published apart from `AudioService`.
 ///
@@ -142,6 +146,24 @@ class AudioService: ObservableObject {
     private var resumeAfterInterruption = false
 
     private var bufferingWatch: AnyCancellable?
+    private var stallWatch: Task<Void, Never>?
+    /// Which of `audioHosts` new items load from. Sticky: after a fallback the
+    /// rest of the session stays on the host that worked.
+    private var hostIndex = 0
+    /// Hosts tried for the current ayah, counting the first load.
+    private var hostsTriedForAyah = 1
+
+    /// The current item has reported `readyToPlay` (from KVO). Until it has,
+    /// nothing on the main thread reads its `currentTime()` or `duration`:
+    /// those calls wait on AVFoundation's lock while the item is loading, and
+    /// the periodic observer doing so at the start of a play froze the whole
+    /// app for 10–15 s before the first ayah sounded.
+    private var itemReady = false
+    /// The playhead as the time observer last handed it over (no AVFoundation
+    /// call needed), the item it belongs to, and when it last moved.
+    private weak var lastTickItem: AVPlayerItem?
+    private var lastTickSeconds: Double = -1
+    private var lastProgressAt = Date()
     /// Watches the current item for a load failure; replaced whenever it changes.
     private var itemStatusWatch: AnyCancellable?
 
@@ -152,6 +174,7 @@ class AudioService: ObservableObject {
         setupRemoteCommandCenter()
         observeAudioSession()
         observeBuffering()
+        startStallWatch()
     }
 
     // MARK: - Normal per-ayah playback
@@ -212,6 +235,9 @@ class AudioService: ObservableObject {
             != (old.isOn, old.surah, old.from, old.to, old.times)
         if shapeChanged { s.completed = 0 }
         repeatState = s
+        // Saved now, playing or not: the playback tick that otherwise saves the
+        // session doesn't run while paused, so an "off" was lost on relaunch.
+        ListeningSessionStore.shared.updateRepeat(s)
 
         // In a pause the finished item has left the queue, so `currentItem` is nil.
         let inGap = pendingRepeatWork != nil
@@ -282,7 +308,7 @@ class AudioService: ObservableObject {
             loadItem(ayah: ayah)
         } else {
             if isPlaying { player.pause(); isPlaying = false; ListeningSessionStore.shared.flush() }
-            else         { player.play(); player.rate = playbackRate; isPlaying = true }
+            else         { lastProgressAt = Date(); player.play(); player.rate = playbackRate; isPlaying = true }
         }
     }
 
@@ -348,7 +374,7 @@ class AudioService: ObservableObject {
     /// Used by the expanded/focus player's scrubber and waveform. No-op during a
     /// word loop (that player owns its own timeline).
     func seek(toFraction fraction: Double) {
-        guard !isWordLooping, let item = player.currentItem else { return }
+        guard !isWordLooping, itemReady, let item = player.currentItem else { return }
         let dur = item.duration.seconds
         guard dur.isFinite, dur > 0 else { return }
         let clamped = max(0, min(1, fraction))
@@ -420,9 +446,10 @@ class AudioService: ObservableObject {
     /// Load an ayah by rebuilding the queue on the shared AVQueuePlayer.
     /// The ayah that will follow is pre-queued so iOS can auto-advance in the
     /// background without a new play() call.
-    private func loadItem(ayah: Int) {
+    private func loadItem(ayah: Int, retrying: Bool = false) {
         removeEndObserver()
         cancelRepeatGap()
+        if !retrying { hostsTriedForAyah = 1 }
 
         currentAyah = ayah
         isSeeking   = false
@@ -433,7 +460,11 @@ class AudioService: ObservableObject {
         preloadedItem = nil
         preloadedAyah = nil
 
-        let item = AVPlayerItem(url: audioURL(surah: currentSurah, ayah: ayah))
+        itemReady = false
+        lastProgressAt = Date()
+        let url = audioURL(surah: currentSurah, ayah: ayah)
+        playbackLog.info("load \(self.currentSurah):\(ayah) from \(url.isFileURL ? "file" : url.host() ?? "?", privacy: .public)")
+        let item = AVPlayerItem(url: url)
         item.preferredForwardBufferDuration = 6
         playerItem = item
         watchStatus(of: item)
@@ -482,16 +513,35 @@ class AudioService: ObservableObject {
         queueFollower(after: ayah)
     }
 
+    /// The hosts that serve the per-ayah files, same paths below each. The engine
+    /// uses `hostIndex` and moves to the next one when an ayah stalls or fails.
+    private static let audioHosts: [String] = {
+        var hosts = ["https://everyayah.com/data", "https://mirrors.quranicaudio.com/everyayah"]
+        #if DEBUG
+        // Test hook: -AudioPrimaryHost <base URL> replaces the first host, so a
+        // slow or dead server can be pointed at to exercise the fallback.
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "-AudioPrimaryHost"), args.indices.contains(i + 1) {
+            hosts[0] = args[i + 1]
+        }
+        #endif
+        return hosts
+    }()
+
+    private func remoteAudioURL(surah: Int, ayah: Int, host: Int) -> URL {
+        let file = String(format: "%03d%03d.mp3", surah, ayah)
+        let base = Self.audioHosts[host % Self.audioHosts.count]
+        return URL(string: "\(base)/\(Reciter.selected.subfolder)/\(file)")!
+    }
+
     private func audioURL(surah: Int, ayah: Int) -> URL {
         let subfolder = Reciter.selected.subfolder
         // Check for a permanently downloaded copy first (offline playback)
         if let local = DownloadManager.shared.localURL(surah: surah, ayah: ayah, reciterSubfolder: subfolder) {
             return local
         }
-        let s = String(format: "%03d", surah)
-        let a = String(format: "%03d", ayah)
-        // Check the prefetch cache (temp files downloaded ahead-of-time)
-        let remoteURL = URL(string: "https://everyayah.com/data/\(subfolder)/\(s)\(a).mp3")!
+        // Then the prefetch cache (temp files downloaded ahead of time).
+        let remoteURL = remoteAudioURL(surah: surah, ayah: ayah, host: hostIndex)
         if let cached = AudioPrefetchCache.shared.cachedLocalURL(for: remoteURL) {
             return cached
         }
@@ -499,15 +549,80 @@ class AudioService: ObservableObject {
     }
 
     private func prefetchUpcoming(from ayah: Int, count: Int) {
-        let subfolder = Reciter.selected.subfolder
         for i in 1...count {
             let next = ayah + i
             guard next <= totalAyahs else { break }
-            let s = String(format: "%03d", currentSurah)
-            let a = String(format: "%03d", next)
-            let url = URL(string: "https://everyayah.com/data/\(subfolder)/\(s)\(a).mp3")!
-            AudioPrefetchCache.shared.prefetch(url)
+            AudioPrefetchCache.shared.prefetch(remoteAudioURL(surah: currentSurah, ayah: next, host: hostIndex))
         }
+    }
+
+    // MARK: - Stall recovery
+
+    /// Seconds a loaded ayah may sit without its playhead moving, while meant
+    /// to be playing, before the engine reloads it from the next host.
+    private static let stallLimit: Double = 8
+    /// The same for an ayah still loading: longer, because a slow but working
+    /// connection (or a busy device) is not a stall, and switching host
+    /// restarts the download.
+    private static let loadLimit: Double = 15
+
+    /// Ticks twice a second while the service lives. When the current ayah is
+    /// meant to be playing but its playhead hasn't moved for `stallLimit`, it
+    /// is reloaded from the next host at the same position; once every host has
+    /// been tried for that ayah, playback stops on it with "Couldn't play", the
+    /// same state as a load failure, never a silent stall.
+    private func startStallWatch() {
+        // Reads only the service's own state: the playhead arrives through the
+        // time observer, so this never calls into AVFoundation itself.
+        stallWatch = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self else { return }
+                guard self.isPlaying, !self.isWordLooping, !self.pausedForRepeat,
+                      let item = self.playerItem, self.player.currentItem === item
+                else { self.lastProgressAt = Date(); continue }
+                let limit = self.itemReady ? Self.stallLimit : Self.loadLimit
+                guard Date().timeIntervalSince(self.lastProgressAt) >= limit else { continue }
+                self.lastProgressAt = Date()
+                let at = self.lastTickItem === item ? max(0, self.lastTickSeconds) : 0
+                self.recover(item, reason: self.itemReady
+                    ? "no progress for \(Int(limit)) s at \(String(format: "%.1f", at)) s"
+                    : "still loading after \(Int(limit)) s")
+            }
+        }
+    }
+
+    /// The current ayah stalled or failed. Try the next host from the same
+    /// position, or, with every host tried for this ayah, stop on it as failed.
+    private func recover(_ item: AVPlayerItem, reason: String) {
+        guard item === playerItem, !isWordLooping, let ayah = currentAyah else { return }
+        if let local = (item.asset as? AVURLAsset)?.url, local.isFileURL {
+            // A cached copy that won't play is bad: drop it and use the network.
+            AudioPrefetchCache.shared.evict(local)
+        }
+        guard hostsTriedForAyah < Self.audioHosts.count else {
+            playbackLog.error("giving up on \(self.currentSurah):\(ayah): \(reason, privacy: .public)")
+            fail()
+            return
+        }
+        hostIndex = (hostIndex + 1) % Self.audioHosts.count
+        hostsTriedForAyah += 1
+        let position = lastTickItem === item ? lastTickSeconds : 0
+        let dur = itemReady ? duration : 0
+        playbackLog.error("\(self.currentSurah):\(ayah) \(reason, privacy: .public); retrying from host \(self.hostIndex)")
+        loadItem(ayah: ayah, retrying: true)
+        if position.isFinite, dur.isFinite, dur > 0, position > 0.3 {
+            pendingSeekFraction = position / dur
+        }
+    }
+
+    /// Stop on the current ayah with "Couldn't play. Tap to retry".
+    private func fail() {
+        cancelRepeatGap()
+        clearPlayerItem()
+        isPlaying = false
+        failedAyah = currentAyah
+        updateNowPlayingInfo()
     }
 
     private func clearPlayerItem() {
@@ -548,6 +663,7 @@ class AudioService: ObservableObject {
         removeEndObserver()
 
         let adv = activeRepeat.advance(after: ayah, ayahCount: totalAyahs)
+        playbackLog.info("end \(self.currentSurah):\(ayah) → \(String(describing: adv.step), privacy: .public), queued \(self.preloadedAyah ?? -1)")
         // A state for another surah is left alone; only the live one moves on.
         if isRepeating { repeatState = adv.state }
 
@@ -556,6 +672,9 @@ class AudioService: ObservableObject {
             // Seamless, background-safe advance using the pre-queued item.
             currentAyah   = next
             playerItem    = pre
+            hostsTriedForAyah = 1
+            itemReady     = false
+            lastProgressAt = Date()
             preloadedItem = nil
             preloadedAyah = nil
             watchStatus(of: pre)
@@ -641,7 +760,14 @@ class AudioService: ObservableObject {
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             MainActor.assumeIsolated {
                 guard let self, !self.isWordLooping else { return }
-                if let dur = self.player.currentItem?.duration.seconds, dur.isFinite, dur > 0 {
+                let item = self.player.currentItem
+                if item !== self.lastTickItem || abs(time.seconds - self.lastTickSeconds) > 0.05 {
+                    self.lastProgressAt = Date()
+                }
+                self.lastTickItem = item
+                self.lastTickSeconds = time.seconds
+                // Never ask a loading item for its duration here (see `itemReady`).
+                if self.itemReady, let dur = item?.duration.seconds, dur.isFinite, dur > 0 {
                     // A resumed session waits for the real duration before it can
                     // restore its playhead; do that first and let the next tick
                     // report the corrected progress.
@@ -670,6 +796,9 @@ class AudioService: ObservableObject {
 
     private func observeBuffering() {
         bufferingWatch = player.publisher(for: \.timeControlStatus)
+            .handleEvents(receiveOutput: { status in
+                playbackLog.debug("timeControlStatus \(status.rawValue)")
+            })
             .map { $0 == .waitingToPlayAtSpecifiedRate }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -681,27 +810,28 @@ class AudioService: ObservableObject {
             }
     }
 
+    /// Tracks the item's readiness (`itemReady`) and sends a failure to
+    /// `handleItemFailure`. Handled on the main queue: KVO can fire elsewhere.
     private func watchStatus(of item: AVPlayerItem) {
         itemStatusWatch = item.publisher(for: \.status, options: [.initial, .new])
-            .filter { $0 == .failed }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self, weak item] _ in
+            .sink { [weak self, weak item] status in
                 MainActor.assumeIsolated {
-                    guard let self, let item else { return }
-                    self.handleItemFailure(item)
+                    guard let self, let item, item === self.playerItem else { return }
+                    let err = status == .failed ? (item.error?.localizedDescription ?? "unknown") : "-"
+                    playbackLog.info("item status \(status.rawValue) error \(err, privacy: .public)")
+                    self.itemReady = status == .readyToPlay
+                    if status == .failed { self.handleItemFailure(item) }
                 }
             }
     }
 
-    /// The current ayah's audio couldn't load (no network, missing file). Stop
-    /// the queue there and keep the ayah current: Play then reloads it.
+    /// The current ayah's audio couldn't load (no network, missing file): try
+    /// the next host, and when every host has failed, stop there with the ayah
+    /// still current, so Play reloads it.
     private func handleItemFailure(_ item: AVPlayerItem) {
         guard item === playerItem, !isWordLooping else { return }
-        cancelRepeatGap()
-        clearPlayerItem()
-        isPlaying = false
-        failedAyah = currentAyah
-        updateNowPlayingInfo()
+        recover(item, reason: "load failed: \(item.error?.localizedDescription ?? "unknown")")
     }
 
     // MARK: - Internal: chapter / word loop
@@ -751,6 +881,17 @@ class AudioService: ObservableObject {
     /// told `isPlaying`, so the app kept showing a pause button over silence.
     private func observeAudioSession() {
         let center = NotificationCenter.default
+        // Off the main queue: reading an item's error log can wait on the same
+        // AVFoundation lock as `currentTime()` (see `itemReady`).
+        center.addObserver(forName: AVPlayerItem.newErrorLogEntryNotification, object: nil,
+                           queue: nil) { note in
+            guard let e = (note.object as? AVPlayerItem)?.errorLog()?.events.last else { return }
+            playbackLog.error("network error \(e.errorStatusCode) \(e.errorDomain, privacy: .public) \(e.errorComment ?? "-", privacy: .public) \(e.uri ?? "-", privacy: .public)")
+        }
+        center.addObserver(forName: AVPlayerItem.playbackStalledNotification, object: nil,
+                           queue: .main) { _ in
+            playbackLog.error("playback stalled")
+        }
         center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil,
                            queue: .main) { [weak self] note in
             let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
@@ -845,7 +986,7 @@ class AudioService: ObservableObject {
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPNowPlayingInfoPropertyMediaType:    MPNowPlayingInfoMediaType.audio.rawValue,
         ]
-        if let dur = player.currentItem?.duration.seconds, dur.isFinite, dur > 0 {
+        if itemReady, let dur = player.currentItem?.duration.seconds, dur.isFinite, dur > 0 {
             info[MPMediaItemPropertyPlaybackDuration]         = dur
             info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = dur * progress
         }

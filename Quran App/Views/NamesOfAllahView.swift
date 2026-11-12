@@ -29,8 +29,8 @@ struct NamesOfAllahView: View {
                         .font(.appSerif(40, weight: .medium))
                         .contentTransition(.numericText())
                     Text("of 99 memorized")
-                        .font(.appSerif(16, italic: true))
-                        .foregroundStyle(Color.secondary)
+                        .font(.appSerif(16))
+                        .foregroundStyle(Palette.textSecondary)
                     Spacer(minLength: 0)
                 }
                 .padding(.bottom, 13)
@@ -66,7 +66,7 @@ struct NamesOfAllahView: View {
             .padding(.bottom, 40)
         }
         .navigationTitle("99 Names")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search name or meaning…")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -88,7 +88,7 @@ struct NamesOfAllahView: View {
         } label: {
             Text(label)
                 .font(.label(13, weight: .semibold))
-                .foregroundStyle(on ? Color.brand : Color.secondary)
+                .foregroundStyle(on ? Color.brand : Palette.textSecondary)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 8)
                 .overlay(
@@ -112,7 +112,7 @@ private struct NameRow: View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(name.id)")
                 .font(.label(13, weight: .bold).monospacedDigit())
-                .foregroundStyle(isMemorized ? Color.brand : Color(.tertiaryLabel))
+                .foregroundStyle(isMemorized ? Color.brand : Palette.textSecondary)
                 .frame(minWidth: 22, alignment: .leading)
                 .padding(.top, 5)
 
@@ -121,8 +121,8 @@ private struct NameRow: View {
                     .font(.appSerif(18, weight: .medium))
                     .foregroundStyle(Color(.label))
                 Text(name.meaning)
-                    .font(.appSerif(14, italic: true))
-                    .foregroundStyle(Color.secondary)
+                    .font(.appSerif(15))
+                    .foregroundStyle(Palette.textSecondary)
             }
 
             Spacer(minLength: 8)

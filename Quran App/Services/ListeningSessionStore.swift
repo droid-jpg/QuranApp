@@ -159,6 +159,31 @@ final class ListeningSessionStore: ObservableObject {
         Array(([snapshot] + list.filter { $0.surah != snapshot.surah }).prefix(recentLimit))
     }
 
+    /// The repeat changed (the Repeat sheet, an ayah's Repeat button, the lock
+    /// screen). Written through at once, playing or not, to the saved session and
+    /// that surah's Recent entry, so turning Repeat off survives a relaunch: the
+    /// once-a-second playback tick that otherwise saves the session never runs
+    /// while paused or before anything has been loaded.
+    func updateRepeat(_ state: RepeatState) {
+        func apply(_ s: inout ListeningSession) -> Bool {
+            guard s.surah == state.surah, s.repeatState != state else { return false }
+            s.repeatState = state
+            return true
+        }
+        var changed = false
+        if var p = pending, apply(&p) { pending = p; changed = true }
+        if var s = session, apply(&s) { session = s; changed = true }
+        var list = recents
+        for i in list.indices where apply(&list[i]) { changed = true }
+        guard changed else { return }
+        recents = list
+        if let s = pending ?? session {
+            save(s)
+        } else if let data = try? JSONEncoder().encode(recents) {
+            defaults.set(data, forKey: recentsKey)
+        }
+    }
+
     func clear() {
         pending = nil
         session = nil

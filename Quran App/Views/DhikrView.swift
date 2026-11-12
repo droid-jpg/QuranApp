@@ -43,9 +43,10 @@ struct DhikrView: View {
 
     // MARK: - Preset strip
 
+    /// Wraps onto a second line rather than clipping at the right edge (§5: no
+    /// clipped chip rows).
     private var presetPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        FlowLayout(spacing: 8, lineSpacing: 8) {
                 ForEach(DhikrStore.defaultPresets) { preset in
                     let on = store.selectedPreset.id == preset.id
                     Button {
@@ -54,7 +55,7 @@ struct DhikrView: View {
                     } label: {
                         Text(preset.name)
                             .font(.label(13, weight: .semibold))
-                            .foregroundStyle(on ? Color.brand : Color.secondary)
+                            .foregroundStyle(on ? Color.brand : Palette.textSecondary)
                             .padding(.horizontal, 11)
                             .padding(.vertical, 8)
                             .overlay(
@@ -65,9 +66,9 @@ struct DhikrView: View {
                     }
                     .buttonStyle(.plain)
                 }
-            }
-            .padding(.vertical, 1)
         }
+        .padding(.vertical, 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Counter
@@ -181,8 +182,8 @@ struct GoalEditorSheet: View {
                             .font(.appSerif(48, weight: .medium).monospacedDigit())
                             .contentTransition(.numericText())
                         Text("repetitions")
-                            .font(.appSerif(16, italic: true))
-                            .foregroundStyle(Color.secondary)
+                            .font(.appSerif(16))
+                            .foregroundStyle(Palette.textSecondary)
                         Spacer(minLength: 0)
                         Stepper("", value: $draftGoal, in: 1...1000)
                             .labelsHidden()
@@ -200,7 +201,7 @@ struct GoalEditorSheet: View {
                             } label: {
                                 Text("\(n)")
                                     .font(.label(13, weight: .semibold).monospacedDigit())
-                                    .foregroundStyle(on ? Color.brand : Color.secondary)
+                                    .foregroundStyle(on ? Color.brand : Palette.textSecondary)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 11)
                                     .overlay(

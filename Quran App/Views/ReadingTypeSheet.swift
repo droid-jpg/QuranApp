@@ -40,9 +40,6 @@ struct ReadingTypeSheet: View {
                                     Text(f.displayName)
                                         .font(f.font(size: 17, weight: .regular))
                                         .foregroundStyle(.primary)
-                                    Text("— \(f.caption)")
-                                        .font(f.font(size: 14, italic: f.isSerif))
-                                        .foregroundStyle(Color.secondary)
                                     Spacer(minLength: 8)
                                     if f == face {
                                         Image(systemName: "checkmark")
@@ -76,7 +73,7 @@ struct ReadingTypeSheet: View {
                                         .foregroundStyle(s == script ? Color(.label) : Color(.label).opacity(0.75))
                                         .environment(\.layoutDirection, .rightToLeft)
                                     Eyebrow(s.displayName,
-                                            tint: s == script ? .brand : Color.secondary,
+                                            tint: s == script ? .brand : Palette.textSecondary,
                                             size: 13)
                                 }
                                 .frame(maxWidth: .infinity)
@@ -166,7 +163,7 @@ struct ReadingTypeSheet: View {
                     if showTransliteration {
                         Text("Huwal lazee ja‘ala lakumul arda zaloolan famshoo fee manaakibihaa")
                             .font(face.font(size: transliterationFontSize, italic: true, scales: false))
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Palette.textSecondary)
                     }
                     if showTranslation {
                         Text("It is He who made the earth tame for you — so walk among its slopes and eat of His provision.")
@@ -192,7 +189,7 @@ private struct TypeSlider: View {
         HStack(spacing: 14) {
             Text(label)
                 .font(.appSerif(14))
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Palette.textSecondary)
                 .frame(width: 82, alignment: .leading)
             Slider(value: $value, in: range, step: 1)
                 .tint(.brand)

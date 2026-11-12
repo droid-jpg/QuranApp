@@ -62,7 +62,6 @@ struct SettingsView: View {
                                  trailing: theme.displayName) {
                     ThemePicker(selection: $theme)
                         .padding(.top, 4)
-                    Footnote("The accent used across the app, the reader, and your widgets. \(theme.caption).")
                 }
 
                 // ── Reading ───────────────────────────────────────────────
@@ -91,7 +90,6 @@ struct SettingsView: View {
                         sample: "Bismi Allāhi r-raḥmāni r-raḥīm", italic: true
                     )
 
-                    Footnote("Applies to the surah reading view.")
                 }
 
                 // ── Translation ───────────────────────────────────────────
@@ -106,7 +104,6 @@ struct SettingsView: View {
                         options: Translation.translations(in: Translation.selected.language)
                             .map { .init($0.id, $0.name) }
                     )
-                    Footnote("Sets the translation shown beneath each ayah.")
                 }
 
                 // ── Reciter ───────────────────────────────────────────────
@@ -115,7 +112,6 @@ struct SettingsView: View {
                         title: "Voice", selection: $selectedReciterId,
                         options: Reciter.all.map { .init($0.id, $0.name) }
                     )
-                    Footnote("Changes apply when you next play an ayah.")
                 }
 
                 // ── Memorization cards ────────────────────────────────────
@@ -138,7 +134,6 @@ struct SettingsView: View {
                             sample: "Bismi Allāhi r-raḥmāni r-raḥīm", italic: true
                         )
                     }
-                    Footnote("What the ayah shows on review cards — Arabic, transliteration, or both — and their sizes.")
                 }
 
                 // ── Memorization ──────────────────────────────────────────
@@ -147,7 +142,6 @@ struct SettingsView: View {
                         title: "Fill-in-the-blank hint", selection: $fillBlankUseTransliteration,
                         options: [.init(false, "Translation"), .init(true, "Transliteration")]
                     )
-                    Footnote("What's shown beneath the ayah when you reveal a fill-in-the-blank card.")
                 }
 
                 // ── Memorization reminder ─────────────────────────────────
@@ -167,7 +161,6 @@ struct SettingsView: View {
                                 .onChange(of: memoReminderMinute) { rescheduleMemoReminder() }
                         }
                     }
-                    Footnote("A daily nudge to continue memorizing the ayah you're working on.")
                 }
 
                 // ── Prayer calculation ────────────────────────────────────
@@ -186,7 +179,6 @@ struct SettingsView: View {
                     )
                     .onChange(of: prayerAsrSchool) { prayerService.refetchForSettingsChange() }
 
-                    Footnote("The twilight angles and Asr method used to compute your local prayer times.")
                 }
 
                 // ── Prayer notifications ──────────────────────────────────
@@ -268,7 +260,7 @@ struct PrayerNotificationsSection: View {
 
                     if notifEnabled {
                         Hairline().padding(.vertical, 13)
-                        EditorialToggle(title: "Live Activity", caption: "10 min countdown",
+                        EditorialToggle(title: "Live Activity countdown",
                                         isOn: $liveActivityEnabled)
                             .onChange(of: liveActivityEnabled) { reschedule() }
 
@@ -291,7 +283,6 @@ struct PrayerNotificationsSection: View {
                         )
                         .onChange(of: notifPreReminder) { reschedule() }
 
-                        Footnote("Notifications use your local prayer times based on location.")
                     }
                 }
         .notificationsDeniedAlert(isPresented: $denied)
@@ -302,7 +293,7 @@ struct PrayerNotificationsSection: View {
         HStack(spacing: 11) {
             Image(systemName: PrayerIcons.names[name] ?? "clock")
                 .font(.label(13))
-                .foregroundStyle(binding.wrappedValue ? Color.brand : Color(.tertiaryLabel))
+                .foregroundStyle(binding.wrappedValue ? Color.brand : Palette.textSecondary)
                 .frame(width: 18)
             Text(name)
                 .font(.appSerif(16))
@@ -360,8 +351,8 @@ struct Footnote: View {
 
     var body: some View {
         Text(text)
-            .font(.appSerif(13.5, italic: true))
-            .foregroundStyle(Color.secondary)
+            .font(TypeScale.secondary)
+            .foregroundStyle(Palette.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 12)
@@ -406,7 +397,7 @@ private struct ThemePicker: View {
                             .font(.label(13, weight: theme == selection ? .bold : .semibold))
                             .foregroundStyle(theme == selection
                                              ? Color(.label)
-                                             : Color.secondary)
+                                             : Palette.textSecondary)
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())

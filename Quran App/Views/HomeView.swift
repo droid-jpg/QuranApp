@@ -196,11 +196,11 @@ private struct RecentSection: View {
 
     private func surah(_ number: Int) -> Surah? { surahs.first { $0.number == number } }
 
-    /// "Ayah 142", or "Ayahs 255–257, repeating".
+    /// "Ayah 142", or the repeat in the one status wording the mini player and
+    /// Now Playing use ("Repeating ayahs 255–257").
     private func subtitle(_ s: ListeningSession) -> String {
-        let r = s.repeatState
-        guard r.isOn else { return "Ayah \(s.ayah)" }
-        return r.isSingleAyah ? "Ayah \(r.from), repeating" : "Ayahs \(r.from)–\(r.to), repeating"
+        guard s.repeatState.isOn else { return "Ayah \(s.ayah)" }
+        return s.loopLabel
     }
 
     var body: some View {

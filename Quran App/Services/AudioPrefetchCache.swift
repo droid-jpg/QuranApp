@@ -47,6 +47,12 @@ final class AudioPrefetchCache {
         return FileManager.default.fileExists(atPath: local.path) ? local : nil
     }
 
+    /// Delete one cached file (a local URL this cache returned) that wouldn't play.
+    func evict(_ localURL: URL) {
+        guard localURL.path.hasPrefix(tempDir.path) else { return }
+        try? FileManager.default.removeItem(at: localURL)
+    }
+
     /// Evict all temp files (called when reciter changes or on startup if needed).
     func clearAll() {
         queue.async {

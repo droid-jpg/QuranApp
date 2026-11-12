@@ -78,7 +78,7 @@ struct EditorialToggle: View {
                 .foregroundStyle(Palette.textPrimary)
             if let caption {
                 Text("— \(caption)")
-                    .font(.appSerif(14, italic: true))
+                    .font(.appSerif(14))
                     .foregroundStyle(Palette.textSecondary)
             }
             Spacer(minLength: 8)
@@ -115,7 +115,7 @@ struct EditorialNavRow: View {
                         .foregroundStyle(Palette.textPrimary)
                     if let caption {
                         Text(caption)
-                            .font(.appSerif(13.5, italic: true))
+                            .font(.appSerif(14))
                             .foregroundStyle(Palette.textSecondary)
                             .multilineTextAlignment(.leading)
                     }

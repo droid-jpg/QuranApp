@@ -105,9 +105,10 @@ struct NamesFlashcardView: View {
                         .multilineTextAlignment(.center)
                         .environment(\.layoutDirection, .rightToLeft)
 
-                    Text("Tap to reveal")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                    // The card is the button; this is its label, not a hint.
+                    Text("Show meaning")
+                        .font(TypeScale.secondary.weight(.semibold))
+                        .foregroundStyle(.brand)
                 }
                 .frame(maxWidth: .infinity, maxHeight: 280)
                 .padding(32)
@@ -128,8 +129,8 @@ struct NamesFlashcardView: View {
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.primary)
                     Text("#\(name.id)")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: 280)
                 .padding(32)

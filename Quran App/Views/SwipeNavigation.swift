@@ -82,8 +82,8 @@ final class HorizontalSwipeRecognizer: UIGestureRecognizer {
 
     /// SwiftUI's own touch recognizer (behind buttons and tap gestures) begins
     /// at touch-down; it must not shut this one out, or no swipe could start
-    /// on a card or a row. Once this one begins it cancels the touch, so the
-    /// button under the finger doesn't fire.
+    /// on a card or a row. Once this one begins it cancels those recognizers
+    /// (`cancelTaps(under:)`), so the button under the finger doesn't fire.
     override func canBePrevented(by other: UIGestureRecognizer) -> Bool {
         other is UIPanGestureRecognizer ? super.canBePrevented(by: other) : false
     }
@@ -113,6 +113,7 @@ final class HorizontalSwipeRecognizer: UIGestureRecognizer {
             if abs(dx) >= abs(dy) * SwipeRule.dominance {
                 translation = dx
                 state = .began
+                cancelTaps(under: touch)
             } else {
                 state = .failed
             }
@@ -121,6 +122,24 @@ final class HorizontalSwipeRecognizer: UIGestureRecognizer {
             state = .changed
         default:
             break
+        }
+    }
+
+    /// A swipe has begun: every other recognizer tracking this finger (SwiftUI's
+    /// button and tap recognizers, which run alongside this one) is cancelled by
+    /// switching it off and on, so lifting the finger doesn't press the button
+    /// it started on. `cancelsTouchesInView` alone doesn't reach them. Scroll
+    /// views' pans and the navigation controller's Back pans are left alone:
+    /// they already wait for this one or own their own region.
+    private func cancelTaps(under touch: UITouch) {
+        for other in touch.gestureRecognizers ?? [] where other !== self {
+            if other is HorizontalSwipeRecognizer || other is UIScreenEdgePanGestureRecognizer { continue }
+            if other is UIPanGestureRecognizer, other.view is UIScrollView || other.delegate is EdgeBackDelegate
+                || other.view is UINavigationBar { continue }
+            if other.view?.next is UINavigationController { continue }
+            guard other.isEnabled else { continue }
+            other.isEnabled = false
+            other.isEnabled = true
         }
     }
 
@@ -427,9 +446,12 @@ struct ReaderSwipeInstaller: UIViewControllerRepresentable {
 
         private let recognizer = HorizontalSwipeRecognizer()
         private weak var page: UIViewController?
-        private let backDelegate = EdgeBackDelegate()
-        /// The pop recognizers' own delegates, put back when the reader goes.
-        private var saved: [(UIGestureRecognizer, UIGestureRecognizerDelegate?)] = []
+        /// Back from the left 32 pt (`BackStripPan`), on the navigation
+        /// controller's view while the reader is on screen.
+        private let backPan = BackStripPan()
+        private let edgeDelegate = EdgeBackDelegate()
+        /// The edge Back pan's own delegate, put back when the reader goes.
+        private var savedEdgeDelegate: (UIGestureRecognizer, UIGestureRecognizerDelegate?)?
 
         override func didMove(toParent parent: UIViewController?) {
             super.didMove(toParent: parent)
@@ -447,8 +469,11 @@ struct ReaderSwipeInstaller: UIViewControllerRepresentable {
             enableBack()
         }
 
-        override func viewWillDisappear(_ animated: Bool) {
-            super.viewWillDisappear(animated)
+        /// Not in `viewWillDisappear`: that runs as an interactive pop *starts*,
+        /// and removing the Back pan then cancels it mid-gesture and strands the
+        /// transition. A cancelled pop calls `viewDidAppear` again instead.
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
             restoreBack()
         }
 
@@ -472,22 +497,26 @@ struct ReaderSwipeInstaller: UIViewControllerRepresentable {
             screen.view.addGestureRecognizer(recognizer)
         }
 
+        /// With the system bar hidden, UIKit's own Back pans don't start 32 pt in:
+        /// the screen-edge pan starts only at the very edge (kept, with a delegate
+        /// that allows it while the bar is hidden), and the content-area pan not
+        /// at all. `BackStripPan` covers the strip and drives the same
+        /// interactive pop.
         private func enableBack() {
-            guard saved.isEmpty, let nav = pushed?.navigationController else { return }
-            backDelegate.nav = nav
-            var pops: [UIGestureRecognizer] = []
-            if let edge = nav.interactivePopGestureRecognizer { pops.append(edge) }
-            if let content = nav.interactiveContentPopGestureRecognizer { pops.append(content) }
-            for pop in pops {
-                saved.append((pop, pop.delegate))
-                pop.delegate = backDelegate
-                pop.isEnabled = true
+            guard savedEdgeDelegate == nil, let nav = pushed?.navigationController else { return }
+            edgeDelegate.nav = nav
+            if let edge = nav.interactivePopGestureRecognizer {
+                savedEdgeDelegate = (edge, edge.delegate)
+                backPan.install(on: nav, driver: edge.delegate)
+                edge.delegate = edgeDelegate
+                edge.isEnabled = true
             }
         }
 
         private func restoreBack() {
-            for (pop, delegate) in saved { pop.delegate = delegate }
-            saved = []
+            if let (edge, delegate) = savedEdgeDelegate { edge.delegate = delegate }
+            savedEdgeDelegate = nil
+            backPan.uninstall()
         }
 
         @objc private func handle(_ r: HorizontalSwipeRecognizer) {
@@ -526,20 +555,15 @@ struct ReaderSwipeInstaller: UIViewControllerRepresentable {
     }
 }
 
-/// Lets the navigation controller's Back gestures start only in the left 32 pt
-/// and only rightward, with the bar hidden too.
+/// The navigation controller's screen-edge Back pan, allowed with the bar hidden
+/// and only rightward.
 private final class EdgeBackDelegate: NSObject, UIGestureRecognizerDelegate {
     weak var nav: UINavigationController?
-
-    func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        guard let nav else { return false }
-        return touch.location(in: nav.view).x <= SwipeRule.backZone
-    }
 
     func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
         guard let nav, nav.viewControllers.count > 1, nav.transitionCoordinator == nil else { return false }
         if let pan = g as? UIPanGestureRecognizer {
-            // These pans ask at touch-down, before any travel; then the
+            // This pan asks at touch-down, before any travel; then the
             // velocity, if any, says which way. A leftward start is refused.
             var d = pan.translation(in: nav.view)
             if d == .zero { d = pan.velocity(in: nav.view) }
@@ -547,5 +571,70 @@ private final class EdgeBackDelegate: NSObject, UIGestureRecognizerDelegate {
             return d.x > 0 && d.x >= abs(d.y) * SwipeRule.dominance
         }
         return true
+    }
+}
+
+/// Back from a rightward swipe that starts in the left 32 pt of the reader
+/// (REDESIGN §3.0). A pan on the navigation controller's view whose action is
+/// UIKit's own interactive-pop handler, the object behind the edge Back pan,
+/// so the screen follows the finger and finishes or springs back exactly as
+/// the system Back does. Should that handler ever be missing, a committed
+/// swipe (`SwipeRule.commits`) pops with the standard animation instead.
+private final class BackStripPan: UIPanGestureRecognizer, UIGestureRecognizerDelegate {
+    private weak var nav: UINavigationController?
+    private weak var driver: NSObject?
+    private static let popAction = NSSelectorFromString("handleNavigationTransition:")
+
+    init() {
+        super.init(target: nil, action: nil)
+        maximumNumberOfTouches = 1
+        delegate = self
+    }
+
+    func install(on nav: UINavigationController, driver: AnyObject?) {
+        uninstall()
+        self.nav = nav
+        if let d = driver as? NSObject, d.responds(to: Self.popAction) {
+            self.driver = d
+            addTarget(d, action: Self.popAction)
+        } else {
+            addTarget(self, action: #selector(fallback))
+        }
+        nav.view.addGestureRecognizer(self)
+    }
+
+    func uninstall() {
+        if let d = driver { removeTarget(d, action: Self.popAction) }
+        removeTarget(self, action: #selector(fallback))
+        view?.removeGestureRecognizer(self)
+        driver = nil
+    }
+
+    @objc private func fallback() {
+        guard state == .ended, let nav, let width = view?.bounds.width else { return }
+        let t = translation(in: view).x
+        if SwipeRule.commits(translation: t, velocity: velocity(in: view).x, width: width) {
+            nav.popViewController(animated: true)
+        }
+    }
+
+    // Only touches that start in the strip.
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard let nav else { return false }
+        return touch.location(in: nav.view).x <= SwipeRule.backZone
+    }
+
+    // Only rightward, 2:1 horizontal, with somewhere to go back to.
+    func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+        guard let nav, nav.viewControllers.count > 1, nav.transitionCoordinator == nil else { return false }
+        let d = translation(in: nav.view)
+        return d.x > 0 && d.x >= abs(d.y) * SwipeRule.dominance
+    }
+
+    // The reader's vertical scroll waits a moment for this to decide, but only
+    // for touches in the strip (this one doesn't receive the others).
+    func gestureRecognizer(_ g: UIGestureRecognizer,
+                           shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+        other is UIPanGestureRecognizer && other.view is UIScrollView
     }
 }

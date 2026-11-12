@@ -267,7 +267,7 @@ private struct WordDefinitionSheet: View {
             if !detail.transliteration.isEmpty {
                 Text(detail.transliteration)
                     .font(.appSerif(19, italic: true))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textSecondary)
             }
 
             if !detail.translation.isEmpty {

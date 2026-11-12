@@ -12,7 +12,7 @@ struct BookmarksView: View {
                 EditorialEmptyState(
                     icon: "bookmark",
                     title: "No bookmarks yet.",
-                    message: "Long-press any ayah and choose Bookmark to save it here."
+                    message: "Ayahs you bookmark appear here."
                 )
             } else {
                 ScrollView {
@@ -42,7 +42,7 @@ struct BookmarksView: View {
             }
         }
         .navigationTitle("Bookmarks")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !store.bookmarks.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -93,7 +93,7 @@ private struct BookmarkRow: View {
                 Spacer(minLength: 8)
                 Text(bm.surahArabicName)
                     .font(.appArabic(15))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Palette.textSecondary)
             }
             .padding(.bottom, 13)
 
@@ -106,7 +106,7 @@ private struct BookmarkRow: View {
 
             Text(bm.translation)
                 .font(.appSerif(16))
-                .foregroundStyle(Color(.label).opacity(0.72))
+                .foregroundStyle(Palette.textPrimary)
                 .lineSpacing(3)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)

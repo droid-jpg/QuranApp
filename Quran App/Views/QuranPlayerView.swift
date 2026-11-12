@@ -217,9 +217,10 @@ private struct NowPlayingContent: View {
         Reciter.all.first { $0.id == reciterId }?.name ?? Reciter.selected.name
     }
 
-    /// Line 2: where playback is, or the word repeat while one runs.
+    /// Line 2: where playback is; while a repeat or word repeat runs, the same
+    /// status line the mini player and Today show.
     private var detailLine: String {
-        if wordRepeating { return audioService.statusText }
+        if wordRepeating || (repeatState?.isOn ?? false) { return engine.statusText(session: session) }
         return "Ayah \(ayah) of \(ayahCount) · \(reciterName)"
     }
 

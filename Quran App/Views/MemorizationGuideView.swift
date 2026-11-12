@@ -15,6 +15,7 @@ struct MemorizationGuideView: View {
                 VStack(alignment: .leading, spacing: 30) {
                     hero
                     addingSection
+                    practiceSection
                     goalsSection
                     reviewSection
                     gradesSection
@@ -26,7 +27,7 @@ struct MemorizationGuideView: View {
                 .padding(.bottom, 16)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("How It Works")
+            .navigationTitle("How memorization works")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -54,9 +55,9 @@ struct MemorizationGuideView: View {
             Text("Memorize, the smart way")
                 .font(.appSerif(23, weight: .medium))
                 .multilineTextAlignment(.center)
-            Text("Add ayahs you want to learn and the app schedules them with spaced repetition — resurfacing each one right before you'd forget, so it sticks with far less effort.")
+            Text("Learn one ayah at a time with Practice, then keep what you've learned with Review, which brings each ayah back just before you'd forget it.")
                 .font(.appSerif(15))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -69,12 +70,31 @@ struct MemorizationGuideView: View {
     private var addingSection: some View {
         GuideSection(title: "Adding ayahs", systemImage: "plus.circle.fill") {
             VStack(alignment: .leading, spacing: 16) {
-                GuideStep(number: 1, title: "Open any surah",
-                          detail: "Browse to a surah from the Quran tab and start reading.")
-                GuideStep(number: 2, title: "Add what you want to learn",
-                          detail: "Tap the + beside an ayah to enrol just that ayah — or choose “Memorize Surah” from the ⋯ menu to add the whole surah at once.")
-                GuideStep(number: 3, title: "Review here, daily",
-                          detail: "Come back to this screen and tap Review. A few minutes a day is all it takes.")
+                GuideStep(number: 1, title: "Open a surah",
+                          detail: "From the Quran tab, open the surah you want to learn.")
+                GuideStep(number: 2, title: "Tap an ayah's number, then Add to memorization",
+                          detail: "In a surah you haven't started, this makes it the surah you're practising, from that ayah. After that, each ayah you add goes into Review.")
+                GuideStep(number: 3, title: "Or add the whole surah",
+                          detail: "In the reader's ⋯ menu, choose Set up flashcards, then pick a goal.")
+                GuideStep(number: 4, title: "Come back to Memorization",
+                          detail: "Practice is the ayah you're learning; Review is what's due today.")
+            }
+        }
+    }
+
+    // MARK: Practice
+
+    private var practiceSection: some View {
+        GuideSection(title: "Practice", systemImage: "repeat") {
+            VStack(alignment: .leading, spacing: 12) {
+                GuideRow(icon: "repeat", title: "Repeat this ayah",
+                         detail: "Plays the ayah over and over until you stop it.")
+                GuideRow(icon: "ear", title: "Listen, then recite",
+                         detail: "Plays the ayah, then leaves a silence as long as the ayah for you to recite it back.")
+                GuideRow(icon: "link", title: "Join with previous 2",
+                         detail: "Plays this ayah with the two before it, so the ayahs join up.")
+                GuideRow(icon: "checkmark.circle", title: "Mark ayah learned",
+                         detail: "Moves Practice on to the next ayah. When the surah is done, you can review it with meaning flashcards.")
             }
         }
     }
@@ -86,7 +106,7 @@ struct MemorizationGuideView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Tell the app what you're memorizing for and it tailors how each ayah is tested. You can change a surah's goal anytime.")
                     .font(TypeScale.secondary)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(MemorizationGoal.allCases) { goal in
                     GuideRow(icon: goal.icon, title: goal.title, detail: goal.caption)
@@ -102,7 +122,7 @@ struct MemorizationGuideView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Each ayah has its own schedule. When one is due, it appears in your review queue. Recall it, then rate how it went — the app stretches or shrinks the gap until the next review based on your answer.")
                     .font(.appSerif(15))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     Image(systemName: "checkmark.seal.fill")
@@ -110,7 +130,7 @@ struct MemorizationGuideView: View {
                         .foregroundStyle(.green)
                     Text("Once you've recalled an ayah comfortably for about three weeks, it's counted as **Mastered**.")
                         .font(TypeScale.secondary)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(12)
@@ -139,7 +159,7 @@ struct MemorizationGuideView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Your goal decides which of these show up. Each due ayah is tested with one, picked at random to keep you on your toes.")
                     .font(TypeScale.secondary)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 GuideRow(icon: ReviewMode.flashcard.icon, title: ReviewMode.flashcard.title,
                          detail: "See the Arabic, recall what it means.")
@@ -158,11 +178,11 @@ struct MemorizationGuideView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Two ways to track progress — use either or both:")
                     .font(TypeScale.secondary)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textSecondary)
                 ConceptCard(
                     icon: "hand.point.up.left.fill", tint: .orange,
                     title: "Mark a surah",
-                    detail: "A quick self-assessment — set a surah to Learning or Memorized from its status button in this hub, even for surahs you're not reviewing."
+                    detail: "A quick self-assessment: set a surah to Not started, Learning or Memorized with the status button on its row in Memorization. The list is grouped by status."
                 )
                 ConceptCard(
                     icon: "graduationcap.fill", tint: .brand,
@@ -182,7 +202,7 @@ struct MemorizationGuideView: View {
                 .foregroundStyle(.yellow)
             Text("Short and daily beats long and rare. Five honest minutes a day will out-memorize an hour once a week — the spacing is doing the heavy lifting.")
                 .font(TypeScale.secondary)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
@@ -230,7 +250,7 @@ private struct GuideStep: View {
                 Text(title).font(.subheadline.weight(.semibold))
                 Text(detail)
                     .font(TypeScale.secondary)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -256,7 +276,7 @@ private struct GuideRow: View {
                 Text(title).font(.subheadline.weight(.semibold))
                 Text(detail)
                     .font(TypeScale.secondary)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -278,7 +298,7 @@ private struct GuideGradeRow: View {
                 .background(grade.tint.opacity(0.15), in: Rectangle())
             Text(grade.guideDetail)
                 .font(TypeScale.secondary)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -303,7 +323,7 @@ private struct ConceptCard: View {
                 Text(title).font(.subheadline.weight(.semibold))
                 Text(detail)
                     .font(TypeScale.secondary)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

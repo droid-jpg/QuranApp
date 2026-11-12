@@ -43,28 +43,29 @@ struct IslamicCalendarView: View {
             case .list:  AgendaList(kind: selectedKind, now: now)
             }
         }
-        .navigationTitle("Calendar")
+        .navigationTitle("Islamic Calendar")
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(ticker) { now = $0 }
     }
 
     // MARK: - Kind filter
 
+    /// Wraps onto a second line rather than clipping at the right edge (§5: no
+    /// clipped chip rows).
     private var kindFilterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                EventKindChip(label: "All", icon: "calendar", color: .brand,
-                              isSelected: selectedKind == nil) { selectedKind = nil }
-                ForEach([IslamicEventKind.holiday, .fastingMonth, .fastingDay, .recommended],
-                        id: \.rawValue) { kind in
-                    EventKindChip(label: kind.label, icon: kind.icon, color: kind.color,
-                                  isSelected: selectedKind == kind) {
-                        selectedKind = selectedKind == kind ? nil : kind
-                    }
+        FlowLayout(spacing: 8, lineSpacing: 8) {
+            EventKindChip(label: "All", icon: "calendar", color: .brand,
+                          isSelected: selectedKind == nil) { selectedKind = nil }
+            ForEach([IslamicEventKind.holiday, .fastingMonth, .fastingDay, .recommended],
+                    id: \.rawValue) { kind in
+                EventKindChip(label: kind.label, icon: kind.icon, color: kind.color,
+                              isSelected: selectedKind == kind) {
+                    selectedKind = selectedKind == kind ? nil : kind
                 }
             }
-            .padding(.vertical, 1)
         }
+        .padding(.vertical, 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Month
@@ -371,8 +372,8 @@ private struct DayEventsSection: View {
 
             if occurrences.isEmpty {
                 Text("Nothing marked on this day.")
-                    .font(.appSerif(16, italic: true))
-                    .foregroundStyle(Color.secondary)
+                    .font(.appSerif(16))
+                    .foregroundStyle(Palette.textSecondary)
                     .padding(.top, 14)
             } else {
                 ForEach(Array(occurrences.enumerated()), id: \.element.id) { index, occ in
@@ -480,12 +481,15 @@ private struct EventRow: View {
                     .padding(.top, 3)
 
                 VStack(alignment: .leading, spacing: 0) {
+                    // The name wraps; the kind label keeps its full width.
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(event.name)
                             .font(.appSerif(18, weight: .medium))
                             .foregroundStyle(Color(.label))
+                            .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 6)
                         MetaText(event.kind.label, tint: event.kind.color, size: 13)
+                            .fixedSize()
                     }
 
                     Text(event.arabicName)
@@ -525,21 +529,31 @@ private struct EventRow: View {
         let isActive = start <= now && now <= endOfDay(end)
         let isPast = endOfDay(end) < now
 
-        HStack(spacing: 7) {
-            if occ.durationDays() > 1 {
-                MetaText("\(Self.rangeFmt.string(from: start)) – \(Self.dayFmt.string(from: end))", size: 13)
-                MetaText("· \(occ.durationDays()) days", tint: Color(.label).opacity(0.32), size: 13)
-            } else {
-                MetaText(Self.dayFmt.string(from: start), size: 13)
+        // Line 1: the dates (wrapping if they must) and the countdown, which
+        // never truncates. Line 2: the recurrence note, in full.
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                MetaText(dateText(start: start, end: end), size: 13)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                status(isActive: isActive, isPast: isPast, start: start)
+                    .fixedSize()
             }
-
             if let note = event.recurrence.note {
-                MetaText("· \(note)", tint: Color(.label).opacity(0.32), size: 13)
-                    .lineLimit(1)
+                MetaText(note, size: 13)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
 
-            Spacer(minLength: 4)
+    private func dateText(start: Date, end: Date) -> String {
+        guard occ.durationDays() > 1 else { return Self.dayFmt.string(from: start) }
+        return "\(Self.rangeFmt.string(from: start)) – \(Self.dayFmt.string(from: end)) · \(occ.durationDays()) days"
+    }
 
+    @ViewBuilder
+    private func status(isActive: Bool, isPast: Bool, start: Date) -> some View {
+        Group {
             if isActive {
                 Text("Now")
                     .font(.label(13, weight: .bold))
@@ -547,7 +561,7 @@ private struct EventRow: View {
                     .padding(.horizontal, 6).padding(.vertical, 3)
                     .background(event.kind.color)
             } else if isPast {
-                MetaText("Passed", tint: Color(.tertiaryLabel), size: 13)
+                MetaText("Passed", size: 13)
             } else {
                 MetaText(countdown(to: start), tint: event.kind.color, size: 13)
             }
