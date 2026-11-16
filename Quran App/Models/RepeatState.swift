@@ -83,9 +83,20 @@ extension RepeatState {
         return max(1, end - 2)...end
     }
 
-    static func repeatThisAyah(surah: Int, ayah: Int) -> RepeatState {
-        RepeatState(isOn: true, surah: surah, from: ayah, to: ayah, times: .infinite, pause: .none)
+    static func repeatThisAyah(surah: Int, ayah: Int, times: Times = .infinite) -> RepeatState {
+        RepeatState(isOn: true, surah: surah, from: ayah, to: ayah, times: times, pause: .none)
     }
+
+    /// The quick loop counts offered beside the one-tap Repeat (tap = ∞).
+    static let quickTimes: [Times] = [.infinite, .three, .five]
+}
+
+extension RepeatState.Times {
+    /// Menu wording for a quick loop: "Loop forever", "Loop 3 times".
+    var loopLabel: String { count.map { "Loop \($0) times" } ?? "Loop forever" }
+}
+
+extension RepeatState {
 
     static func listenThenRecite(surah: Int, ayah: Int) -> RepeatState {
         RepeatState(isOn: true, surah: surah, from: ayah, to: ayah, times: .infinite, pause: .ayahLength)
@@ -177,14 +188,21 @@ extension RepeatState {
         return s
     }
 
-    /// Repeat switched on. Keeps an existing range for this surah; with none,
-    /// repeats the current ayah (or ayah 1) forever.
+    /// Repeat switched on: it starts as just the current ayah, so looping the
+    /// ayah you are on is one switch, never a range to pick. A range already on
+    /// in this surah is kept. With no current ayah, an old range for this surah
+    /// comes back; failing that, ayah 1. A fresh single ayah always loops ∞
+    /// (Times in the sheet, or the quick ×3 / ×5, change it).
     func switchedOn(surah: Int, currentAyah: Int?) -> RepeatState {
         var s = self
         if s.surah != surah {
             s.surah = surah
             s.from = currentAyah ?? 1
             s.to = s.from
+            s.times = .infinite
+        } else if !s.isOn, let a = currentAyah {
+            s.from = a
+            s.to = a
             s.times = .infinite
         }
         s.isOn = true

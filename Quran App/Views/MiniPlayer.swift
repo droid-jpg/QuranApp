@@ -246,9 +246,9 @@ private struct MiniPlayer: View {
             .accessibilityHint(failed ? "Retries playback" : "Opens Now Playing")
             .accessibilityAddTraits(.isButton)
 
-            Button {
-                Haptics.tap()
-                ui.openRepeat(for: audioService)
+            // Tap opens the Repeat sheet; press and hold loops this ayah ∞ / ×3 / ×5.
+            Menu {
+                QuickLoopMenuItems(engine: engine, ui: ui)
             } label: {
                 ZStack {
                     Circle()
@@ -261,6 +261,9 @@ private struct MiniPlayer: View {
                 }
                 .frame(width: MinSize.hitTarget, height: MinSize.hitTarget)
                 .contentShape(Rectangle())
+            } primaryAction: {
+                Haptics.tap()
+                ui.openRepeat(for: audioService)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Repeat")
@@ -346,6 +349,26 @@ struct NowPlayingSlot: View {
             NowPlayingView(ui: ui)
                 .zIndex(10)
         }
+    }
+}
+
+// MARK: - Quick loop menu
+
+/// The Repeat button's press-and-hold menu (mini player and Now Playing):
+/// loop the current ayah forever, 3 or 5 times, or open the full sheet.
+struct QuickLoopMenuItems: View {
+    let engine: PlayerEngine
+    let ui: PlayerUI
+
+    var body: some View {
+        ForEach(RepeatState.quickTimes) { t in
+            Button(t.loopLabel) {
+                Haptics.selection()
+                engine.loopCurrentAyah(times: t)
+            }
+        }
+        Divider()
+        Button("Repeat options…") { ui.openRepeat(for: engine.audioService) }
     }
 }
 

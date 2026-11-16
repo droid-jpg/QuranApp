@@ -120,9 +120,25 @@ struct AyahActionsSheet: View {
                 }
             }
 
-            actionButton(repeatAction.label,
-                         icon: repeatAction == .stop ? "xmark.circle" : "repeat") {
-                applyRepeat(repeatAction)
+            if repeatAction == .repeatAyah {
+                // Tap loops this ayah forever; press and hold for ×3 / ×5.
+                Menu {
+                    ForEach(RepeatState.quickTimes) { t in
+                        Button(t.loopLabel) { Haptics.tap(); applyRepeat(.repeatAyah, times: t) }
+                    }
+                } label: {
+                    actionLabel(repeatAction.label, icon: "repeat", on: false)
+                } primaryAction: {
+                    Haptics.tap()
+                    applyRepeat(.repeatAyah)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Loops this ayah. Hold for 3 or 5 times.")
+            } else {
+                actionButton(repeatAction.label,
+                             icon: repeatAction == .stop ? "xmark.circle" : "repeat") {
+                    applyRepeat(repeatAction)
+                }
             }
 
             actionButton(isBookmarked ? "Bookmarked" : "Bookmark",
@@ -187,8 +203,9 @@ struct AyahActionsSheet: View {
     /// Repeat starts this ayah (or collapses a range to it) and plays; extending
     /// keeps playing where it is when this surah is playing, else starts the
     /// range; Stop repeating turns repeat off and lets playback carry on.
-    private func applyRepeat(_ action: RepeatState.AyahAction) {
-        let new = audioService.repeatState.applying(action, surah: surah.number, ayah: n)
+    private func applyRepeat(_ action: RepeatState.AyahAction, times: RepeatState.Times? = nil) {
+        var new = audioService.repeatState.applying(action, surah: surah.number, ayah: n)
+        if let times { new.times = times }
         let playingHere = audioService.isPlaying && audioService.currentSurah == surah.number
         closeThen { [audioService, surah] in
             let extending = action == .repeatToHere || action == .repeatFromHere

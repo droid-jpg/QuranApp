@@ -74,7 +74,9 @@ struct RepeatSheet: View {
             return RepeatState(isOn: false, surah: surah.number, from: p, to: p, times: .infinite,
                                pause: s.surah == surah.number ? s.pause : .none)
         }
-        if s.surah == surah.number { return s.clamped(ayahCount: total) }
+        if s.isOn && s.surah == surah.number { return s.clamped(ayahCount: total) }
+        // Off: show what the switch would give (the current ayah), not the
+        // last range used.
         var fresh = s.switchedOn(surah: surah.number, currentAyah: liveAyah).clamped(ayahCount: total)
         fresh.isOn = false
         return fresh

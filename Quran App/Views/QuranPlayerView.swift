@@ -92,6 +92,20 @@ struct PlayerEngine {
         return s
     }
 
+    /// Loops the ayah in the player (or the saved session's) `times` times — the
+    /// Repeat button's press-and-hold choices. Keeps this surah's pause.
+    func loopCurrentAyah(times: RepeatState.Times) {
+        let surah: Int, ayah: Int
+        if loaded, let a = audioService.currentAyah {
+            surah = audioService.currentSurah; ayah = a
+        } else if let session = restoredSession {
+            surah = session.surah; ayah = session.ayah
+        } else { return }
+        var s = RepeatState.repeatThisAyah(surah: surah, ayah: ayah, times: times)
+        if audioService.repeatState.surah == surah { s.pause = audioService.repeatState.pause }
+        audioService.setRepeat(s)
+    }
+
     /// The surah in the player, or the saved session's.
     var playerSurahNumber: Int? {
         if audioService.currentAyah != nil, audioService.currentSurah > 0 { return audioService.currentSurah }
@@ -462,11 +476,14 @@ private struct NowPlayingContent: View {
         let repeatValue = engine.repeatSummary(session: session)
         let rate = audioService.playbackRate
         return HStack(spacing: Spacing.sm) {
-            Button {
-                Haptics.tap()
-                ui.openRepeat(for: audioService)
+            // Tap opens the Repeat sheet; press and hold loops this ayah ∞ / ×3 / ×5.
+            Menu {
+                QuickLoopMenuItems(engine: engine, ui: ui)
             } label: {
                 OptionLabel(icon: "repeat", title: "Repeat", value: repeatValue, on: repeating)
+            } primaryAction: {
+                Haptics.tap()
+                ui.openRepeat(for: audioService)
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
