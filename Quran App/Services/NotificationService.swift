@@ -17,8 +17,7 @@ class NotificationService {
     enum Permission { case granted, denied, declined }
 
     /// Asks only when it has never been asked; answers from the stored choice
-    /// otherwise. Call it when the user turns something on, never at launch, and
-    /// turn the control back off on `.denied`.
+    /// otherwise. Call it when the user turns something on, never at launch.
     func ensurePermission() async -> Permission {
         let center = UNUserNotificationCenter.current()
         switch await center.notificationSettings().authorizationStatus {
@@ -31,114 +30,42 @@ class NotificationService {
         }
     }
 
-    func scheduleIfEnabled(for times: PrayerTimes) {
+    /// Replaces every pending prayer notification with one-off notifications at the
+    /// real times of the coming days. (They used to repeat daily at the first day's
+    /// clock times, which drifted as the days got longer or shorter.)
+    func schedule(days: [PrayerTimes]) {
         let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests()
 
-        // Remove ALL possible prayer + event notification IDs so stale ones never linger.
-        // "Islamic Midnight" and "IslamicMidnight" cover old IDs from previous app versions.
-        let allPossibleNames = [
-            "Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha",
-            "Midnight", "Islamic Midnight", "IslamicMidnight"
-        ]
-        let allIds = allPossibleNames.flatMap { ["prayer_\($0)_at", "prayer_\($0)_pre"] }
-        center.removePendingNotificationRequests(withIdentifiers: allIds)
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: "notifEnabled") else { return }
+        let preMinutes = defaults.object(forKey: "notifPreReminder") as? Int ?? 10
+        let now = Date()
 
-        guard UserDefaults.standard.bool(forKey: "notifEnabled") else { return }
-
-        let preMin = UserDefaults.standard.object(forKey: "notifPreReminder") as? Int ?? 10
-
-        // Informational entries — friendlier copy, no "Prayer" suffix
-        let infoNames: Set<String> = ["Sunrise", "Midnight"]
-
-        for (name, date) in times.named {
-            guard UserDefaults.standard.object(forKey: "notif\(name)") as? Bool != false else { continue }
-
-            let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
-
-            if infoNames.contains(name) {
-                // At-time notification
-                let atBody = name == "Sunrise" ? "It's now sunrise" : "It's now midnight"
-                addDaily(id: "prayer_\(name)_at",
-                         title: name,
-                         body: atBody,
-                         comps: comps)
-
-                // Pre-reminder notification
-                if preMin > 0 {
-                    let earlier = date.addingTimeInterval(-Double(preMin) * 60)
-                    let preComps = Calendar.current.dateComponents([.hour, .minute], from: earlier)
-                    let preBody = name == "Sunrise"
-                        ? "Sunrise in \(preMin) minutes"
-                        : "Midnight in \(preMin) minutes"
-                    addDaily(id: "prayer_\(name)_pre",
-                             title: "\(name) in \(preMin) min",
-                             body: preBody,
-                             comps: preComps)
-                }
-            } else {
-                // Canonical prayer
-                addDaily(id: "prayer_\(name)_at",
-                         title: "\(name) Prayer",
-                         body: "Time for \(name) prayer",
-                         comps: comps)
-
-                if preMin > 0 {
-                    let earlier = date.addingTimeInterval(-Double(preMin) * 60)
-                    let preComps = Calendar.current.dateComponents([.hour, .minute], from: earlier)
-                    addDaily(id: "prayer_\(name)_pre",
-                             title: "\(name) in \(preMin) min",
-                             body: "\(name) prayer begins in \(preMin) minutes",
-                             comps: preComps)
+        var requests: [(date: Date, title: String, body: String)] = []
+        for day in days {
+            for (name, date) in day.named where defaults.object(forKey: "notif\(name)") as? Bool != false {
+                let isPrayer = name != "Sunrise" && name != "Midnight"
+                requests.append((date, isPrayer ? "\(name) Prayer" : name,
+                                 isPrayer ? "Time for \(name) prayer" : "It's now \(name.lowercased())"))
+                if preMinutes > 0 {
+                    requests.append((date.addingTimeInterval(-Double(preMinutes) * 60),
+                                     "\(name) in \(preMinutes) min",
+                                     isPrayer ? "\(name) prayer begins in \(preMinutes) minutes"
+                                              : "\(name) in \(preMinutes) minutes"))
                 }
             }
         }
-    }
 
-    // MARK: - Daily memorization reminder
-
-    /// A single daily nudge to keep the hifz habit going, at a user-chosen time and
-    /// independent of prayer times. The body is personalized from the current
-    /// memorization target (re-read each time this is called), so scheduling it at
-    /// launch keeps it current.
-    func scheduleMemorizationReminder() {
-        let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: ["memorization_daily"])
-
-        let ud = UserDefaults.standard
-        guard ud.bool(forKey: "memoReminderEnabled") else { return }
-
-        let hour   = ud.object(forKey: "memoReminderHour")   as? Int ?? 19
-        let minute = ud.object(forKey: "memoReminderMinute") as? Int ?? 0
-        var comps = DateComponents(); comps.hour = hour; comps.minute = minute
-
-        let content = UNMutableNotificationContent()
-        content.title = "Time to memorize"
-        if let data = UserDefaults(suiteName: sharedAppGroup)?.data(forKey: "quran_hifz_target_v1"),
-           let t = try? JSONDecoder().decode(MemorizationTarget.self, from: data) {
-            content.body = t.isComplete
-                ? "Review \(t.surahName) with meaning flashcards to lock it in."
-                : "Continue \(t.surahName) — ayah \(t.workingAyah). Keep your streak going."
-        } else {
-            content.body = "Pick an ayah and start memorizing. Small daily reps add up."
+        // The system keeps at most 64 pending requests; the soonest ones win.
+        for (index, request) in requests.filter({ $0.date > now }).sorted(by: { $0.date < $1.date }).prefix(60).enumerated() {
+            let content = UNMutableNotificationContent()
+            content.title = request.title
+            content.body = request.body
+            content.sound = .default
+            let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: request.date)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+            center.add(UNNotificationRequest(identifier: "prayer_\(index)", content: content, trigger: trigger))
         }
-        content.sound = .default
-
-        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
-        center.add(UNNotificationRequest(identifier: "memorization_daily", content: content, trigger: trigger))
     }
-
-    private func addDaily(id: String, title: String, body: String, comps: DateComponents) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body  = body
-        content.sound = .default
-        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
-        UNUserNotificationCenter.current().add(
-            UNNotificationRequest(identifier: id, content: content, trigger: trigger)
-        )
-    }
-}
-
-enum PrayerName: String, CaseIterable {
-    case fajr = "Fajr", dhuhr = "Dhuhr", asr = "Asr", maghrib = "Maghrib", isha = "Isha"
 }

@@ -53,14 +53,6 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		6E3544B5EF3A4C1D95E6CBBE /* Exceptions for "Quran App" folder in "QuranWidgetExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Models/AppTheme.swift,
-				Models/PrayerCountdownAttributes.swift,
-			);
-			target = C4EBA6992FAD446D004C898D /* QuranWidgetExtension */;
-		};
 		C4032F112FAC9FFF005ED3EA /* Exceptions for "Quran App" folder in "Quran App" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -82,7 +74,6 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				C4032F112FAC9FFF005ED3EA /* Exceptions for "Quran App" folder in "Quran App" target */,
-				6E3544B5EF3A4C1D95E6CBBE /* Exceptions for "Quran App" folder in "QuranWidgetExtension" target */,
 			);
 			path = "Quran App";
 			sourceTree = "<group>";

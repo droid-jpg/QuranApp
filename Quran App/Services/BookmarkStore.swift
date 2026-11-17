@@ -18,11 +18,6 @@ class BookmarkStore: ObservableObject {
 
     init() {
         load()
-        NotificationCenter.default.addObserver(
-            forName: CloudSync.didPull, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.load()
-        }
     }
 
     func isBookmarked(surah: Int, ayah: Int) -> Bool {

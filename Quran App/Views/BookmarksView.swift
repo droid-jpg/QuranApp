@@ -21,7 +21,7 @@ struct BookmarksView: View {
                             if index > 0 {
                                 Hairline().padding(.vertical, 22)
                             }
-                            NavigationLink(destination: destination(for: bm)) {
+                            NavigationLink(value: Route.reader(surah: bm.surahNumber, ayah: bm.ayahNumber)) {
                                 BookmarkRow(bm: bm)
                             }
                             .buttonStyle(CardButtonStyle(scale: 0.985))
@@ -55,28 +55,6 @@ struct BookmarksView: View {
             Button("Clear", role: .destructive) { store.clearAll() }
             Button("Cancel", role: .cancel) {}
         }
-    }
-
-    /// Prefer the full registry so swiping between surahs works; fall back to a
-    /// stub surah when it hasn't loaded yet.
-    private func destination(for bm: BookmarkedAyah) -> AnyView {
-        let allSurahs = SurahRegistry.shared.surahs
-        guard !allSurahs.isEmpty else {
-            // The reader is always the pager now (it owns the bar, the player and
-            // the menu) — a single-surah pager stands in until the registry loads.
-            let stub = Surah(
-                number: bm.surahNumber,
-                name: bm.surahArabicName,
-                englishName: bm.surahName,
-                englishNameTranslation: "",
-                numberOfAyahs: 0,
-                revelationType: ""
-            )
-            return AnyView(SurahPageView(surahs: [stub], startIndex: 0,
-                                         initialAyah: bm.ayahNumber))
-        }
-        let idx = allSurahs.firstIndex { $0.number == bm.surahNumber } ?? 0
-        return AnyView(SurahPageView(surahs: allSurahs, startIndex: idx, initialAyah: bm.ayahNumber))
     }
 }
 

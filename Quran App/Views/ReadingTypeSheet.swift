@@ -15,7 +15,6 @@ struct ReadingTypeSheet: View {
     @AppStorage("transliterationFontSize") private var transliterationFontSize: Double = 13
     @AppStorage("showTranslation")     private var showTranslation = true
     @AppStorage("showTransliteration") private var showTransliteration = true
-    @AppStorage("immersiveReading")    private var immersiveReading = false
 
     private var face: ReadingFace { ReadingFace(rawValue: readingFace) ?? .newYork }
     private var script: ArabicScript { ArabicScript(rawValue: arabicScript) ?? .system }
@@ -109,8 +108,6 @@ struct ReadingTypeSheet: View {
                     ToggleRow(title: "Show translation", isOn: $showTranslation)
                     Hairline().padding(.vertical, 14)
                     ToggleRow(title: "Show transliteration", isOn: $showTransliteration)
-                    Hairline().padding(.vertical, 14)
-                    ToggleRow(title: "Hide controls while reading", isOn: $immersiveReading)
 
                     // ── Live specimen ─────────────────────────────────────
                     Hairline().padding(.top, 24).padding(.bottom, 18)

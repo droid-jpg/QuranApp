@@ -13,3 +13,5 @@ node_modules/
 .vercel/
 # Local tool state
 .claude/
+.build-dd/
+.build.sh

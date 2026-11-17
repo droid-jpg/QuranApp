@@ -272,3 +272,16 @@ struct AudioSpeakButton: View {
     NamesFlashcardView()
         .environmentObject(NamesStore())
 }
+
+/// When a drag on the flashcard counts as a swipe to the next card.
+private enum SwipeRule {
+    static let activation: CGFloat = 12
+    static let dominance: CGFloat = 2
+
+    static func commits(translation: CGFloat, velocity: CGFloat, width: CGFloat) -> Bool {
+        guard translation != 0, width > 0 else { return false }
+        let along = velocity * (translation > 0 ? 1 : -1)
+        if along >= 500 { return true }
+        return abs(translation) >= width * 0.4 && along > -500
+    }
+}

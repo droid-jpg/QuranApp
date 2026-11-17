@@ -20,11 +20,6 @@ class NamesStore: ObservableObject {
 
     init() {
         load()
-        NotificationCenter.default.addObserver(
-            forName: CloudSync.didPull, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.load()
-        }
     }
 
     func status(for id: Int) -> NameStatus { statuses[id] ?? .notStarted }

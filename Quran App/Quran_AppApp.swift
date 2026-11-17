@@ -1,288 +1,94 @@
 import SwiftUI
 import UIKit
-import WidgetKit
 
-/// Tab identity, held by the scene rather than by the TabView, so a theme change
-/// (which rebuilds the TabView) doesn't bounce the user back to Home.
-enum AppTab: String, Hashable, CaseIterable, Identifiable {
-    case home, quran, more
-
-    var id: String { rawValue }
-
-    /// The visible label, and the accessibility label.
-    var title: String {
-        switch self {
-        case .home:  "Today"
-        case .quran: "Quran"
-        case .more:  "More"
-        }
-    }
-
-    var accessibilityName: String { title }
-
-    var symbol: String {
-        switch self {
-        case .home:  "sun.max"
-        case .quran: "book"
-        case .more:  "ellipsis"
-        }
-    }
+extension Notification.Name {
+    /// Posted when a reader leaves the screen.
+    static let readerDidClose = Notification.Name("readerDidClose")
 }
 
 @main
 struct QuranAppApp: App {
-    /// `@State`, not `@StateObject`: the root must not observe the player, or
-    /// every ayah advance and play/pause would re-evaluate the scene and the
-    /// TabView. The views that draw playback state observe it themselves.
-    @State private var audioService             = AudioService()
-    /// Now Playing / Repeat sheet state, likewise held without observing it.
-    @State private var playerUI                 = PlayerUI()
-    @StateObject private var memorizationStore  = MemorizationStore()
-    @StateObject private var srStore            = MemorizationSRStore()
-    @StateObject private var targetStore        = MemorizationTargetStore()
-    @StateObject private var prayerTimesService = PrayerTimesService()
-    @StateObject private var namesStore         = NamesStore()
-    @StateObject private var bookmarkStore      = BookmarkStore()
+    // Held with `@State` and passed down through the environment. The scene itself
+    // reads none of their properties, so playback never re-evaluates it.
+    @State private var player = Player()
+    @State private var downloads = Downloads()
+    @State private var router = AppRouter()
+    @StateObject private var prayerTimes = PrayerTimesService()
+    @StateObject private var namesStore = NamesStore()
+    @StateObject private var bookmarks = BookmarkStore()
     @AppStorage("colorSchemePreference") private var colorSchemeRaw = "system"
     @AppStorage("didOnboard") private var didOnboard = false
+    @AppStorage("selectedReciterId") private var reciterId = Reciter.all[0].id
     @Environment(\.scenePhase) private var scenePhase
-    @State private var showSplash = true
-    @State private var showOnboarding = false
-    @State private var selectedTab: AppTab = .home
-    /// Bumped when the colour theme changes. `Color.brand` is computed, so the
-    /// whole tree has to be rebuilt for the new accent to reach views that
-    /// weren't otherwise going to re-render. Tab selection and the More tab's
-    /// navigation path live outside the rebuilt subtree, so the user keeps their
-    /// place — including the Settings screen they changed the theme from.
+    /// Bumped when the accent or the reading face changes. Both are read through
+    /// computed statics (`Color.brand`, `Font.appSerif`), so the tree is rebuilt for
+    /// the change to reach every view. The router lives outside it, so the tab and
+    /// each tab's navigation stack survive the rebuild.
     @State private var themeEpoch = 0
+    /// A change of reading face that arrived while a reader was open. The reader
+    /// repaints itself; rebuilding the tree under it would lose its place, so the
+    /// rebuild waits until it closes.
+    @State private var repaintWhenReaderCloses = false
 
     init() {
-        Self.applySerifNavigationTitles()
-    }
-
-    /// The restyle takes English into serif, and a system large title in SF is
-    /// the one place that would still shout. Set once at launch, and always to
-    /// New York rather than the user's chosen reading face — the bar is drawn by
-    /// UIKit, which can't re-resolve a custom face mid-session, and New York is
-    /// the default face and the only one guaranteed present.
-    private static func applySerifNavigationTitles() {
+        // Serif titles in the system navigation bar. Its background is left to the system.
         func serif(_ size: CGFloat, _ weight: UIFont.Weight) -> UIFont {
             let base = UIFont.systemFont(ofSize: size, weight: weight)
-            guard let descriptor = base.fontDescriptor.withDesign(.serif) else { return base }
-            return UIFont(descriptor: descriptor, size: size)
+            return base.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: size) } ?? base
         }
-
-        let appearance = UINavigationBarAppearance()
-        // Opaque: content must not ghost through the bar while it scrolls (AUDIT #20).
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor { UIColor(Palette.surface).resolvedColor(with: $0) }
-        appearance.shadowColor = UIColor { UIColor(Palette.separator).resolvedColor(with: $0) }
-        appearance.largeTitleTextAttributes = [.font: serif(34, .bold)]
-        appearance.titleTextAttributes = [.font: serif(17, .semibold)]
-
-        UINavigationBar.appearance().standardAppearance = appearance
-        UINavigationBar.appearance().compactAppearance = appearance
-        UINavigationBar.appearance().scrollEdgeAppearance = appearance
-    }
-
-    /// Runs a request left by the "Continue Memorizing" Siri intent: the same
-    /// "Join with previous 2" preset Today and the player use.
-    private func performPendingHifzAction() {
-        guard HifzIntentAction.take() == HifzIntentAction.continueMemorizing,
-              let t = targetStore.target else { return }
-        audioService.startRepeat(.joinWithPrevious2(surah: t.surah, ayah: t.workingAyah),
-                                 totalAyahs: t.totalAyahs, surahName: t.surahName)
-    }
-
-    private func hideSplash() {
-        guard showSplash else { return }
-        withAnimation(Motion.standard) { showSplash = false }
+        UINavigationBar.appearance().largeTitleTextAttributes = [.font: serif(34, .bold)]
+        UINavigationBar.appearance().titleTextAttributes = [.font: serif(17, .semibold)]
     }
 
     private var preferredColorScheme: ColorScheme? {
         switch colorSchemeRaw {
-        case "light": return .light
-        case "dark":  return .dark
-        default:      return nil
+        case "light": .light
+        case "dark":  .dark
+        default:      nil
         }
     }
 
     var body: some Scene {
         WindowGroup {
-            ZStack {
-                ZStack {
-                    // Swiping on a tab's root screen moves to the next tab
-                    // (`swipesBetweenTabs`); the stage draws the drag, so a frame
-                    // of it doesn't re-evaluate the tabs.
-                    TabSwipeStage {
-                        TabView(selection: $selectedTab) {
-                            Tab(value: AppTab.home) {
-                                HomeView().clearsBottomChrome().swipesBetweenTabs(.home)
-                                    .toolbar(.hidden, for: .tabBar)
-                            }
-                            Tab(value: AppTab.quran) {
-                                SurahListView().clearsBottomChrome().swipesBetweenTabs(.quran)
-                                    .toolbar(.hidden, for: .tabBar)
-                            }
-                            Tab(value: AppTab.more) {
-                                MoreView().clearsBottomChrome().swipesBetweenTabs(.more)
-                                    .toolbar(.hidden, for: .tabBar)
-                            }
-                        }
-                    }
-                    .background(Palette.background.ignoresSafeArea())
-                    // The system bar is hidden per-tab above. The mini player and
-                    // `EditorialTabBar` take its place, once, as an overlay along the
-                    // bottom; each tab reserves their height (`clearsBottomChrome`),
-                    // so every scroll view in it, the reader's pages included, ends
-                    // clear of both with no per-screen padding. (A safe-area inset on
-                    // the TabView itself shrank the TabView but not the tabs' own
-                    // pages, which then ran on under the bars: AUDIT #24.)
-                    .overlay(alignment: .bottom) {
-                        BottomChrome(selection: $selectedTab, ui: playerUI)
-                    }
-
-                    // Now Playing, above everything, from any tab.
-                    NowPlayingSlot(ui: playerUI)
-                }
-                .background(PlayerSheetsHost(ui: playerUI))
-                .tint(.brand)
-                .environmentObject(audioService)
-                // The same service as a plain reference, for views that only
-                // send it commands and must not re-render on its changes.
-                .environment(\.audioServiceRef, audioService)
-                // Likewise the player UI, for the reader's "More repeat options".
-                .environment(\.playerUIRef, playerUI)
-                .environmentObject(memorizationStore)
-                .environmentObject(srStore)
-                .environmentObject(targetStore)
-                .environmentObject(prayerTimesService)
-                .environmentObject(namesStore)
-                .environmentObject(bookmarkStore)
+            RootView()
                 .id(themeEpoch)
-
-                if showSplash {
-                    SplashView()
-                        .transition(.opacity)
-                        .zIndex(1)
+                .tint(.brand)
+                .environment(player)
+                .environment(downloads)
+                .environment(router)
+                .environmentObject(prayerTimes)
+                .environmentObject(namesStore)
+                .environmentObject(bookmarks)
+                .preferredColorScheme(preferredColorScheme)
+                .fullScreenCover(isPresented: .init(get: { !didOnboard }, set: { _ in })) {
+                    OnboardingView {
+                        didOnboard = true
+                        prayerTimes.refreshIfNeeded()
+                    }
+                    .environmentObject(prayerTimes)
                 }
-            }
-            .preferredColorScheme(preferredColorScheme)
-            .fullScreenCover(isPresented: $showOnboarding) {
-                OnboardingView {
-                    didOnboard = true
-                    showOnboarding = false
-                    // Never prompts: location was asked in onboarding's own step if
-                    // the user chose "Allow Location"; otherwise it waits for the
-                    // "Allow location" button on the prayer card or Prayer Times.
-                    prayerTimesService.refreshIfNeeded()
-                    NotificationService.shared.scheduleMemorizationReminder()
+                .task {
+                    player.onSurahFetched = { [downloads] surah in downloads.noteIfComplete(surah) }
+                    if didOnboard { prayerTimes.refreshIfNeeded() }
                 }
-                .environmentObject(prayerTimesService)
-            }
-            // A swipe on a tab's root screen asks for the next tab.
-            .onReceive(NotificationCenter.default.publisher(for: .selectAppTab)) { note in
-                if let tab = note.object as? AppTab { selectedTab = tab }
-            }
-            // Today's search field asks for the Quran tab.
-            .onReceive(NotificationCenter.default.publisher(for: .showQuranTab)) { _ in
-                selectedTab = .quran
-            }
-            // Now Playing's "Go to ayah in reader" opens the reader on Today.
-            .onReceive(NotificationCenter.default.publisher(for: .openReaderAtAyah)) { _ in
-                selectedTab = .home
-            }
-            .task {
-                SurahPlaybackState.shared.bind(to: audioService)
-                CloudSync.shared.start()
-                CarPlayBridge.shared.audioService       = audioService
-                CarPlayBridge.shared.memorizationStore  = memorizationStore
-                // The mini player comes back paused with the last session; its
-                // repeat is the service's until Play resumes it.
-                if let session = ListeningSessionStore.shared.session {
-                    audioService.adoptRepeat(from: session)
+                .onReceive(NotificationCenter.default.publisher(for: .appThemeDidChange)) { _ in themeEpoch += 1 }
+                .onReceive(NotificationCenter.default.publisher(for: .readingTypeDidChange)) { _ in
+                    if router.isReading { repaintWhenReaderCloses = true } else { themeEpoch += 1 }
                 }
-
-                // First launch: let onboarding request permissions in context.
-                // Returning users get the usual silent refresh.
-                showOnboarding = !didOnboard
-                if didOnboard {
-                    // No permission prompt here: it is asked in onboarding and when a
-                    // notification is switched on in Settings, never cold at launch.
-                    NotificationService.shared.scheduleMemorizationReminder()
-                    prayerTimesService.refreshIfNeeded()
+                .onReceive(NotificationCenter.default.publisher(for: .readerDidClose)) { _ in
+                    guard repaintWhenReaderCloses, !router.isReading else { return }
+                    repaintWhenReaderCloses = false
+                    themeEpoch += 1
                 }
-
-                KeyboardPresence.shared.start()
-
-                // The splash goes as soon as Today has its verse, and never
-                // stays longer than 0.4 s for it: a slow network fills the
-                // verse in on Today instead of holding the app behind the splash.
-                let splashCap = Task {
-                    try? await Task.sleep(for: .milliseconds(400))
-                    hideSplash()
+                .onChange(of: reciterId) {
+                    // Another voice: other files on disk, other word timings.
+                    player.reciterChanged()
+                    downloads.refresh()
                 }
-                await DailyVerseService.shared.loadIfNeeded()
-                splashCap.cancel()
-                hideSplash()
-
-                performPendingHifzAction()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .appThemeDidChange)) { _ in
-                themeEpoch += 1
-                WidgetCenter.shared.reloadAllTimelines()
-            }
-            // Same trick for a change of reading face — but never while the
-            // reader is open: it repaints itself in place (`ReadingType`), and a
-            // rebuild would throw away the page the user is scrolled to.
-            .onReceive(NotificationCenter.default.publisher(for: .readingTypeDidChange)) { _ in
-                guard !Chrome.shared.tabBarHidden else { return }
-                themeEpoch += 1
-            }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active {
-                    performPendingHifzAction()
-                    // A new day since the last fetch: refetch, which also rebuilds
-                    // the prayer notifications from the new day's times.
-                    prayerTimesService.refreshIfNeeded()
+                .onChange(of: scenePhase) { _, phase in
+                    // A new day, or a new month: pick up today's times from the cache.
+                    if phase == .active, didOnboard { prayerTimes.refreshIfNeeded() }
                 }
-                // Leaving the app is the last chance to record exactly where
-                // listening got to, so Home can resume to the second.
-                if phase == .background { ListeningSessionStore.shared.flush() }
-            }
-        }
-    }
-}
-
-// MARK: - Splash Screen
-
-private struct SplashView: View {
-    @Environment(\.colorScheme) var colorScheme
-
-    var body: some View {
-        ZStack {
-            Color(colorScheme == .dark ? .black : .white)
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                Text("القرآن الكريم")
-                    .font(.appArabic(30))
-                    .foregroundStyle(Color(.label).opacity(0.75))
-                    .environment(\.layoutDirection, .rightToLeft)
-
-                Text("Quran")
-                    .font(.appSerif(34, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .padding(.top, 10)
-
-                DiamondRule()
-                    .frame(width: 190)
-                    .padding(.top, 22)
-
-                ProgressView()
-                    .tint(.brand)
-                    .padding(.top, 26)
-            }
         }
     }
 }

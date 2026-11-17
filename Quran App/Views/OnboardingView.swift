@@ -14,10 +14,9 @@ struct OnboardingView: View {
     @AppStorage("selectedReciterId")     private var reciterId = 7
     @AppStorage("prayerCalcMethod")      private var method = 2
     @AppStorage("notifEnabled")          private var notifEnabled = false
-    @AppStorage("memoReminderEnabled")   private var memoReminderEnabled = false
 
     @State private var page = 0
-    private let lastPage = 3
+    private let lastPage = 2
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,7 +24,6 @@ struct OnboardingView: View {
                 welcome.tag(0)
                 reading.tag(1)
                 prayer.tag(2)
-                reminders.tag(3)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .animation(Motion.standard, value: page)
@@ -43,7 +41,6 @@ struct OnboardingView: View {
                 Button {
                     Haptics.tap()
                     if page == lastPage {
-                        NotificationService.shared.scheduleMemorizationReminder()
                         onDone()
                     } else {
                         withAnimation(Motion.standard) { page += 1 }
@@ -70,7 +67,7 @@ struct OnboardingView: View {
         pageScaffold(
             icon: "moon.stars.fill",
             title: "As-salamu alaykum",
-            subtitle: "A calm, focused way to read, listen to, and memorize the Quran — built around how memorization actually works."
+            subtitle: "A calm, focused way to read and listen to the Quran."
         ) {
             VStack(alignment: .leading, spacing: 14) {
                 FeatureLine(icon: "repeat", text: "Repeat any ayah to listen, recite, and join it with the ones before.")
@@ -135,38 +132,6 @@ struct OnboardingView: View {
                         .background(Color.brand.opacity(0.12), in: Rectangle())
                 }
                 .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private var reminders: some View {
-        pageScaffold(
-            icon: "bell.badge.fill",
-            title: "Stay consistent",
-            subtitle: "A daily nudge keeps your memorization moving and your streak alive."
-        ) {
-            VStack(spacing: 18) {
-                Button {
-                    Haptics.tap()
-                    Task {
-                        let granted = await NotificationService.shared.requestPermission()
-                        await MainActor.run {
-                            notifEnabled = granted
-                            memoReminderEnabled = granted
-                        }
-                    }
-                } label: {
-                    Label("Enable Reminders", systemImage: "bell.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.brand)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.brand.opacity(0.12), in: Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                Toggle("Daily memorization reminder", isOn: $memoReminderEnabled)
-                    .padding(.horizontal, 4)
             }
         }
     }
