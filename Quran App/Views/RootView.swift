@@ -73,6 +73,7 @@ final class AppRouter {
 
 struct RootView: View {
     @Environment(AppRouter.self) private var router
+    @Environment(Player.self) private var player
     @Namespace private var playerSpace
 
     var body: some View {
@@ -104,6 +105,11 @@ struct RootView: View {
         .sheet(isPresented: $router.showNowPlaying) {
             NowPlayingView()
                 .navigationTransition(.zoom(sourceID: "player", in: playerSpace))
+        }
+        .sensoryFeedback(.selection, trigger: router.tab)
+        // An ayah that could not be fetched is felt as well as shown.
+        .onChange(of: player.failed) { _, failed in
+            if failed { Haptics.error() }
         }
     }
 }

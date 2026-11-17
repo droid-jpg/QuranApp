@@ -30,6 +30,8 @@ final class QuranTourUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Repeat"].waitForExistence(timeout: 5))
         shot("04-reader")
         app.buttons["Repeat"].tap()
+        // With a repeat left on from an earlier run, the button is a menu instead.
+        if app.buttons["Choose ayahs…"].waitForExistence(timeout: 1) { app.buttons["Choose ayahs…"].tap() }
         shot("05-picking")
         app.buttons["Ayah 2"].tap()
         app.buttons["Ayah 4"].tap()

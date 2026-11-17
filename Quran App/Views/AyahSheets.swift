@@ -67,19 +67,21 @@ struct AyahActionsSheet: View {
                     Button {
                         UIPasteboard.general.string = shareText
                         Haptics.success()
-                        copied = true
+                        withAnimation(Motion.standard) { copied = true }
                     } label: {
                         SheetRow(title: copied ? "Copied" : "Copy", icon: copied ? "checkmark" : "doc.on.doc", chevron: false)
                     }
                     Hairline()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(RowPressStyle())
 
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, Spacing.screenMargin)
             .padding(.top, Spacing.xs)
             .background(Palette.surfaceRaised)
+            // Back from Word by word or Tafsir: the sheet shrinks to fit these rows again.
+            .onAppear { detent = .height(310) }
             .navigationTitle("\(surah.englishName) \(ayah.numberInSurah)")
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -110,6 +112,7 @@ private struct ActionButton: View {
                 .font(.system(size: 20, weight: .medium))
                 .frame(height: 24)
                 .contentTransition(.symbolEffect(.replace))
+                .symbolEffect(.bounce, value: on)
             Text(title)
                 .font(.caption.weight(.medium))
                 .lineLimit(1)
@@ -119,6 +122,7 @@ private struct ActionButton: View {
         .frame(maxWidth: .infinity, minHeight: MinSize.ayahActionButton)
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(on ? Color.brand : Palette.separator, lineWidth: 1))
         .contentShape(Rectangle())
+        .animation(Motion.standard, value: on)
     }
 }
 
@@ -131,10 +135,12 @@ private struct SheetRow: View {
         HStack(spacing: Spacing.sm) {
             Image(systemName: icon)
                 .foregroundStyle(.brand)
+                .contentTransition(.symbolEffect(.replace))
                 .frame(width: 28)
             Text(title)
                 .font(TypeScale.rowTitle)
                 .foregroundStyle(Palette.textPrimary)
+                .contentTransition(.opacity)
             Spacer()
             if chevron {
                 Image(systemName: "chevron.right")
@@ -187,6 +193,9 @@ struct WordByWordView: View {
 
                     if hasAudio {
                         controls
+                            .animation(Motion.standard, value: choosing)
+                            .animation(Motion.standard, value: first)
+                            .animation(Motion.standard, value: loop)
                     } else {
                         Text("Word audio isn't available for this reciter offline yet.")
                             .font(TypeScale.secondary)
@@ -232,6 +241,8 @@ struct WordByWordView: View {
         .frame(minHeight: MinSize.hitTarget)
         .background(RoundedRectangle(cornerRadius: 10).fill(marked ? Palette.highlight : Color.clear))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(marked ? Color.brand : Palette.separator, lineWidth: 1))
+        .animation(Motion.standard, value: marked)
+        .animation(Motion.quick, value: recited == word.position)
         .accessibilityElement(children: .combine)
     }
 
@@ -245,6 +256,7 @@ struct WordByWordView: View {
                 Text(first == nil ? "Tap the first word" : "Now tap the last word")
                     .font(TypeScale.body)
                     .foregroundStyle(Palette.textPrimary)
+                    .contentTransition(.opacity)
                 Button("Cancel") {
                     choosing = false
                     first = nil

@@ -158,14 +158,10 @@ struct EditorialValueRow: View {
 // MARK: - Segmented
 
 /// The outlined segmented control. Segments share one hairline between them, and
-/// the selected one's border wins where they overlap. Callers whose labels cannot fit
-/// at the current size fall back to a menu (see `RepeatSheet`).
+/// the selected one's border wins where they overlap.
 struct EditorialSegmented<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [EditorialOption<Value>]
-    /// Retained so existing call sites compile; the control is always sentence case now.
-    var capitals: Bool = false
-
     var body: some View {
         HStack(spacing: -1) {
             ForEach(options) { option in
@@ -196,56 +192,5 @@ struct EditorialSegmented<Value: Hashable>: View {
         }
         .dynamicTypeSize(...DynamicTypeSize.accessibility5)
         .animation(Motion.standard, value: selection)
-    }
-}
-
-// MARK: - Slider
-
-/// "Arabic ——●—— 26" — a labelled slider with the value as metadata.
-struct EditorialSlider: View {
-    let label: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    var labelWidth: CGFloat = 82
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Text(label)
-                .font(.appSerif(15))
-                .foregroundStyle(Palette.textSecondary)
-                .frame(width: labelWidth, alignment: .leading)
-            Slider(value: $value, in: range, step: 1)
-                .tint(.brand)
-            MetaText("\(Int(value))", size: 13)
-                .frame(width: 24, alignment: .trailing)
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-// MARK: - Type specimen slider
-//
-// Same control, but with a live sample of what the size does. Used by the
-// reading-size settings, where a number alone means nothing.
-
-struct EditorialSpecimenSlider: View {
-    let label: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let sample: String
-    var rightToLeft: Bool = false
-    var italic: Bool = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            EditorialSlider(label: label, value: $value, range: range)
-
-            Text(sample)
-                .font(rightToLeft ? .appArabic(value, scales: false) : .appSerif(value, italic: italic, scales: false))
-                .foregroundStyle(Palette.textSecondary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: rightToLeft ? .trailing : .leading)
-                .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight)
-        }
     }
 }

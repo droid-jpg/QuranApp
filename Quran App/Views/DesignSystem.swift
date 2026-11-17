@@ -1,10 +1,10 @@
 import SwiftUI
 import UIKit
 
-// Shared visual primitives. The app reads as a book now — ink on paper, ruled
-// rather than boxed — so the vocabulary here is editorial: hairlines, small-caps
-// eyebrows, outlined actions, one accent used as a mark rather than a fill.
-// Animation/interaction primitives live in AnimationKit.swift.
+// Shared visual primitives. The app reads as a book: ink on paper, ruled rather than
+// boxed. So the vocabulary here is editorial: hairlines, quiet section labels,
+// outlined actions, one accent used as a mark rather than a fill.
+// Motion and press styles live in AnimationKit.swift.
 
 // MARK: - Design tokens (REDESIGN §5)
 //
@@ -31,12 +31,10 @@ enum Spacing {
 
 enum MinSize {
     static let hitTarget: CGFloat       = 44
-    static let listPlayButton: CGFloat  = 44
     static let primaryPlay: CGFloat     = 56
     static let nowPlayingPlay: CGFloat  = 64
     static let surahRow: CGFloat        = 64
     static let moreRow: CGFloat         = 56
-    static let miniPlayer: CGFloat      = 56
     static let ayahActionButton: CGFloat = 64
     static let segmentedControl: CGFloat = 36
 }
@@ -61,8 +59,6 @@ enum TypeScale {
     static var secondary: Font { .system(.subheadline) }
     /// 13 semibold — section headings, segmented labels, values.
     static var caption: Font   { .system(.footnote, weight: .semibold) }
-    /// 11 medium — tab bar labels only.
-    static var tabLabel: Font  { .system(.caption2, weight: .medium) }
     /// 20 — Arabic in lists (surah names, headers). The reader uses `ReadingTypography`.
     static var arabicList: Font { .appArabic(20) }
 }
@@ -86,16 +82,6 @@ enum Palette {
     static var danger: Color        { AppTheme.current.danger }
 }
 
-extension View {
-    /// An opaque bar/header background with a hairline on its content edge. The replacement for
-    /// every material or translucent header over scrolling content.
-    func opaqueBar(_ fill: Color = Palette.surface, hairline: VerticalEdge = .bottom,
-                   ignoresSafeArea: Edge.Set = []) -> some View {
-        background(fill, ignoresSafeAreaEdges: ignoresSafeArea)
-            .overlay(alignment: hairline == .top ? .top : .bottom) { Hairline() }
-    }
-}
-
 // MARK: - Brand palette
 
 extension Color {
@@ -103,21 +89,14 @@ extension Color {
     /// (not `let`) so a theme change is picked up the next time a view renders.
     static var brand: Color { AppTheme.current.accent }
 
-    /// Darker companion used as the far stop of brand gradients.
-    static var brandDeep: Color { AppTheme.current.deep }
-
     /// The hairline that replaced the app's cards: the palette's opaque `separator`.
     static var rule: Color { Palette.separator }
-
-    /// Page ink for editorial surfaces — full-strength body text.
-    static var ink: Color { Palette.textPrimary }
 }
 
 /// Lets `.brand` be written anywhere a `ShapeStyle` is expected — `.foregroundStyle(.brand)`,
 /// `.tint(.brand)`, `fill(.brand)` — without spelling out `Color.brand`.
 extension ShapeStyle where Self == Color {
     static var brand: Color { .brand }
-    static var brandDeep: Color { .brandDeep }
     static var rule: Color { .rule }
 }
 
@@ -294,7 +273,7 @@ struct OutlineButton: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CardButtonStyle(scale: 0.98))
         .accessibilityAddTraits(on ? .isSelected : [])
         .animation(Motion.standard, value: on)
     }
@@ -351,146 +330,5 @@ struct RuleProgress: View {
             }
         }
         .frame(height: height)
-    }
-}
-
-// MARK: - Play affordance
-
-/// The one round thing on the page: a hairline circle with the accent glyph.
-struct PlayCircle: View {
-    let playing: Bool
-    var size: CGFloat = 54
-    var filled: Bool = false
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(filled ? Color.brand : Color.clear)
-                .overlay(Circle().strokeBorder(Color.brand.opacity(filled ? 0 : 0.55), lineWidth: 1))
-            Image(systemName: playing ? "pause.fill" : "play.fill")
-                .font(.system(size: size * 0.30, weight: .semibold))
-                .foregroundStyle(filled ? Palette.onAccent : Color.brand)
-                .offset(x: playing ? 0 : size * 0.035)
-                .contentTransition(.symbolEffect(.replace))
-        }
-        .frame(width: size, height: size)
-        // Smaller circles still get the HIG's 44 pt hit target.
-        .frame(minWidth: MinSize.hitTarget, minHeight: MinSize.hitTarget)
-        .contentShape(Rectangle())
-    }
-}
-
-// MARK: - Bar glyph
-
-/// A glyph in a screen's own top bar. Square hit area, no border, accent when the
-/// thing behind it is on — the same vocabulary as the ayah control strip. Shared
-/// by the reader's bar and the surah list's, so the two can't drift apart.
-struct BarButton: View {
-    /// The HIG's minimum hit target.
-    static let side: CGFloat = MinSize.hitTarget
-
-    let icon: String
-    let label: String
-    var on: Bool = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.label(15, weight: .medium))
-                .foregroundStyle(on ? Color.brand : Palette.textSecondary)
-                .frame(width: Self.side, height: Self.side)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(CardButtonStyle(scale: 0.88))
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(on ? .isSelected : [])
-    }
-}
-
-// MARK: - Legacy card surfaces
-//
-// The dashboard and reader are ruled now, but Memorization, Qibla, Dhikr, the
-// 99 Names and the calendar still speak in cards. These stay so those screens
-// keep their shape (and keep compiling) until they get the same pass.
-
-/// The card surface, now ruled: a hairline box in the feature's tint and no fill
-/// at all. Every screen that still builds itself out of cards — the memorization
-/// hub, the method guide — picks up the restyle from here rather than one by one.
-struct TintedCardModifier: ViewModifier {
-    let color: Color
-
-    func body(content: Content) -> some View {
-        content.overlay(Rectangle().strokeBorder(color.opacity(0.38), lineWidth: 1))
-    }
-}
-
-extension View {
-    func tintedCard(_ color: Color) -> some View {
-        modifier(TintedCardModifier(color: color))
-    }
-}
-
-/// Compact "● 12 label" stat used in progress legends and the memorization strip.
-struct StatDot: View {
-    let color: Color
-    let value: Int
-    let label: String
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle().fill(color).frame(width: 7, height: 7)
-            Text("\(value)")
-                .font(.caption.bold())
-                .foregroundStyle(.primary)
-                .contentTransition(.numericText())
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// Horizontal-scroller card for a surah in a memorization state (in-progress or
-/// review). Ruled rather than filled, to match the rest of the restyle.
-struct MemorizationStatusCard: View {
-    let surah: Surah
-    let accent: Color
-    let icon: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.label(13, weight: .bold))
-                    .foregroundStyle(accent)
-                Spacer()
-                MetaText("\(surah.number)", tint: accent)
-            }
-            .padding(.bottom, 12)
-
-            Spacer()
-
-            Text(surah.name)
-                .font(.appArabic(24))
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .environment(\.layoutDirection, .rightToLeft)
-                .padding(.bottom, 8)
-
-            Text(surah.englishName)
-                .font(.appSerif(17, weight: .medium))
-                .foregroundStyle(.primary)
-            Text(subtitle)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .padding(14)
-        // Grows with Dynamic Type rather than clipping the names.
-        .frame(width: 176)
-        .frame(minHeight: 132)
-        .overlay(Rectangle().strokeBorder(Color(.label).opacity(0.16), lineWidth: 1))
     }
 }

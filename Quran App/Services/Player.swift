@@ -87,6 +87,15 @@ final class Player {
     @ObservationIgnored private var spans: [Int: [WordSpan]] = [:]
     @ObservationIgnored private var spansKey = ""
     @ObservationIgnored private var gapTask: Task<Void, Never>?
+    /// Plays silence through the pause after an ayah, and while an ayah is fetched.
+    /// iOS suspends an app in the background a few seconds after its audio stops,
+    /// and a suspended app would never start the next ayah on a locked phone.
+    @ObservationIgnored private lazy var silence: AVAudioPlayer? = {
+        let player = try? AVAudioPlayer(data: Self.silentWAV)
+        player?.numberOfLoops = -1
+        player?.volume = 0
+        return player
+    }()
     @ObservationIgnored private var resumeAfterInterruption = false
     @ObservationIgnored private var itemLoaded = false
     @ObservationIgnored private var timeObserver: Any?
@@ -300,6 +309,11 @@ final class Player {
             start(AudioStore.fileURL(reciter: reciter, surah: surah.number, ayah: number), at: startAt)
         } else {
             isLoading = true
+            // Likewise while the next ayah is fetched: the app must stay awake to play it.
+            if isPlaying {
+                activateSession()
+                silence?.play()
+            }
             updateNowPlaying()
             Task {
                 do {
@@ -313,6 +327,7 @@ final class Player {
                     isLoading = false
                     failed = true
                     isPlaying = false
+                    silence?.pause()
                     updateNowPlaying()
                 }
             }
@@ -323,6 +338,7 @@ final class Player {
     }
 
     private func start(_ url: URL, at seconds: Double) {
+        silence?.pause()
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
         itemLoaded = true
         if seconds > 0 {
@@ -382,6 +398,7 @@ final class Player {
             return
         }
         pendingStep = step
+        silence?.play()
         gapTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(gap))
             guard !Task.isCancelled else { return }
@@ -408,6 +425,7 @@ final class Player {
         guard let step = pendingStep else { return }
         pendingStep = nil
         gapTask = nil
+        silence?.pause()
         perform(step)
     }
 
@@ -435,7 +453,25 @@ final class Player {
     private func cancelGap() {
         gapTask?.cancel()
         gapTask = nil
+        silence?.pause()
     }
+
+    /// One second of silence as a WAV file: 8 kHz, mono, 16-bit.
+    private static let silentWAV: Data = {
+        let sampleRate: UInt32 = 8000
+        let byteCount = sampleRate * 2
+        var data = Data()
+        func append<T: FixedWidthInteger>(_ value: T) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        data.append(contentsOf: Array("RIFF".utf8)); append(36 + byteCount)
+        data.append(contentsOf: Array("WAVEfmt ".utf8)); append(UInt32(16))
+        append(UInt16(1)); append(UInt16(1)); append(sampleRate); append(sampleRate * 2)
+        append(UInt16(2)); append(UInt16(16))
+        data.append(contentsOf: Array("data".utf8)); append(byteCount)
+        data.append(Data(count: Int(byteCount)))
+        return data
+    }()
 
     private func seekAndPlay(_ seconds: Double) {
         player.seek(to: CMTime(seconds: seconds, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero)

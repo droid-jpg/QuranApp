@@ -144,6 +144,10 @@ struct ReaderView: View {
         }
         .sheet(isPresented: $showType) { ReadingTypeSheet() }
         .onChange(of: translationId) { ayahs = QuranText.shared.ayahs(surah.number) }
+        // A translation chosen before it was on disk arrives a moment later.
+        .onReceive(NotificationCenter.default.publisher(for: .translationDidDownload)) { _ in
+            ayahs = QuranText.shared.ayahs(surah.number)
+        }
         .onDisappear { NotificationCenter.default.post(name: .readerDidClose, object: nil) }
     }
 
@@ -279,12 +283,13 @@ private struct ReaderHeader: View {
                 Label(playLabel, systemImage: isCurrent && player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(Palette.onAccent)
+                    .contentTransition(.symbolEffect(.replace))
                     .padding(.horizontal, Spacing.lg)
                     .frame(minHeight: MinSize.hitTarget)
                     .background(Capsule().fill(Color.brand))
-                    .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(CardButtonStyle())
+            .animation(Motion.spring, value: playLabel)
             .padding(.top, Spacing.sm)
 
             DiamondRule()
@@ -320,6 +325,7 @@ private struct PickBanner: View {
             Text(message)
                 .font(TypeScale.body)
                 .foregroundStyle(Palette.textPrimary)
+                .contentTransition(.opacity)
             Spacer(minLength: Spacing.xs)
             Button("Cancel", action: cancel)
                 .font(.body.weight(.semibold))
@@ -392,14 +398,17 @@ struct AyahRow: View, Equatable {
             .background(isCurrent || isPickedFirst ? Palette.highlight : Color.clear)
             .overlay(alignment: .leading) {
                 // A rule down the side marks the ayahs a repeat covers.
-                if inRepeat { Rectangle().fill(Color.brand).frame(width: 3) }
+                if inRepeat { Rectangle().fill(Color.brand).frame(width: 3).transition(.opacity) }
             }
             .overlay(alignment: .bottom) { Hairline().padding(.leading, Spacing.screenMargin) }
             .contentShape(Rectangle())
             .animation(Motion.standard, value: isCurrent)
             .animation(Motion.standard, value: inRepeat)
+            .animation(Motion.standard, value: isPicking)
+            .animation(Motion.bouncy, value: isPickedFirst)
+            .animation(Motion.bouncy, value: isBookmarked)
         }
-        .buttonStyle(AyahPressStyle())
+        .buttonStyle(RowPressStyle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Ayah \(ayah.numberInSurah)")
         .accessibilityValue(ayah.translation)
@@ -422,7 +431,9 @@ struct AyahRow: View, Equatable {
                 Image(systemName: isPickedFirst ? "checkmark.circle.fill" : "circle")
                     .font(.body)
                     .foregroundStyle(isPickedFirst ? Color.brand : Palette.textTertiary)
+                    .contentTransition(.symbolEffect(.replace))
                     .frame(height: 22)
+                    .transition(Motion.pop)
             }
             Text("\(ayah.numberInSurah)")
                 .font(.footnote.weight(.semibold).monospacedDigit())
@@ -431,18 +442,10 @@ struct AyahRow: View, Equatable {
                 Image(systemName: "bookmark.fill")
                     .font(.caption2)
                     .foregroundStyle(.brand)
+                    .transition(Motion.pop)
             }
         }
         .frame(width: 30)
         .padding(.top, 6)
-    }
-}
-
-/// A quiet press state for a whole ayah: it dims, it doesn't shrink.
-private struct AyahPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? 0.6 : 1)
-            .animation(Motion.quick, value: configuration.isPressed)
     }
 }

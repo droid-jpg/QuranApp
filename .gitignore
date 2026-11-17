@@ -16,3 +16,4 @@ node_modules/
 .build-dd/
 .build.sh
 .shots/
+.tour.sh

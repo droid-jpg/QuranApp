@@ -1,5 +1,11 @@
 import Foundation
 
+extension Notification.Name {
+    /// Posted on the main actor when a translation has been downloaded, so text on
+    /// screen can be read again in it.
+    static let translationDidDownload = Notification.Name("translationDidDownload")
+}
+
 /// The Quran's text, read with no network. Arabic, transliteration and Pickthall's
 /// translation come from the bundle (`quran_offline.json`). Any other translation is
 /// downloaded once, whole, and read from disk after that.
@@ -101,6 +107,7 @@ final class QuranText: @unchecked Sendable {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(texts).write(to: file, options: .atomic)
         lock.lock(); ayahCache.removeAll(); lock.unlock()
+        await MainActor.run { NotificationCenter.default.post(name: .translationDidDownload, object: nil) }
     }
 
     /// Call with `lock` held.

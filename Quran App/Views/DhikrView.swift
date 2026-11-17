@@ -19,6 +19,8 @@ struct DhikrView: View {
 
             Spacer(minLength: 20)
         }
+        .frame(maxWidth: .infinity)
+        .background(Palette.background)
         // As a safe-area inset rather than the last row of the VStack. The root's
         // inset (mini player + tab bar) already sits below it.
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -85,7 +87,7 @@ struct DhikrView: View {
                 .stroke(Color.brand, style: StrokeStyle(lineWidth: 2, lineCap: .butt))
                 .rotationEffect(.degrees(-90))
                 .frame(width: 250, height: 250)
-                .animation(Motion.standard, value: store.progress)
+                .animation(Motion.spring, value: store.progress)
 
             Button(action: store.tap) {
                 VStack(spacing: 8) {
@@ -93,7 +95,8 @@ struct DhikrView: View {
                         Image(systemName: "checkmark")
                             .font(.system(size: 52, weight: .light))
                             .foregroundStyle(.brand)
-                            .transition(Motion.move(.scale.combined(with: .opacity)))
+                            .symbolEffect(.bounce, value: store.goalReached)
+                            .transition(Motion.pop)
                     } else {
                         Text("\(store.count)")
                             .font(.appSerif(72, weight: .light))
@@ -106,6 +109,7 @@ struct DhikrView: View {
                 }
                 .frame(width: 230, height: 230)
                 .contentShape(Circle())
+                .animation(Motion.bouncy, value: store.goalReached)
             }
             .buttonStyle(TapScaleStyle())
             .disabled(store.goalReached)
@@ -123,7 +127,9 @@ struct DhikrView: View {
                     Eyebrow("Goal")
                     Text("\(store.count) / \(store.goal)")
                         .font(.appSerif(19, weight: .medium).monospacedDigit())
-                        .foregroundStyle(store.goalReached ? Color.brand : Color(.label))
+                        .foregroundStyle(store.goalReached ? Color.brand : Palette.textPrimary)
+                        .contentTransition(.numericText())
+                        .animation(Motion.quick, value: store.count)
                 }
 
                 Spacer()
@@ -158,7 +164,7 @@ struct DhikrView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 18)
         }
-        .background(Color(.systemBackground))
+        .background(Palette.background)
     }
 }
 

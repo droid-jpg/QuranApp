@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// First-launch flow: a short welcome, the two reading choices that matter most
-/// (translation + reciter), the prayer calculation method, and contextual
-/// permission asks for location and notifications — so the app never fires system
-/// prompts cold. Choices write straight to `@AppStorage`, so they persist as the
-/// app's live settings the moment onboarding ends.
+/// First launch: a short welcome, the two reading choices that matter most
+/// (translation and reciter), then the prayer calculation method with the location
+/// ask, so the app never fires a system prompt cold. Choices write straight to
+/// `@AppStorage`, so they are the app's live settings the moment this ends.
 struct OnboardingView: View {
     var onDone: () -> Void
 
@@ -13,7 +12,6 @@ struct OnboardingView: View {
     @AppStorage("selectedTranslationId") private var translationId = Translation.fallbackId
     @AppStorage("selectedReciterId")     private var reciterId = 7
     @AppStorage("prayerCalcMethod")      private var method = 2
-    @AppStorage("notifEnabled")          private var notifEnabled = false
 
     @State private var page = 0
     private let lastPage = 2
@@ -33,10 +31,12 @@ struct OnboardingView: View {
                 HStack(spacing: 7) {
                     ForEach(0...lastPage, id: \.self) { i in
                         Circle()
-                            .fill(i == page ? Color.brand : Color(.tertiaryLabel))
+                            .fill(i == page ? Color.brand : Palette.textTertiary)
                             .frame(width: i == page ? 8 : 6, height: i == page ? 8 : 6)
                     }
                 }
+                .animation(Motion.spring, value: page)
+                .accessibilityHidden(true)
 
                 Button {
                     Haptics.tap()
@@ -48,17 +48,18 @@ struct OnboardingView: View {
                 } label: {
                     Text(page == lastPage ? "Get Started" : "Continue")
                         .font(.appSerif(17, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Palette.onAccent)
+                        .contentTransition(.opacity)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(Color.brand)
-                        .clipShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CardButtonStyle(scale: 0.98))
             }
             .padding(.horizontal, 28)
             .padding(.bottom, 28)
         }
+        .background(Palette.background.ignoresSafeArea())
     }
 
     // MARK: Pages
@@ -70,9 +71,9 @@ struct OnboardingView: View {
             subtitle: "A calm, focused way to read and listen to the Quran."
         ) {
             VStack(alignment: .leading, spacing: 14) {
-                FeatureLine(icon: "repeat", text: "Repeat any ayah to listen, recite, and join it with the ones before.")
-                FeatureLine(icon: "graduationcap.fill", text: "Track a working ayah and let spaced repetition lock in the meaning.")
-                FeatureLine(icon: "wifi.slash", text: "The full Quran is built in — read anywhere, no connection needed.")
+                FeatureLine(icon: "play.fill", text: "Play any surah from the list, and follow the recitation word by word.")
+                FeatureLine(icon: "repeat", text: "Tap two ayahs to repeat everything between them.")
+                FeatureLine(icon: "wifi.slash", text: "The whole Quran is built in, and what you play is kept for offline.")
             }
             .padding(.top, 8)
         }
@@ -84,23 +85,20 @@ struct OnboardingView: View {
             title: "Your reading",
             subtitle: "Pick the translation and reciter you like best. You can change these anytime in Settings."
         ) {
-            VStack(spacing: 18) {
-                pickerCard(title: "Translation") {
-                    Picker("Translation", selection: $translationId) {
-                        ForEach(Translation.all) { t in
-                            Text("\(t.name) · \(t.language)").tag(t.id)
-                        }
-                    }
-                    .pickerStyle(.navigationLink)
-                }
-                pickerCard(title: "Reciter") {
-                    Picker("Reciter", selection: $reciterId) {
-                        ForEach(Reciter.all) { r in
-                            Text(r.name).tag(r.id)
-                        }
-                    }
-                    .pickerStyle(.navigationLink)
-                }
+            VStack(spacing: 0) {
+                Hairline()
+                EditorialMenuRow(
+                    title: "Translation", selection: $translationId,
+                    options: Translation.all.map { .init($0.id, "\($0.name) · \($0.language)") }
+                )
+                .padding(.vertical, 14)
+                Hairline()
+                EditorialMenuRow(
+                    title: "Reciter", selection: $reciterId,
+                    options: Reciter.all.map { .init($0.id, $0.name) }
+                )
+                .padding(.vertical, 14)
+                Hairline()
             }
         }
     }
@@ -109,29 +107,38 @@ struct OnboardingView: View {
         pageScaffold(
             icon: "location.circle.fill",
             title: "Prayer times",
-            subtitle: "Choose your calculation method, then allow location so times are accurate for where you are. Nothing leaves your device."
+            subtitle: "Choose your calculation method, then allow location so the times are right for where you are. Only a position rounded to about a kilometre is used to fetch them."
         ) {
-            VStack(spacing: 18) {
-                pickerCard(title: "Calculation method") {
-                    Picker("Method", selection: $method) {
-                        ForEach(PrayerCalcMethod.all) { m in
-                            Text(m.name).tag(m.id)
-                        }
-                    }
-                    .pickerStyle(.navigationLink)
-                }
-                Button {
-                    Haptics.tap()
-                    prayerService.requestAndFetch()
-                } label: {
-                    Label("Allow Location", systemImage: "location.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.brand)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.brand.opacity(0.12), in: Rectangle())
-                }
-                .buttonStyle(.plain)
+            VStack(spacing: 0) {
+                Hairline()
+                EditorialMenuRow(
+                    title: "Method", selection: $method,
+                    options: PrayerCalcMethod.all.map { .init($0.id, $0.name) }
+                )
+                .padding(.vertical, 14)
+                Hairline()
+                locationRow
+                    .padding(.top, 18)
+            }
+        }
+    }
+
+    /// The location ask, which turns into its own answer once it has one.
+    @ViewBuilder private var locationRow: some View {
+        switch prayerService.fetchStatus {
+        case .ready, .fetching:
+            Label(prayerService.fetchStatus == .ready ? "Prayer times are ready" : "Getting prayer times…",
+                  systemImage: prayerService.fetchStatus == .ready ? "checkmark.circle.fill" : "location.fill")
+                .font(TypeScale.body)
+                .foregroundStyle(.brand)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(maxWidth: .infinity, minHeight: MinSize.hitTarget)
+                .transition(.opacity)
+        case .notDetermined, .denied, .failed:
+            OutlineButton(label: prayerService.fetchStatus == .failed ? "Try again" : "Allow location",
+                          icon: "location.fill", on: true) {
+                Haptics.tap()
+                prayerService.allowLocationAccess()
             }
         }
     }
@@ -143,51 +150,37 @@ struct OnboardingView: View {
         icon: String, title: String, subtitle: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    ZStack {
-                        Circle().fill(Color.brand.opacity(0.12)).frame(width: 96, height: 96)
-                        Image(systemName: icon)
-                            .font(.system(size: 42))
-                            .foregroundStyle(
-                                LinearGradient(colors: [.brand, .brand.opacity(0.7)],
-                                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                    }
-                    .padding(.top, 40)
-
-                    Text(title)
-                        .font(.title.bold())
-                        .multilineTextAlignment(.center)
-
-                    Text(subtitle)
-                        .font(.appSerif(15))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 8)
-
-                    content()
-                        .padding(.top, 6)
+        ScrollView {
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle().fill(Palette.highlight).frame(width: 96, height: 96)
+                    Image(systemName: icon)
+                        .font(.system(size: 42))
+                        .foregroundStyle(.brand)
                 }
-                .padding(.horizontal, 28)
-                .frame(maxWidth: .infinity)
-            }
-        }
-    }
+                .padding(.top, 40)
 
-    private func pickerCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            content()
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(Color(.secondarySystemBackground), in: Rectangle())
+                Text(title)
+                    .font(TypeScale.display)
+                    .foregroundStyle(Palette.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
+
+                Text(subtitle)
+                    .font(.appSerif(16))
+                    .foregroundStyle(Palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
+
+                content()
+                    .padding(.top, 6)
+            }
+            .padding(.horizontal, 28)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .scrollBounceBehavior(.basedOnSize)
+        .background(Palette.background)
     }
 }
 
@@ -201,8 +194,8 @@ private struct FeatureLine: View {
                 .foregroundStyle(.brand)
                 .frame(width: 26)
             Text(text)
-                .font(.appSerif(15))
-                .foregroundStyle(.primary)
+                .font(.appSerif(16))
+                .foregroundStyle(Palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }

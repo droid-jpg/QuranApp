@@ -83,11 +83,11 @@ struct QiblaView: View {
                 }
             }
             .rotationEffect(.degrees(-qibla.displayHeading))
-            .animation(Motion.sheet, value: qibla.displayHeading)
+            .animation(Motion.spring, value: qibla.displayHeading)
 
             QiblaNeedle()
                 .rotationEffect(.degrees(qibla.qiblaAngle))
-                .animation(Motion.sheet, value: qibla.qiblaAngle)
+                .animation(Motion.spring, value: qibla.qiblaAngle)
                 .opacity(qibla.locationStatus == .ready ? 1 : 0.25)
 
             Circle()

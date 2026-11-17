@@ -143,8 +143,10 @@ final class Downloads {
             tasks[surah.number] = nil
             if missed == 0, !Task.isCancelled {
                 complete.insert(surah.number)
+                Haptics.success()
             } else if !Task.isCancelled {
                 failed.insert(surah.number)
+                Haptics.error()
             }
         }
     }

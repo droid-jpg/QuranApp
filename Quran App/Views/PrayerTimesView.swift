@@ -101,6 +101,7 @@ struct PrayerTimesView: View {
                     .font(TypeScale.heading)
                     .foregroundStyle(Palette.textPrimary)
                     .multilineTextAlignment(.center)
+                    .contentTransition(.numericText(value: Double(dayOffset)))
                 if !dayName.isEmpty {
                     Text(dayName)
                         .font(TypeScale.secondary)
@@ -109,6 +110,7 @@ struct PrayerTimesView: View {
             }
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
+            .animation(Motion.standard, value: dayOffset)
             arrow("chevron.right", label: "Next day", enabled: dayOffset < Self.range.upperBound) {
                 step(1)
             }
@@ -127,7 +129,7 @@ struct PrayerTimesView: View {
                 .frame(width: MinSize.hitTarget, height: MinSize.hitTarget)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CardButtonStyle(scale: 0.85))
         .disabled(!enabled)
         .accessibilityLabel(label)
     }
@@ -196,6 +198,8 @@ private struct PrayerRow: View {
             Text(time.formatted(date: .omitted, time: .shortened))
                 .font(TypeScale.rowTitle.monospacedDigit())
                 .foregroundStyle(Palette.textPrimary)
+                .contentTransition(.numericText())
+                .animation(Motion.standard, value: time)
         }
         .padding(.horizontal, Spacing.sm)
         .padding(.vertical, Spacing.xs)
@@ -234,7 +238,7 @@ private struct NotificationsRow: View {
             .overlay(alignment: .top) { Hairline() }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RowPressStyle())
     }
 }
 
@@ -296,7 +300,7 @@ enum PrayerCountdown {
     static func text(to date: Date, from now: Date) -> String {
         let minutes = max(0, Int(date.timeIntervalSince(now) / 60))
         let h = minutes / 60, m = minutes % 60
-        if h > 0 { return "\(h) h \(m) min" }
+        if h > 0 { return m > 0 ? "\(h) h \(m) min" : "\(h) h" }
         if m > 0 { return "\(m) min" }
         return "less than a minute"
     }

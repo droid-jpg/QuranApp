@@ -26,6 +26,8 @@ extension Player {
 struct MiniPlayer: View {
     @Environment(Player.self) private var player
     @Environment(AppRouter.self) private var router
+    /// Counts taps on Next, to bounce its glyph.
+    @State private var skips = 0
 
     var body: some View {
         HStack(spacing: Spacing.xs) {
@@ -38,6 +40,7 @@ struct MiniPlayer: View {
                         .font(TypeScale.rowTitleCompact)
                         .foregroundStyle(Palette.textPrimary)
                         .lineLimit(1)
+                        .contentTransition(.opacity)
                     Text(player.statusLine)
                         .font(.caption)
                         .foregroundStyle(player.failed ? Palette.danger : Palette.textSecondary)
@@ -47,7 +50,7 @@ struct MiniPlayer: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(RowPressStyle())
             .accessibilityLabel("Now Playing")
             .accessibilityValue("\(player.surah?.englishName ?? ""), \(player.statusLine)")
 
@@ -56,6 +59,7 @@ struct MiniPlayer: View {
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.brand)
                     .accessibilityHidden(true)
+                    .transition(Motion.pop)
             }
 
             PlayPauseButton(size: 20) {
@@ -69,14 +73,16 @@ struct MiniPlayer: View {
 
             Button {
                 Haptics.tap()
+                skips += 1
                 player.next()
             } label: {
                 Image(systemName: "forward.end.fill")
                     .font(.system(size: 16, weight: .semibold))
+                    .symbolEffect(.bounce, value: skips)
                     .frame(width: 36, height: MinSize.hitTarget)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CardButtonStyle(scale: 0.88))
             .foregroundStyle(Palette.textPrimary)
             .disabled(!player.hasSession)
             .accessibilityLabel("Next ayah")
@@ -84,6 +90,8 @@ struct MiniPlayer: View {
         .padding(.leading, Spacing.md)
         .padding(.trailing, Spacing.xs)
         .animation(Motion.standard, value: player.statusLine)
+        .animation(Motion.standard, value: player.surah)
+        .animation(Motion.bouncy, value: player.repeatRange != nil)
     }
 }
 
@@ -102,15 +110,18 @@ struct PlayPauseButton: View {
             ZStack {
                 if player.isLoading && player.isPlaying {
                     ProgressView().tint(tint)
+                        .transition(Motion.pop)
                 } else {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: size, weight: .semibold))
                         .foregroundStyle(tint)
                         .contentTransition(.symbolEffect(.replace))
+                        .transition(Motion.pop)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
+            .animation(Motion.quick, value: player.isLoading && player.isPlaying)
         }
         .buttonStyle(CardButtonStyle(scale: 0.9))
         .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
@@ -177,6 +188,8 @@ struct NowPlayingView: View {
     @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     @AppStorage("selectedReciterId") private var reciterId = Reciter.all[0].id
+    @State private var skipsBack = 0
+    @State private var skipsForward = 0
 
     private var currentAyah: Ayah? {
         player.surah.flatMap { QuranText.shared.ayah($0.number, player.ayah) }
@@ -187,27 +200,32 @@ struct NowPlayingView: View {
             header
                 .padding(.top, Spacing.xl)
 
-            // The ayah being recited, large, with the word highlight.
-            ScrollView {
-                if let ayah = currentAyah {
-                    VStack(spacing: Spacing.md) {
-                        RecitedArabic(ayah: ayah, font: .appArabic(30))
-                            .multilineTextAlignment(.center)
-                            .lineSpacing(12)
-                            .environment(\.layoutDirection, .rightToLeft)
-                        Text(ayah.translation)
-                            .font(.appSerif(17))
-                            .foregroundStyle(Palette.textSecondary)
-                            .multilineTextAlignment(.center)
+            // The ayah being recited, large, with the word highlight. A short ayah sits
+            // in the middle of the space; a long one scrolls from the top.
+            GeometryReader { space in
+                ScrollView {
+                    if let ayah = currentAyah {
+                        VStack(spacing: Spacing.md) {
+                            RecitedArabic(ayah: ayah, font: .appArabic(30))
+                                .multilineTextAlignment(.center)
+                                .lineSpacing(12)
+                                .environment(\.layoutDirection, .rightToLeft)
+                            Text(ayah.translation)
+                                .font(.appSerif(17))
+                                .foregroundStyle(Palette.textSecondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(.vertical, Spacing.lg)
+                        .frame(maxWidth: .infinity, minHeight: space.size.height)
+                        .id("\(ayah.surah):\(ayah.numberInSurah)")
+                        // One ayah dissolves into the next rather than cutting.
+                        .transition(Motion.reduceMotion ? .opacity : AnyTransition(.blurReplace))
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.lg)
-                    .id(ayah.numberInSurah)
-                    .transition(.opacity)
                 }
+                .scrollBounceBehavior(.basedOnSize)
+                .animation(Motion.standard, value: player.ayah)
+                .animation(Motion.standard, value: player.surah)
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .animation(Motion.standard, value: player.ayah)
 
             ProgressLine()
                 .padding(.bottom, Spacing.xs)
@@ -232,6 +250,7 @@ struct NowPlayingView: View {
             Text(player.surah?.englishName ?? "Nothing playing")
                 .font(TypeScale.title)
                 .foregroundStyle(Palette.textPrimary)
+                .contentTransition(.opacity)
             if let surah = player.surah {
                 Text("\(surah.englishNameTranslation) · \(Reciter.selected.name)")
                     .font(TypeScale.secondary)
@@ -243,16 +262,25 @@ struct NowPlayingView: View {
 
     private var transport: some View {
         HStack(spacing: Spacing.xl) {
-            transportButton("backward.end.fill", "Previous ayah") { player.previous() }
+            transportButton("backward.end.fill", "Previous ayah", bounce: skipsBack) {
+                skipsBack += 1
+                player.previous()
+            }
             PlayPauseButton(size: 26, tint: Palette.onAccent) { player.toggle() }
                 .frame(width: MinSize.nowPlayingPlay, height: MinSize.nowPlayingPlay)
                 .background(Circle().fill(Color.brand))
-            transportButton("forward.end.fill", "Next ayah") { player.next() }
+                // The button sits a little smaller while paused and swells when it plays.
+                .scaleEffect(player.isPlaying || Motion.reduceMotion ? 1 : 0.92)
+                .animation(Motion.bouncy, value: player.isPlaying)
+            transportButton("forward.end.fill", "Next ayah", bounce: skipsForward) {
+                skipsForward += 1
+                player.next()
+            }
         }
         .disabled(!player.hasSession)
     }
 
-    private func transportButton(_ icon: String, _ label: String, action: @escaping () -> Void) -> some View {
+    private func transportButton(_ icon: String, _ label: String, bounce: Int, action: @escaping () -> Void) -> some View {
         Button {
             Haptics.tap()
             action()
@@ -260,6 +288,7 @@ struct NowPlayingView: View {
             Image(systemName: icon)
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(Palette.textPrimary)
+                .symbolEffect(.bounce, value: bounce)
                 .frame(width: 56, height: 56)
                 .contentShape(Rectangle())
         }
@@ -325,6 +354,8 @@ struct NowPlayingView: View {
         .foregroundStyle(on ? Color.brand : Palette.textSecondary)
         .frame(maxWidth: .infinity, minHeight: MinSize.hitTarget)
         .contentShape(Rectangle())
+        .contentTransition(.opacity)
+        .animation(Motion.standard, value: text)
     }
 
     static func rateLabel(_ rate: Float) -> String {

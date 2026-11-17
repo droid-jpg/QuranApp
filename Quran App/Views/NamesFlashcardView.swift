@@ -49,7 +49,7 @@ struct NamesFlashcardView: View {
                             }
                             .onEnded { val in
                                 let moved = dragOffset != .zero
-                                withAnimation(Motion.sheet) { dragOffset = .zero }
+                                withAnimation(Motion.spring) { dragOffset = .zero }
                                 guard moved, SwipeRule.commits(translation: val.translation.width,
                                                                velocity: val.velocity.width,
                                                                width: cardWidth) else { return }
@@ -57,7 +57,7 @@ struct NamesFlashcardView: View {
                             }
                     )
                     .onTapGesture {
-                        withAnimation(Motion.sheet) { isFlipped.toggle() }
+                        withAnimation(Motion.spring) { isFlipped.toggle() }
                     }
 
                 Spacer()
@@ -149,7 +149,7 @@ struct NamesFlashcardView: View {
     private func advance(by delta: Int) {
         let next = currentIndex + delta
         guard next >= 0, next < names.count else { return }
-        withAnimation(Motion.sheet) {
+        withAnimation(Motion.spring) {
             isFlipped = false
             currentIndex = next
         }

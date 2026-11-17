@@ -60,19 +60,6 @@ enum AppTheme: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
-    /// One line for the settings row — what the colour is *for*, not what it is.
-    var caption: String {
-        switch self {
-        case .teal:   "The original mark"
-        case .brass:  "Warm gilt, like a bound mushaf"
-        case .indigo: "Deep night ink"
-        case .plum:   "Quiet and unusual"
-        case .rose:   "Soft, low-glare warmth"
-        case .sage:   "Muted garden green"
-        case .slate:  "Almost no colour at all"
-        }
-    }
-
     /// The accent proper — deeper in light mode so it holds on white, more
     /// luminous in dark so it doesn't glare on OLED.
     private var ink: ThemeInk {
@@ -87,21 +74,7 @@ enum AppTheme: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
-    /// The far stop of accent gradients.
-    private var deepInk: ThemeInk {
-        switch self {
-        case .teal:   ThemeInk(light: (0.01, 0.33, 0.33), dark: (0.10, 0.48, 0.46))
-        case .brass:  ThemeInk(light: (0.40, 0.29, 0.08), dark: (0.55, 0.44, 0.24))
-        case .indigo: ThemeInk(light: (0.15, 0.18, 0.45), dark: (0.34, 0.38, 0.74))
-        case .plum:   ThemeInk(light: (0.30, 0.12, 0.34), dark: (0.56, 0.35, 0.62))
-        case .rose:   ThemeInk(light: (0.46, 0.11, 0.22), dark: (0.70, 0.34, 0.44))
-        case .sage:   ThemeInk(light: (0.18, 0.30, 0.18), dark: (0.40, 0.56, 0.36))
-        case .slate:  ThemeInk(light: (0.14, 0.21, 0.29), dark: (0.40, 0.50, 0.62))
-        }
-    }
-
     var accent: Color { ink.color }
-    var deep: Color { deepInk.color }
 
     // MARK: - Colour roles
     //

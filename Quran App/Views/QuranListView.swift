@@ -27,9 +27,21 @@ struct SurahRow: View {
                         .foregroundStyle(Palette.textSecondary)
                         .frame(width: 30, alignment: .leading)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(surah.englishName)
-                            .font(TypeScale.rowTitle)
-                            .foregroundStyle(isCurrent ? Color.brand : Palette.textPrimary)
+                        HStack(spacing: Spacing.xs) {
+                            Text(surah.englishName)
+                                .font(TypeScale.rowTitle)
+                                .foregroundStyle(isCurrent ? Color.brand : Palette.textPrimary)
+                            if isCurrent && player.isPlaying {
+                                // The surah being recited shows a small moving waveform.
+                                Image(systemName: "waveform")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.brand)
+                                    .symbolEffect(.variableColor.iterative, options: .repeat(.continuous),
+                                                  isActive: !Motion.reduceMotion)
+                                    .transition(Motion.pop)
+                                    .accessibilityHidden(true)
+                            }
+                        }
                         HStack(spacing: Spacing.xxs) {
                             Text(subtitle ?? "\(surah.englishNameTranslation) · \(surah.numberOfAyahs) ayahs")
                                 .lineLimit(1)
@@ -37,11 +49,20 @@ struct SurahRow: View {
                                 Image(systemName: "arrow.down.circle.fill")
                                     .font(.caption)
                                     .accessibilityLabel("Downloaded")
+                                    .transition(Motion.pop)
+                            } else if downloads.failed.contains(surah.number) {
+                                Image(systemName: "exclamationmark.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(Palette.danger)
+                                    .accessibilityLabel("Download didn't finish")
                             }
                         }
                         .font(TypeScale.secondary)
                         .foregroundStyle(Palette.textSecondary)
                     }
+                    .animation(Motion.standard, value: isCurrent)
+                    .animation(Motion.bouncy, value: isCurrent && player.isPlaying)
+                    .animation(Motion.bouncy, value: downloads.complete.contains(surah.number))
                     Spacer(minLength: Spacing.xs)
                     Text(surah.name.replacingOccurrences(of: "سُورَةُ ", with: ""))
                         .font(TypeScale.arabicList)
@@ -52,7 +73,7 @@ struct SurahRow: View {
                 .frame(minHeight: MinSize.surahRow)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(RowPressStyle())
 
             playButton
         }
@@ -62,7 +83,10 @@ struct SurahRow: View {
             } else if downloads.progress[surah.number] != nil {
                 Button("Cancel download", systemImage: "xmark") { downloads.cancel(surah.number) }
             } else {
-                Button("Download", systemImage: "arrow.down.circle") { downloads.download(surah) }
+                Button("Download", systemImage: "arrow.down.circle") {
+                    Haptics.tap()
+                    downloads.download(surah)
+                }
             }
         }
     }
@@ -85,20 +109,25 @@ struct SurahRow: View {
                         .trim(from: 0, to: fraction)
                         .stroke(Color.brand, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         .rotationEffect(.degrees(-90))
-                        .animation(Motion.standard, value: fraction)
+                        .animation(Motion.spring, value: fraction)
+                        .transition(.opacity)
                 }
                 if isCurrent && player.isLoading && player.isPlaying {
                     ProgressView().controlSize(.small)
+                        .transition(Motion.pop)
                 } else {
                     Image(systemName: isCurrent && player.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.brand)
                         .contentTransition(.symbolEffect(.replace))
+                        .transition(Motion.pop)
                 }
             }
             .frame(width: 36, height: 36)
             .frame(width: MinSize.hitTarget, height: MinSize.hitTarget)
             .contentShape(Rectangle())
+            .animation(Motion.quick, value: isCurrent && player.isLoading && player.isPlaying)
+            .animation(Motion.standard, value: downloads.progress[surah.number] != nil)
         }
         .buttonStyle(CardButtonStyle(scale: 0.88))
         .accessibilityLabel(isCurrent && player.isPlaying ? "Pause \(surah.englishName)" : "Play \(surah.englishName)")
@@ -198,7 +227,7 @@ struct JuzListView: View {
                     .frame(maxWidth: .infinity, minHeight: MinSize.surahRow, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(RowPressStyle())
 
                 Button {
                     Haptics.impact(.light)

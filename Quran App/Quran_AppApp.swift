@@ -40,6 +40,15 @@ struct QuranAppApp: App {
         UINavigationBar.appearance().titleTextAttributes = [.font: serif(17, .semibold)]
     }
 
+    /// The chosen translation is fetched if it is not on disk yet: one picked during
+    /// onboarding, or one whose download was cut short. Reading falls back to the
+    /// bundled translation until it arrives.
+    private func fetchSelectedTranslation() {
+        let id = Translation.selected.id
+        guard !QuranText.shared.isAvailable(id) else { return }
+        Task { try? await QuranText.shared.download(id) }
+    }
+
     private var preferredColorScheme: ColorScheme? {
         switch colorSchemeRaw {
         case "light": .light
@@ -64,12 +73,16 @@ struct QuranAppApp: App {
                     OnboardingView {
                         didOnboard = true
                         prayerTimes.refreshIfNeeded()
+                        fetchSelectedTranslation()
                     }
                     .environmentObject(prayerTimes)
                 }
                 .task {
                     player.onSurahFetched = { [downloads] surah in downloads.noteIfComplete(surah) }
-                    if didOnboard { prayerTimes.refreshIfNeeded() }
+                    if didOnboard {
+                        prayerTimes.refreshIfNeeded()
+                        fetchSelectedTranslation()
+                    }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .appThemeDidChange)) { _ in themeEpoch += 1 }
                 .onReceive(NotificationCenter.default.publisher(for: .readingTypeDidChange)) { _ in

@@ -8,10 +8,10 @@ struct TodayView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.sectionGap) {
-                header
-                ContinueCard()
-                PrayerCard()
-                VerseCard()
+                header.arrives(0)
+                ContinueCard().arrives(1)
+                PrayerCard().arrives(2)
+                VerseCard().arrives(3)
                 if player.recents.count > 1 {
                     EditorialSection(title: "Recent") {
                         VStack(spacing: 0) {
@@ -23,6 +23,7 @@ struct TodayView: View {
                             }
                         }
                     }
+                    .arrives(4)
                 }
             }
             .padding(.horizontal, Spacing.screenMargin)
@@ -51,7 +52,7 @@ struct TodayView: View {
                 .frame(minHeight: MinSize.hitTarget, alignment: .top)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(RowPressStyle())
         }
     }
 
@@ -95,15 +96,19 @@ private struct ContinueCard: View {
                             Text(surah.englishName)
                                 .font(TypeScale.title)
                                 .foregroundStyle(Palette.textPrimary)
+                                .contentTransition(.opacity)
                             Text(player.statusLine)
                                 .font(TypeScale.secondary)
                                 .foregroundStyle(Palette.textSecondary)
                                 .multilineTextAlignment(.leading)
+                                .contentTransition(.numericText())
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
+                        .animation(Motion.standard, value: player.statusLine)
+                        .animation(Motion.standard, value: surah)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(RowPressStyle())
                     .accessibilityHint("Opens the reader")
 
                     PlayPauseButton(size: 22, tint: Palette.onAccent) { player.toggle() }
@@ -153,7 +158,7 @@ private struct PrayerCard: View {
                 .frame(minHeight: MinSize.hitTarget)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(RowPressStyle())
         }
     }
 
@@ -171,10 +176,13 @@ private struct PrayerCard: View {
                             .font(TypeScale.heading.monospacedDigit())
                             .foregroundStyle(.brand)
                     }
-                    Text("in \(Self.countdown(from: context.date, to: next.date))")
+                    Text("in \(PrayerCountdown.text(to: next.date, from: context.date))")
                         .font(TypeScale.secondary)
                         .foregroundStyle(Palette.textSecondary)
+                        .contentTransition(.numericText(countsDown: true))
                 }
+                .animation(Motion.standard, value: next.date)
+                .animation(Motion.standard, value: Int(context.date.timeIntervalSinceReferenceDate / 60))
             }
         } else {
             Text(message)
@@ -191,13 +199,6 @@ private struct PrayerCard: View {
         case .notDetermined, .denied: "Allow location to see prayer times"
         case .ready:                  "Getting prayer times…"
         }
-    }
-
-    private static func countdown(from now: Date, to date: Date) -> String {
-        let minutes = max(0, Int(date.timeIntervalSince(now) / 60))
-        let (h, m) = (minutes / 60, minutes % 60)
-        if h > 0 { return m > 0 ? "\(h) h \(m) min" : "\(h) h" }
-        return m > 0 ? "\(m) min" : "less than a minute"
     }
 }
 
@@ -244,7 +245,7 @@ private struct VerseCard: View {
                     .padding(.top, Spacing.xs)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(RowPressStyle())
                 .accessibilityHint("Opens the reader at this ayah")
 
                 OutlineChip(label: "Play from here", icon: "play.fill") {
