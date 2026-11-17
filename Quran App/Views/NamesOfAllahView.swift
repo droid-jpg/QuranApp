@@ -29,8 +29,8 @@ struct NamesOfAllahView: View {
                         .font(.appSerif(40, weight: .medium))
                         .contentTransition(.numericText())
                     Text("of 99 memorized")
-                        .font(.appSerif(16, italic: true))
-                        .foregroundStyle(Color(.label).opacity(0.45))
+                        .font(.appSerif(16))
+                        .foregroundStyle(Palette.textSecondary)
                     Spacer(minLength: 0)
                 }
                 .padding(.bottom, 13)
@@ -66,7 +66,7 @@ struct NamesOfAllahView: View {
             .padding(.bottom, 40)
         }
         .navigationTitle("99 Names")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search name or meaning…")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -86,10 +86,9 @@ struct NamesOfAllahView: View {
             Haptics.selection()
             action()
         } label: {
-            Text(label.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .kerning(1.1)
-                .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.5))
+            Text(label)
+                .font(.label(13, weight: .semibold))
+                .foregroundStyle(on ? Color.brand : Palette.textSecondary)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 8)
                 .overlay(
@@ -112,8 +111,8 @@ private struct NameRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(name.id)")
-                .font(.system(size: 11, weight: .bold).monospacedDigit())
-                .foregroundStyle(isMemorized ? Color.brand : Color(.label).opacity(0.3))
+                .font(.label(13, weight: .bold).monospacedDigit())
+                .foregroundStyle(isMemorized ? Color.brand : Palette.textSecondary)
                 .frame(minWidth: 22, alignment: .leading)
                 .padding(.top, 5)
 
@@ -122,8 +121,8 @@ private struct NameRow: View {
                     .font(.appSerif(18, weight: .medium))
                     .foregroundStyle(Color(.label))
                 Text(name.meaning)
-                    .font(.appSerif(14, italic: true))
-                    .foregroundStyle(Color(.label).opacity(0.45))
+                    .font(.appSerif(15))
+                    .foregroundStyle(Palette.textSecondary)
             }
 
             Spacer(minLength: 8)
@@ -135,13 +134,13 @@ private struct NameRow: View {
                 HStack(spacing: 10) {
                     AudioSpeakButton(text: name.arabic, size: 13)
                     Image(systemName: isMemorized ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 13))
+                        .font(.label(13))
                         .foregroundStyle(isMemorized ? Color.brand : Color(.label).opacity(0.22))
                 }
             }
         }
         .padding(.vertical, 13)
-        .animation(.easeInOut(duration: 0.2), value: status)
+        .animation(Motion.standard, value: status)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isMemorized ? [.isSelected] : [])
     }

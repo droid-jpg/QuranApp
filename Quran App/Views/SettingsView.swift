@@ -1,45 +1,22 @@
 import SwiftUI
 
-/// Settings, rebuilt as ruled blocks rather than a grouped `Form`. Same settings,
-/// same order, but the page now reads like the rest of the app: hairlines, small-
-/// caps eyebrows with a glyph, and serif labels.
-///
-/// Presented as a NavigationLink destination inside MoreView's NavigationStack —
-/// it intentionally has no NavigationStack of its own.
+/// Settings as ruled blocks, in the app's own type. Pushed from More.
 struct SettingsView: View {
     @AppStorage("colorSchemePreference") private var colorSchemeRaw = "system"
     @AppStorage("selectedReciterId")     private var selectedReciterId = 7
     @AppStorage("selectedTranslationId") private var translationId = Translation.fallbackId
-    @AppStorage("notifEnabled")          private var notifEnabled = false
-    @AppStorage("notifFajr")             private var notifFajr = true
-    @AppStorage("notifDhuhr")            private var notifDhuhr = true
-    @AppStorage("notifAsr")              private var notifAsr = true
-    @AppStorage("notifMaghrib")          private var notifMaghrib = true
-    @AppStorage("notifIsha")             private var notifIsha = true
-    @AppStorage("notifSunrise")          private var notifSunrise = true
-    @AppStorage("notifMidnight")         private var notifMidnight = true
-    @AppStorage("notifPreReminder")      private var notifPreReminder = 10
-    @AppStorage("liveActivityEnabled")   private var liveActivityEnabled = false
     @AppStorage("prayerCalcMethod")      private var prayerCalcMethod = 2
     @AppStorage("prayerAsrSchool")       private var prayerAsrSchool = 0
 
-    @AppStorage("arabicFontSize")          private var arabicFontSize: Double = 26
-    @AppStorage("translationFontSize")     private var translationFontSize: Double = 17
-    @AppStorage("transliterationFontSize") private var transliterationFontSize: Double = 13
-    @AppStorage("readingFace")             private var readingFace = ReadingFace.newYork.rawValue
-
-    @AppStorage("memoReminderEnabled") private var memoReminderEnabled = false
-    @AppStorage("memoReminderHour")    private var memoReminderHour = 19
-    @AppStorage("memoReminderMinute")  private var memoReminderMinute = 0
-
-    @AppStorage("fillBlankUseTransliteration") private var fillBlankUseTransliteration = false
-    @AppStorage("memorizationCardScript")              private var cardScript: MemorizationCardScript = .arabic
-    @AppStorage("memorizationArabicFontSize")          private var cardArabicFontSize: Double = 30
-    @AppStorage("memorizationTransliterationFontSize") private var cardTransliterationFontSize: Double = 18
-
+    @Environment(Downloads.self) private var downloads
     @EnvironmentObject private var prayerService: PrayerTimesService
     @State private var theme = AppTheme.current
     @State private var showReadingType = false
+    /// The edition being downloaded, while it is.
+    @State private var downloadingTranslation: String?
+    @State private var translationFailed = false
+    @State private var storedBytes: Int64?
+    @State private var confirmRemoveAudio = false
 
     /// Picking a language selects that language's first translation. The getter
     /// derives the current language from the selected edition, so no extra state.
@@ -71,7 +48,6 @@ struct SettingsView: View {
                                  trailing: theme.displayName) {
                     ThemePicker(selection: $theme)
                         .padding(.top, 4)
-                    Footnote("The accent used across the app, the reader, and your widgets. \(theme.caption).")
                 }
 
                 // ── Reading ───────────────────────────────────────────────
@@ -81,26 +57,7 @@ struct SettingsView: View {
                         Haptics.tap()
                         showReadingType = true
                     }
-                    .padding(.bottom, 16)
 
-                    EditorialSpecimenSlider(
-                        label: "Arabic", value: $arabicFontSize, range: 18...44,
-                        sample: "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", rightToLeft: true
-                    )
-                    .padding(.bottom, 16)
-
-                    EditorialSpecimenSlider(
-                        label: "Translation", value: $translationFontSize, range: 13...26,
-                        sample: "In the name of Allah, the Most Gracious, the Most Merciful."
-                    )
-                    .padding(.bottom, 16)
-
-                    EditorialSpecimenSlider(
-                        label: "Translit.", value: $transliterationFontSize, range: 11...22,
-                        sample: "Bismi Allāhi r-raḥmāni r-raḥīm", italic: true
-                    )
-
-                    Footnote("Applies to the surah reading view.")
                 }
 
                 // ── Translation ───────────────────────────────────────────
@@ -115,8 +72,17 @@ struct SettingsView: View {
                         options: Translation.translations(in: Translation.selected.language)
                             .map { .init($0.id, $0.name) }
                     )
-                    Footnote("Sets the translation shown beneath each ayah.")
+                    if downloadingTranslation != nil {
+                        HStack(spacing: Spacing.xs) {
+                            ProgressView().controlSize(.small)
+                            Text("Downloading for offline reading…")
+                                .font(TypeScale.secondary)
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                        .padding(.top, Spacing.sm)
+                    }
                 }
+                .onChange(of: translationId) { old, new in downloadTranslation(new, revertingTo: old) }
 
                 // ── Reciter ───────────────────────────────────────────────
                 EditorialSection(title: "Reciter", icon: "person.wave.2.fill") {
@@ -124,59 +90,26 @@ struct SettingsView: View {
                         title: "Voice", selection: $selectedReciterId,
                         options: Reciter.all.map { .init($0.id, $0.name) }
                     )
-                    Footnote("Changes apply when you next play an ayah.")
                 }
 
-                // ── Memorization cards ────────────────────────────────────
-                EditorialSection(title: "Memorization cards", icon: "rectangle.on.rectangle.angled") {
-                    EditorialMenuRow(
-                        title: "Card display", selection: $cardScript,
-                        options: MemorizationCardScript.allCases.map { .init($0, $0.title) }
+                // ── Saved audio ───────────────────────────────────────────
+                EditorialSection(title: "Saved audio", icon: "arrow.down.circle.fill") {
+                    EditorialValueRow(
+                        title: "On this iPhone",
+                        value: storedBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "…"
                     )
-                    if cardScript.showsArabic {
-                        Hairline().padding(.vertical, 13)
-                        EditorialSpecimenSlider(
-                            label: "Arabic", value: $cardArabicFontSize, range: 22...46,
-                            sample: "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", rightToLeft: true
-                        )
+                    Hairline().padding(.vertical, 13)
+                    Button(role: .destructive) {
+                        confirmRemoveAudio = true
+                    } label: {
+                        Text("Remove all saved audio")
+                            .font(.appSerif(17))
+                            .foregroundStyle(Palette.danger)
+                            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
-                    if cardScript.showsTransliteration {
-                        Hairline().padding(.vertical, 13)
-                        EditorialSpecimenSlider(
-                            label: "Translit.", value: $cardTransliterationFontSize, range: 13...30,
-                            sample: "Bismi Allāhi r-raḥmāni r-raḥīm", italic: true
-                        )
-                    }
-                    Footnote("What the ayah shows on review cards — Arabic, transliteration, or both — and their sizes.")
-                }
-
-                // ── Memorization ──────────────────────────────────────────
-                EditorialSection(title: "Memorization", icon: "graduationcap.fill") {
-                    EditorialMenuRow(
-                        title: "Fill-in-the-blank hint", selection: $fillBlankUseTransliteration,
-                        options: [.init(false, "Translation"), .init(true, "Transliteration")]
-                    )
-                    Footnote("What's shown beneath the ayah when you reveal a fill-in-the-blank card.")
-                }
-
-                // ── Memorization reminder ─────────────────────────────────
-                EditorialSection(title: "Memorization reminder", icon: "bell.badge.fill") {
-                    EditorialToggle(title: "Daily reminder", isOn: $memoReminderEnabled)
-                        .onChange(of: memoReminderEnabled) { rescheduleMemoReminder() }
-
-                    if memoReminderEnabled {
-                        Hairline().padding(.vertical, 13)
-                        HStack {
-                            Text("Time")
-                                .font(.appSerif(17))
-                            Spacer()
-                            DatePicker("", selection: reminderTime, displayedComponents: .hourAndMinute)
-                                .labelsHidden()
-                                .onChange(of: memoReminderHour) { rescheduleMemoReminder() }
-                                .onChange(of: memoReminderMinute) { rescheduleMemoReminder() }
-                        }
-                    }
-                    Footnote("A daily nudge to continue memorizing the ayah you're working on.")
+                    .buttonStyle(.plain)
+                    .disabled((storedBytes ?? 0) == 0)
                 }
 
                 // ── Prayer calculation ────────────────────────────────────
@@ -195,20 +128,90 @@ struct SettingsView: View {
                     )
                     .onChange(of: prayerAsrSchool) { prayerService.refetchForSettingsChange() }
 
-                    Footnote("The twilight angles and Asr method used to compute your local prayer times.")
                 }
 
                 // ── Prayer notifications ──────────────────────────────────
+                PrayerNotificationsSection()
+
+                // ── About ─────────────────────────────────────────────────
+                EditorialSection(title: "About", icon: "info.circle.fill") {
+                    EditorialValueRow(title: "Arabic text", value: "Tanzil Project · tanzil.net")
+                    Hairline().padding(.vertical, 13)
+                    EditorialValueRow(title: "Translations", value: "alquran.cloud")
+                    Hairline().padding(.vertical, 13)
+                    EditorialValueRow(title: "Audio and word timings", value: "quran.com")
+                    Hairline().padding(.vertical, 13)
+                    EditorialValueRow(title: "Prayer times", value: "aladhan.com")
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
+        }
+        .background(Palette.background)
+        .navigationTitle("Settings")
+        .sheet(isPresented: $showReadingType) {
+            ReadingTypeSheet()
+        }
+        .task { storedBytes = await Downloads.storedBytes() }
+        .alert("Couldn't download that translation", isPresented: $translationFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Check your connection and choose it again.")
+        }
+        .confirmationDialog("Remove all saved audio?", isPresented: $confirmRemoveAudio, titleVisibility: .visible) {
+            Button("Remove", role: .destructive) {
+                downloads.removeAll()
+                storedBytes = 0
+            }
+        } message: {
+            Text("Surahs you play again will be saved again.")
+        }
+    }
+
+    /// A translation other than the bundled one is fetched whole, once, when it is
+    /// chosen. If that fails the selection goes back to what it was.
+    private func downloadTranslation(_ id: String, revertingTo previous: String) {
+        guard !QuranText.shared.isAvailable(id) else { return }
+        downloadingTranslation = id
+        Task {
+            do {
+                try await QuranText.shared.download(id)
+            } catch {
+                if translationId == id { translationId = previous }
+                translationFailed = true
+            }
+            if downloadingTranslation == id { downloadingTranslation = nil }
+        }
+    }
+}
+
+// MARK: - Prayer notifications
+
+/// The prayer notification switches. One view, shown in Settings and pushed from
+/// Prayer Times ("Notifications"), so the two never drift apart. Turning the main
+/// switch (or any prayer) on is what asks the system for permission; a refusal puts
+/// the switch back off.
+struct PrayerNotificationsSection: View {
+    @AppStorage("notifEnabled")          private var notifEnabled = false
+    @AppStorage("notifFajr")             private var notifFajr = true
+    @AppStorage("notifDhuhr")            private var notifDhuhr = true
+    @AppStorage("notifAsr")              private var notifAsr = true
+    @AppStorage("notifMaghrib")          private var notifMaghrib = true
+    @AppStorage("notifIsha")             private var notifIsha = true
+    @AppStorage("notifSunrise")          private var notifSunrise = true
+    @AppStorage("notifMidnight")         private var notifMidnight = true
+    @AppStorage("notifPreReminder")      private var notifPreReminder = 10
+
+    @EnvironmentObject private var prayerService: PrayerTimesService
+    @State private var denied = false
+
+    var body: some View {
                 EditorialSection(title: "Prayer notifications", icon: "bell.fill") {
                     EditorialToggle(title: "Enable notifications", isOn: $notifEnabled)
-                        .onChange(of: notifEnabled) { reschedule() }
+                        .onChange(of: notifEnabled) { _, on in reschedule(askingPermission: on) }
 
                     if notifEnabled {
-                        Hairline().padding(.vertical, 13)
-                        EditorialToggle(title: "Live Activity", caption: "10 min countdown",
-                                        isOn: $liveActivityEnabled)
-                            .onChange(of: liveActivityEnabled) { reschedule() }
-
                         Hairline().padding(.vertical, 13)
                         Eyebrow("Which ones").padding(.bottom, 11)
 
@@ -228,40 +231,17 @@ struct SettingsView: View {
                         )
                         .onChange(of: notifPreReminder) { reschedule() }
 
-                        Footnote("Notifications use your local prayer times based on location.")
                     }
                 }
-
-                // ── About ─────────────────────────────────────────────────
-                EditorialSection(title: "About", icon: "info.circle.fill") {
-                    EditorialValueRow(title: "Arabic text", value: "Tanzil Project · tanzil.net")
-                    Hairline().padding(.vertical, 13)
-                    EditorialValueRow(title: "Data source", value: "alquran.cloud")
-                    Hairline().padding(.vertical, 13)
-                    EditorialValueRow(title: "Audio source", value: "everyayah.com")
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 8)
-            .padding(.bottom, 40)
-        }
-        .navigationTitle("Settings")
-        .sheet(isPresented: $showReadingType) {
-            ReadingTypeSheet()
-        }
-        .task {
-            if notifEnabled {
-                _ = await NotificationService.shared.requestPermission()
-            }
-        }
+        .notificationsDeniedAlert(isPresented: $denied)
     }
 
     @ViewBuilder
     private func prayerToggle(_ name: String, _ binding: Binding<Bool>) -> some View {
         HStack(spacing: 11) {
-            Image(systemName: NextPrayerSection.prayerIcons[name] ?? "clock")
-                .font(.system(size: 12))
-                .foregroundStyle(binding.wrappedValue ? Color.brand : Color(.label).opacity(0.3))
+            Image(systemName: PrayerIcons.names[name] ?? "clock")
+                .font(.label(13))
+                .foregroundStyle(binding.wrappedValue ? Color.brand : Palette.textSecondary)
                 .frame(width: 18)
             Text(name)
                 .font(.appSerif(16))
@@ -273,41 +253,38 @@ struct SettingsView: View {
                 .frame(width: 46, alignment: .trailing)
         }
         .padding(.bottom, 4)
-        .onChange(of: binding.wrappedValue) { reschedule() }
+        .onChange(of: binding.wrappedValue) { _, on in reschedule(askingPermission: on) }
         .accessibilityElement(children: .combine)
     }
 
-    private func reschedule() {
+    /// Reschedules from the current switches. When something was just turned on,
+    /// permission is requested first (the system alert, once); if refused, the main
+    /// switch goes back off and nothing is scheduled.
+    private func reschedule(askingPermission: Bool = false) {
         Task {
-            if notifEnabled {
-                _ = await NotificationService.shared.requestPermission()
+            if askingPermission, notifEnabled {
+                let permission = await NotificationService.shared.ensurePermission()
+                if permission != .granted { notifEnabled = false }
+                if permission == .denied { denied = true }
             }
             prayerService.rescheduleNotifications()
         }
     }
+}
 
-    /// DatePicker works in `Date`; the reminder is stored as hour/minute so it's
-    /// timezone-agnostic. This bridges the two.
-    private var reminderTime: Binding<Date> {
-        Binding(
-            get: {
-                var c = DateComponents(); c.hour = memoReminderHour; c.minute = memoReminderMinute
-                return Calendar.current.date(from: c) ?? Date()
-            },
-            set: { newDate in
-                let c = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                memoReminderHour = c.hour ?? 19
-                memoReminderMinute = c.minute ?? 0
+/// "Notifications are off" with a way to the system settings, shown when the user
+/// turns something on after refusing permission.
+extension View {
+    func notificationsDeniedAlert(isPresented: Binding<Bool>) -> some View {
+        alert("Notifications are off", isPresented: isPresented) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
             }
-        )
-    }
-
-    private func rescheduleMemoReminder() {
-        Task {
-            if memoReminderEnabled {
-                _ = await NotificationService.shared.requestPermission()
-            }
-            NotificationService.shared.scheduleMemorizationReminder()
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text("Allow notifications for Quran App in Settings to turn this on.")
         }
     }
 }
@@ -322,8 +299,8 @@ struct Footnote: View {
 
     var body: some View {
         Text(text)
-            .font(.appSerif(13.5, italic: true))
-            .foregroundStyle(Color(.label).opacity(0.42))
+            .font(TypeScale.secondary)
+            .foregroundStyle(Palette.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 12)
@@ -358,18 +335,17 @@ private struct ThemePicker: View {
                                     .strokeBorder(theme.swatch, lineWidth: 1.5)
                                     .frame(width: 44, height: 44)
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.label(13, weight: .bold))
                                     .foregroundStyle(.white)
                             }
                         }
                         .frame(height: 46)
 
-                        Text(theme.displayName.uppercased())
-                            .font(.system(size: 8.5, weight: theme == selection ? .bold : .semibold))
-                            .kerning(0.9)
+                        Text(theme.displayName)
+                            .font(.label(13, weight: theme == selection ? .bold : .semibold))
                             .foregroundStyle(theme == selection
                                              ? Color(.label)
-                                             : Color(.label).opacity(0.45))
+                                             : Palette.textSecondary)
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
@@ -379,6 +355,6 @@ private struct ThemePicker: View {
                 .accessibilityAddTraits(theme == selection ? [.isButton, .isSelected] : .isButton)
             }
         }
-        .animation(.easeOut(duration: 0.15), value: selection)
+        .animation(Motion.quick, value: selection)
     }
 }

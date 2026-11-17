@@ -1,10 +1,3 @@
-//
-//  QuranWidgetBundle.swift
-//  QuranWidget
-//
-//  Created by Sami Nukta on 5/7/26.
-//
-
 import WidgetKit
 import SwiftUI
 
@@ -12,7 +5,5 @@ import SwiftUI
 struct QuranWidgetBundle: WidgetBundle {
     var body: some Widget {
         QuranWidget()
-        HifzWidget()
-        PrayerCountdownLiveActivity()
     }
 }

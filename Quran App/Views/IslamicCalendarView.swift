@@ -43,28 +43,29 @@ struct IslamicCalendarView: View {
             case .list:  AgendaList(kind: selectedKind, now: now)
             }
         }
-        .navigationTitle("Calendar")
+        .navigationTitle("Islamic Calendar")
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(ticker) { now = $0 }
     }
 
     // MARK: - Kind filter
 
+    /// Wraps onto a second line rather than clipping at the right edge (§5: no
+    /// clipped chip rows).
     private var kindFilterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                EventKindChip(label: "All", icon: "calendar", color: .brand,
-                              isSelected: selectedKind == nil) { selectedKind = nil }
-                ForEach([IslamicEventKind.holiday, .fastingMonth, .fastingDay, .recommended],
-                        id: \.rawValue) { kind in
-                    EventKindChip(label: kind.label, icon: kind.icon, color: kind.color,
-                                  isSelected: selectedKind == kind) {
-                        selectedKind = selectedKind == kind ? nil : kind
-                    }
+        FlowLayout(spacing: 8, lineSpacing: 8) {
+            EventKindChip(label: "All", icon: "calendar", color: .brand,
+                          isSelected: selectedKind == nil) { selectedKind = nil }
+            ForEach([IslamicEventKind.holiday, .fastingMonth, .fastingDay, .recommended],
+                    id: \.rawValue) { kind in
+                EventKindChip(label: kind.label, icon: kind.icon, color: kind.color,
+                              isSelected: selectedKind == kind) {
+                    selectedKind = selectedKind == kind ? nil : kind
                 }
             }
-            .padding(.vertical, 1)
         }
+        .padding(.vertical, 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Month
@@ -124,7 +125,7 @@ struct IslamicCalendarView: View {
         HStack(spacing: 12) {
             Button(action: onPrev) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(.brand)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
@@ -138,7 +139,7 @@ struct IslamicCalendarView: View {
 
             Button(action: onNext) {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(.brand)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
@@ -151,9 +152,8 @@ struct IslamicCalendarView: View {
         .padding(.bottom, 4)
         .overlay(alignment: .bottom) {
             if !cal.isDate(anchor, equalTo: now, toGranularity: mode == .week ? .weekOfYear : .month) {
-                Button("TODAY") { jumpToToday() }
-                    .font(.system(size: 9, weight: .bold))
-                    .kerning(1.2)
+                Button("Today") { jumpToToday() }
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(.brand)
                     .offset(y: 12)
             }
@@ -164,10 +164,9 @@ struct IslamicCalendarView: View {
     private var weekdayHeader: some View {
         HStack(spacing: 0) {
             ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, s in
-                Text(s.uppercased())
-                    .font(.system(size: 9, weight: .bold))
-                    .kerning(0.8)
-                    .foregroundStyle(Color(.label).opacity(0.35))
+                Text(s)
+                    .font(.label(13, weight: .bold))
+                    .foregroundStyle(Color.secondary)
                     .frame(maxWidth: .infinity)
             }
         }
@@ -214,13 +213,13 @@ struct IslamicCalendarView: View {
         Haptics.selection()
         let comp = months != 0 ? DateComponents(month: months) : DateComponents(day: weeks * 7)
         if let d = cal.date(byAdding: comp, to: anchor) {
-            withAnimation(.easeInOut(duration: 0.2)) { anchor = d }
+            withAnimation(Motion.standard) { anchor = d }
         }
     }
 
     private func select(_ day: Date) {
         Haptics.selection()
-        withAnimation(.easeInOut(duration: 0.15)) {
+        withAnimation(Motion.quick) {
             selectedDay = cal.startOfDay(for: day)
             if mode == .month, !cal.isDate(day, equalTo: anchor, toGranularity: .month) {
                 anchor = day
@@ -230,7 +229,7 @@ struct IslamicCalendarView: View {
 
     private func jumpToToday() {
         Haptics.tap()
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(Motion.standard) {
             anchor = now
             selectedDay = cal.startOfDay(for: now)
         }
@@ -373,8 +372,8 @@ private struct DayEventsSection: View {
 
             if occurrences.isEmpty {
                 Text("Nothing marked on this day.")
-                    .font(.appSerif(16, italic: true))
-                    .foregroundStyle(Color(.label).opacity(0.4))
+                    .font(.appSerif(16))
+                    .foregroundStyle(Palette.textSecondary)
                     .padding(.top, 14)
             } else {
                 ForEach(Array(occurrences.enumerated()), id: \.element.id) { index, occ in
@@ -438,12 +437,11 @@ private struct EventKindChip: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(isSelected ? color : Color(.label).opacity(0.4))
-                Text(label.uppercased())
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .kerning(1)
-                    .foregroundStyle(isSelected ? color : Color(.label).opacity(0.5))
+                    .font(.label(13, weight: .bold))
+                    .foregroundStyle(isSelected ? color : Color.secondary)
+                Text(label)
+                    .font(.label(13, weight: .semibold))
+                    .foregroundStyle(isSelected ? color : Color.secondary)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -477,23 +475,26 @@ private struct EventRow: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: event.kind.icon)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.label(13, weight: .medium))
                     .foregroundStyle(event.kind.color)
                     .frame(width: 20)
                     .padding(.top, 3)
 
                 VStack(alignment: .leading, spacing: 0) {
+                    // The name wraps; the kind label keeps its full width.
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(event.name)
                             .font(.appSerif(18, weight: .medium))
                             .foregroundStyle(Color(.label))
+                            .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 6)
-                        MetaText(event.kind.label.uppercased(), tint: event.kind.color, size: 8.5)
+                        MetaText(event.kind.label, tint: event.kind.color, size: 13)
+                            .fixedSize()
                     }
 
                     Text(event.arabicName)
                         .font(.appArabic(15))
-                        .foregroundStyle(Color(.label).opacity(0.45))
+                        .foregroundStyle(Color.secondary)
                         .environment(\.layoutDirection, .rightToLeft)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 3)
@@ -505,18 +506,18 @@ private struct EventRow: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 Haptics.tap()
-                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                withAnimation(Motion.standard) { expanded.toggle() }
             }
 
             if expanded {
                 Text(event.description)
                     .font(.appSerif(15))
-                    .foregroundStyle(Color(.label).opacity(0.6))
+                    .foregroundStyle(Color.secondary)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
                     .padding(.leading, 32)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(Motion.move(.opacity.combined(with: .move(edge: .top))))
             }
         }
     }
@@ -528,32 +529,41 @@ private struct EventRow: View {
         let isActive = start <= now && now <= endOfDay(end)
         let isPast = endOfDay(end) < now
 
-        HStack(spacing: 7) {
-            if occ.durationDays() > 1 {
-                MetaText("\(Self.rangeFmt.string(from: start)) – \(Self.dayFmt.string(from: end))", size: 9.5)
-                MetaText("· \(occ.durationDays()) DAYS", tint: Color(.label).opacity(0.32), size: 9)
-            } else {
-                MetaText(Self.dayFmt.string(from: start), size: 9.5)
+        // Line 1: the dates (wrapping if they must) and the countdown, which
+        // never truncates. Line 2: the recurrence note, in full.
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                MetaText(dateText(start: start, end: end), size: 13)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                status(isActive: isActive, isPast: isPast, start: start)
+                    .fixedSize()
             }
-
             if let note = event.recurrence.note {
-                MetaText("· \(note.uppercased())", tint: Color(.label).opacity(0.32), size: 9)
-                    .lineLimit(1)
+                MetaText(note, size: 13)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
 
-            Spacer(minLength: 4)
+    private func dateText(start: Date, end: Date) -> String {
+        guard occ.durationDays() > 1 else { return Self.dayFmt.string(from: start) }
+        return "\(Self.rangeFmt.string(from: start)) – \(Self.dayFmt.string(from: end)) · \(occ.durationDays()) days"
+    }
 
+    @ViewBuilder
+    private func status(isActive: Bool, isPast: Bool, start: Date) -> some View {
+        Group {
             if isActive {
-                Text("NOW")
-                    .font(.system(size: 9, weight: .bold))
-                    .kerning(1)
+                Text("Now")
+                    .font(.label(13, weight: .bold))
                     .foregroundStyle(Color(.systemBackground))
                     .padding(.horizontal, 6).padding(.vertical, 3)
                     .background(event.kind.color)
             } else if isPast {
-                MetaText("PASSED", tint: Color(.label).opacity(0.3), size: 9)
+                MetaText("Passed", size: 13)
             } else {
-                MetaText(countdown(to: start).uppercased(), tint: event.kind.color, size: 9.5)
+                MetaText(countdown(to: start), tint: event.kind.color, size: 13)
             }
         }
     }

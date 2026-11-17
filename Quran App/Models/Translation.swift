@@ -1,8 +1,7 @@
 import Foundation
 
 /// A Quran translation edition (alquran.cloud identifier), grouped by language.
-/// Mirrors the `Reciter` pattern: a curated static list + a `selected` accessor
-/// backed by `@AppStorage("selectedTranslationId")`.
+/// Pickthall is bundled; any other edition is downloaded once, whole (`QuranText`).
 struct Translation: Identifiable, Equatable {
     let id: String        // alquran.cloud edition identifier, e.g. "en.asad"
     let name: String      // translator / edition name
@@ -10,25 +9,15 @@ struct Translation: Identifiable, Equatable {
 }
 
 extension Translation {
-    /// Preserves the app's previous hardcoded translation as the default.
-    static let fallbackId = "en.asad"
-
-    /// Edition used by the memorization "Simple" toggle: a plain, easy-to-skim
-    /// rendering for getting the gist of an ayah while drilling its meaning,
-    /// independent of whatever (possibly verbose) translation the user reads with.
-    static let simpleMeaningId = "en.sahih"
-
-    /// Display name of the simple-meaning edition, shown as a source caption.
-    static var simpleMeaningName: String {
-        all.first { $0.id == simpleMeaningId }?.name ?? "Simple"
-    }
+    /// The edition bundled with the app, so reading needs no network.
+    static let fallbackId = "en.pickthall"
 
     static let all: [Translation] = [
         // English
-        Translation(id: "en.asad",       name: "Muhammad Asad",          language: "English"),
-        Translation(id: "en.sahih",      name: "Saheeh International",    language: "English"),
-        Translation(id: "en.itani",      name: "The Clear Quran (Itani)", language: "English"),
         Translation(id: "en.pickthall",  name: "Pickthall",              language: "English"),
+        Translation(id: "en.sahih",      name: "Saheeh International",    language: "English"),
+        Translation(id: "en.asad",       name: "Muhammad Asad",          language: "English"),
+        Translation(id: "en.itani",      name: "The Clear Quran (Itani)", language: "English"),
         Translation(id: "en.yusufali",   name: "Yusuf Ali",              language: "English"),
         // Urdu
         Translation(id: "ur.jalandhry",  name: "Jalandhry",              language: "Urdu"),

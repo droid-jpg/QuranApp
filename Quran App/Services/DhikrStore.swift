@@ -48,7 +48,7 @@ class DhikrStore: ObservableObject {
             goalReached = true
             Haptics.success()
         } else {
-            Haptics.impact()
+            Haptics.impact(.rigid)
         }
     }
 

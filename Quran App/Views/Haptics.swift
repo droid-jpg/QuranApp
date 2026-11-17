@@ -1,40 +1,59 @@
-import SwiftUI
 import UIKit
 
-// Single source of truth for haptic feedback so every button, navigation tap,
-// and state change across the app speaks the same tactile vocabulary.
-
+/// The app's haptics, in one vocabulary:
+///
+/// - `tap`: something opened or moved (navigation, a menu item, skip).
+/// - `selection`: one of several was chosen (a segment, a theme, the first ayah of a range).
+/// - `impact`: something started or stopped (play, pause, a count).
+/// - `success`: something finished (a repeat set, a download kept, a goal reached).
+/// - `warning` / `error`: something was removed, or did not work.
+///
+/// The generators are kept and re-armed after each use, so the next one fires without
+/// the delay of waking the Taptic Engine.
+@MainActor
 enum Haptics {
-    /// Light tap for navigation and generic button presses.
+    private static let light = UIImpactFeedbackGenerator(style: .light)
+    private static let medium = UIImpactFeedbackGenerator(style: .medium)
+    private static let soft = UIImpactFeedbackGenerator(style: .soft)
+    private static let rigid = UIImpactFeedbackGenerator(style: .rigid)
+    private static let picker = UISelectionFeedbackGenerator()
+    private static let notice = UINotificationFeedbackGenerator()
+
     static func tap() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        light.impactOccurred(intensity: 0.7)
+        light.prepare()
     }
 
-    /// Selection change — pickers, filters, segmented toggles.
     static func selection() {
-        UISelectionFeedbackGenerator().selectionChanged()
+        picker.selectionChanged()
+        picker.prepare()
     }
 
-    /// Impact for primary / committing actions. Defaults to medium.
-    static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .medium) {
-        UIImpactFeedbackGenerator(style: style).impactOccurred()
+    enum Weight { case light, medium, soft, rigid }
+
+    static func impact(_ weight: Weight = .medium) {
+        let generator = switch weight {
+        case .light:  light
+        case .medium: medium
+        case .soft:   soft
+        case .rigid:  rigid
+        }
+        generator.impactOccurred()
+        generator.prepare()
     }
 
     static func success() {
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        notice.notificationOccurred(.success)
+        notice.prepare()
     }
 
     static func warning() {
-        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        notice.notificationOccurred(.warning)
+        notice.prepare()
     }
-}
 
-extension View {
-    /// Fires a light tap haptic on a genuine tap without consuming it, so it
-    /// composes with `NavigationLink` / `List` row selection (navigation still
-    /// happens). Uses a `TapGesture`, so it stays silent during scrolling —
-    /// unlike a `ButtonStyle` press, which also triggers on touch-down.
-    func hapticTap() -> some View {
-        simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+    static func error() {
+        notice.notificationOccurred(.error)
+        notice.prepare()
     }
 }

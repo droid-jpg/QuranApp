@@ -19,12 +19,12 @@ struct DhikrView: View {
 
             Spacer(minLength: 20)
         }
-        // As a safe-area inset rather than the last row of the VStack, and with
-        // the tab bar's height reserved by hand — the TabView's own inset does
-        // not reach a fixed layout inside a pushed stack, so the bar was being
-        // drawn underneath it.
+        .frame(maxWidth: .infinity)
+        .background(Palette.background)
+        // As a safe-area inset rather than the last row of the VStack. The root's
+        // inset (mini player + tab bar) already sits below it.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            bottomBar.padding(.bottom, EditorialTabBar.barHeight)
+            bottomBar
         }
         .navigationTitle("Dhikr")
         .navigationBarTitleDisplayMode(.inline)
@@ -45,19 +45,19 @@ struct DhikrView: View {
 
     // MARK: - Preset strip
 
+    /// Wraps onto a second line rather than clipping at the right edge (§5: no
+    /// clipped chip rows).
     private var presetPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        FlowLayout(spacing: 8, lineSpacing: 8) {
                 ForEach(DhikrStore.defaultPresets) { preset in
                     let on = store.selectedPreset.id == preset.id
                     Button {
                         Haptics.selection()
-                        withAnimation(AppAnim.smooth) { store.select(preset) }
+                        withAnimation(Motion.standard) { store.select(preset) }
                     } label: {
-                        Text(preset.name.uppercased())
-                            .font(.system(size: 10, weight: .semibold))
-                            .kerning(1.1)
-                            .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.5))
+                        Text(preset.name)
+                            .font(.label(13, weight: .semibold))
+                            .foregroundStyle(on ? Color.brand : Palette.textSecondary)
                             .padding(.horizontal, 11)
                             .padding(.vertical, 8)
                             .overlay(
@@ -68,9 +68,9 @@ struct DhikrView: View {
                     }
                     .buttonStyle(.plain)
                 }
-            }
-            .padding(.vertical, 1)
         }
+        .padding(.vertical, 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Counter
@@ -87,7 +87,7 @@ struct DhikrView: View {
                 .stroke(Color.brand, style: StrokeStyle(lineWidth: 2, lineCap: .butt))
                 .rotationEffect(.degrees(-90))
                 .frame(width: 250, height: 250)
-                .animation(.spring(duration: 0.3), value: store.progress)
+                .animation(Motion.spring, value: store.progress)
 
             Button(action: store.tap) {
                 VStack(spacing: 8) {
@@ -95,19 +95,21 @@ struct DhikrView: View {
                         Image(systemName: "checkmark")
                             .font(.system(size: 52, weight: .light))
                             .foregroundStyle(.brand)
-                            .transition(.scale.combined(with: .opacity))
+                            .symbolEffect(.bounce, value: store.goalReached)
+                            .transition(Motion.pop)
                     } else {
                         Text("\(store.count)")
                             .font(.appSerif(72, weight: .light))
                             .foregroundStyle(.primary)
                             .contentTransition(.numericText(countsDown: false))
-                            .animation(.spring(duration: 0.2), value: store.count)
+                            .animation(Motion.quick, value: store.count)
                     }
 
                     Eyebrow(store.selectedPreset.name)
                 }
                 .frame(width: 230, height: 230)
                 .contentShape(Circle())
+                .animation(Motion.bouncy, value: store.goalReached)
             }
             .buttonStyle(TapScaleStyle())
             .disabled(store.goalReached)
@@ -125,7 +127,9 @@ struct DhikrView: View {
                     Eyebrow("Goal")
                     Text("\(store.count) / \(store.goal)")
                         .font(.appSerif(19, weight: .medium).monospacedDigit())
-                        .foregroundStyle(store.goalReached ? Color.brand : Color(.label))
+                        .foregroundStyle(store.goalReached ? Color.brand : Palette.textPrimary)
+                        .contentTransition(.numericText())
+                        .animation(Motion.quick, value: store.count)
                 }
 
                 Spacer()
@@ -145,10 +149,9 @@ struct DhikrView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 10, weight: .bold))
-                        Text("RESET")
-                            .font(.system(size: 10, weight: .semibold))
-                            .kerning(1.2)
+                            .font(.label(13, weight: .bold))
+                        Text("Reset")
+                            .font(.label(13, weight: .semibold))
                     }
                     .foregroundStyle(.brand)
                     .padding(.horizontal, 11)
@@ -161,7 +164,7 @@ struct DhikrView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 18)
         }
-        .background(Color(.systemBackground))
+        .background(Palette.background)
     }
 }
 
@@ -185,8 +188,8 @@ struct GoalEditorSheet: View {
                             .font(.appSerif(48, weight: .medium).monospacedDigit())
                             .contentTransition(.numericText())
                         Text("repetitions")
-                            .font(.appSerif(16, italic: true))
-                            .foregroundStyle(Color(.label).opacity(0.45))
+                            .font(.appSerif(16))
+                            .foregroundStyle(Palette.textSecondary)
                         Spacer(minLength: 0)
                         Stepper("", value: $draftGoal, in: 1...1000)
                             .labelsHidden()
@@ -203,8 +206,8 @@ struct GoalEditorSheet: View {
                                 draftGoal = n
                             } label: {
                                 Text("\(n)")
-                                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                                    .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.55))
+                                    .font(.label(13, weight: .semibold).monospacedDigit())
+                                    .foregroundStyle(on ? Color.brand : Palette.textSecondary)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 11)
                                     .overlay(
@@ -247,6 +250,6 @@ struct TapScaleStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
-            .animation(.spring(duration: 0.15), value: configuration.isPressed)
+            .animation(Motion.quick, value: configuration.isPressed)
     }
 }

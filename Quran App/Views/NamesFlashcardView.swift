@@ -8,6 +8,7 @@ struct NamesFlashcardView: View {
     @State private var currentIndex = 0
     @State private var isFlipped = false
     @State private var dragOffset: CGSize = .zero
+    @State private var cardWidth: CGFloat = 300
 
     private let names = AllahName.all
 
@@ -35,17 +36,28 @@ struct NamesFlashcardView: View {
                 flashcard
                     .rotation3DEffect(.degrees(isFlipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
                     .offset(dragOffset)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { cardWidth = $0 }
+                    // The app's one swipe rule (§3.0): 12 pt at 2:1 horizontal,
+                    // then past 40% of the card or a flick.
                     .gesture(
-                        DragGesture()
-                            .onChanged { dragOffset = CGSize(width: $0.translation.width, height: 0) }
+                        DragGesture(minimumDistance: SwipeRule.activation)
+                            .onChanged { v in
+                                let t = v.translation
+                                guard dragOffset != .zero
+                                        || abs(t.width) >= abs(t.height) * SwipeRule.dominance else { return }
+                                dragOffset = CGSize(width: t.width, height: 0)
+                            }
                             .onEnded { val in
-                                withAnimation(.spring(duration: 0.3)) { dragOffset = .zero }
-                                if val.translation.width < -60 { advance(by: 1) }
-                                else if val.translation.width > 60 { advance(by: -1) }
+                                let moved = dragOffset != .zero
+                                withAnimation(Motion.spring) { dragOffset = .zero }
+                                guard moved, SwipeRule.commits(translation: val.translation.width,
+                                                               velocity: val.velocity.width,
+                                                               width: cardWidth) else { return }
+                                advance(by: val.translation.width < 0 ? 1 : -1)
                             }
                     )
                     .onTapGesture {
-                        withAnimation(.spring(duration: 0.4)) { isFlipped.toggle() }
+                        withAnimation(Motion.spring) { isFlipped.toggle() }
                     }
 
                 Spacer()
@@ -93,9 +105,10 @@ struct NamesFlashcardView: View {
                         .multilineTextAlignment(.center)
                         .environment(\.layoutDirection, .rightToLeft)
 
-                    Text("Tap to reveal")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                    // The card is the button; this is its label, not a hint.
+                    Text("Show meaning")
+                        .font(TypeScale.secondary.weight(.semibold))
+                        .foregroundStyle(.brand)
                 }
                 .frame(maxWidth: .infinity, maxHeight: 280)
                 .padding(32)
@@ -116,8 +129,8 @@ struct NamesFlashcardView: View {
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.primary)
                     Text("#\(name.id)")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: 280)
                 .padding(32)
@@ -136,7 +149,7 @@ struct NamesFlashcardView: View {
     private func advance(by delta: Int) {
         let next = currentIndex + delta
         guard next >= 0, next < names.count else { return }
-        withAnimation(.spring(duration: 0.35)) {
+        withAnimation(Motion.spring) {
             isFlipped = false
             currentIndex = next
         }
@@ -206,7 +219,7 @@ struct AudioSpeakButton: View {
         } label: {
             Image(systemName: isSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2")
                 .font(.system(size: size))
-                .foregroundStyle(isSpeaking ? Color.brand : Color(.label).opacity(0.35))
+                .foregroundStyle(isSpeaking ? Color.brand : Color.secondary)
                 .symbolEffect(.bounce, value: isSpeaking)
                 .contentShape(Rectangle())
         }
@@ -258,4 +271,17 @@ struct AudioSpeakButton: View {
 #Preview {
     NamesFlashcardView()
         .environmentObject(NamesStore())
+}
+
+/// When a drag on the flashcard counts as a swipe to the next card.
+private enum SwipeRule {
+    static let activation: CGFloat = 12
+    static let dominance: CGFloat = 2
+
+    static func commits(translation: CGFloat, velocity: CGFloat, width: CGFloat) -> Bool {
+        guard translation != 0, width > 0 else { return false }
+        let along = velocity * (translation > 0 ? 1 : -1)
+        if along >= 500 { return true }
+        return abs(translation) >= width * 0.4 && along > -500
+    }
 }

@@ -16,15 +16,10 @@ class NamesStore: ObservableObject {
     @Published private(set) var statuses: [Int: NameStatus] = [:]  // keyed by name id (1–99)
 
     private let key = "allah_names_status_v1"
-    private var defaults: UserDefaults { UserDefaults(suiteName: "group.sami.Quran-App") ?? .standard }
+    private var defaults: UserDefaults { UserDefaults(suiteName: "group.com.saminukta.Quran-App") ?? .standard }
 
     init() {
         load()
-        NotificationCenter.default.addObserver(
-            forName: CloudSync.didPull, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.load()
-        }
     }
 
     func status(for id: Int) -> NameStatus { statuses[id] ?? .notStarted }

@@ -15,6 +15,12 @@ final class TafsirService {
 
     func tafsir(surah: Int) async throws -> [Int: String] {
         if let cached = cache[surah] { return cached }
+        // Read once from the network, then from disk.
+        let file = AppFiles.directory("Tafsir").appendingPathComponent("\(resourceId)_\(surah).json")
+        if let saved = AppFiles.read([Int: String].self, from: file) {
+            cache[surah] = saved
+            return saved
+        }
 
         var result: [Int: String] = [:]
         var page = 1
@@ -48,6 +54,7 @@ final class TafsirService {
         }
 
         cache[surah] = result
+        if !result.isEmpty { AppFiles.write(result, to: file) }
         return result
     }
 

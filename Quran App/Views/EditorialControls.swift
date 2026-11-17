@@ -48,15 +48,15 @@ struct EditorialMenuRow<Value: Hashable>: View {
             HStack(spacing: 10) {
                 Text(title)
                     .font(.appSerif(17))
-                    .foregroundStyle(Color(.label))
+                    .foregroundStyle(Palette.textPrimary)
                 Spacer(minLength: 8)
                 Text(currentLabel)
                     .font(.appSerif(16))
-                    .foregroundStyle(Color(.label).opacity(0.5))
+                    .foregroundStyle(Palette.textSecondary)
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Color(.label).opacity(0.3))
+                    .font(.label(13, weight: .bold))
+                    .foregroundStyle(Palette.textTertiary)
             }
             .contentShape(Rectangle())
         }
@@ -75,11 +75,11 @@ struct EditorialToggle: View {
         HStack(spacing: 8) {
             Text(title)
                 .font(.appSerif(17))
-                .foregroundStyle(Color(.label))
+                .foregroundStyle(Palette.textPrimary)
             if let caption {
                 Text("— \(caption)")
-                    .font(.appSerif(14, italic: true))
-                    .foregroundStyle(Color(.label).opacity(0.45))
+                    .font(.appSerif(14))
+                    .foregroundStyle(Palette.textSecondary)
             }
             Spacer(minLength: 8)
             Toggle("", isOn: $isOn)
@@ -105,18 +105,18 @@ struct EditorialNavRow: View {
             HStack(spacing: 13) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.label(14, weight: .medium))
                         .foregroundStyle(iconTint ?? Color.brand)
                         .frame(width: 22)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
                         .font(.appSerif(17))
-                        .foregroundStyle(Color(.label))
+                        .foregroundStyle(Palette.textPrimary)
                     if let caption {
                         Text(caption)
-                            .font(.appSerif(13.5, italic: true))
-                            .foregroundStyle(Color(.label).opacity(0.45))
+                            .font(.appSerif(14))
+                            .foregroundStyle(Palette.textSecondary)
                             .multilineTextAlignment(.leading)
                     }
                 }
@@ -124,12 +124,12 @@ struct EditorialNavRow: View {
                 if let value {
                     Text(value)
                         .font(.appSerif(16))
-                        .foregroundStyle(Color(.label).opacity(0.5))
+                        .foregroundStyle(Palette.textSecondary)
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color(.label).opacity(0.3))
+                    .font(.label(13, weight: .bold))
+                    .foregroundStyle(Palette.textTertiary)
             }
             .contentShape(Rectangle())
         }
@@ -146,11 +146,11 @@ struct EditorialValueRow: View {
         HStack(spacing: 10) {
             Text(title)
                 .font(.appSerif(17))
-                .foregroundStyle(Color(.label))
+                .foregroundStyle(Palette.textPrimary)
             Spacer(minLength: 8)
             Text(value)
                 .font(.appSerif(16))
-                .foregroundStyle(Color(.label).opacity(0.5))
+                .foregroundStyle(Palette.textSecondary)
         }
     }
 }
@@ -162,7 +162,6 @@ struct EditorialValueRow: View {
 struct EditorialSegmented<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [EditorialOption<Value>]
-
     var body: some View {
         HStack(spacing: -1) {
             ForEach(options) { option in
@@ -171,76 +170,27 @@ struct EditorialSegmented<Value: Hashable>: View {
                     Haptics.selection()
                     selection = option.value
                 } label: {
-                    Text(option.label.uppercased())
-                        .font(.system(size: 10, weight: .semibold))
-                        .kerning(1.1)
-                        .foregroundStyle(on ? Color.brand : Color(.label).opacity(0.55))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                    // Sentence case, 13 pt, never shrunk or truncated. 36 pt tall drawn, 44 pt tappable.
+                    Text(option.label)
+                        .font(TypeScale.caption)
+                        .foregroundStyle(on ? Color.brand : Palette.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, Spacing.xs)
+                        .frame(maxWidth: .infinity, minHeight: MinSize.segmentedControl)
                         .overlay(
-                            Rectangle().strokeBorder(on ? Color.brand : Color(.label).opacity(0.18),
+                            Rectangle().strokeBorder(on ? Color.brand : Palette.separator,
                                                      lineWidth: 1)
                         )
                         .zIndex(on ? 1 : 0)
+                        .padding(.vertical, (MinSize.hitTarget - MinSize.segmentedControl) / 2)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+                .accessibilityShowsLargeContentViewer { Text(option.label) }
             }
         }
-        .animation(AppAnim.smooth, value: selection)
-    }
-}
-
-// MARK: - Slider
-
-/// "Arabic ——●—— 26" — a labelled slider with the value as metadata.
-struct EditorialSlider: View {
-    let label: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    var labelWidth: CGFloat = 82
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Text(label)
-                .font(.appSerif(15))
-                .foregroundStyle(Color(.label).opacity(0.6))
-                .frame(width: labelWidth, alignment: .leading)
-            Slider(value: $value, in: range, step: 1)
-                .tint(.brand)
-            MetaText("\(Int(value))", size: 11)
-                .frame(width: 24, alignment: .trailing)
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-// MARK: - Type specimen slider
-//
-// Same control, but with a live sample of what the size does. Used by the
-// reading-size settings, where a number alone means nothing.
-
-struct EditorialSpecimenSlider: View {
-    let label: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let sample: String
-    var rightToLeft: Bool = false
-    var italic: Bool = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            EditorialSlider(label: label, value: $value, range: range)
-
-            Text(sample)
-                .font(rightToLeft ? .appArabic(value) : .appSerif(value, italic: italic))
-                .foregroundStyle(Color(.label).opacity(0.55))
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: rightToLeft ? .trailing : .leading)
-                .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight)
-                .animation(.easeOut(duration: 0.12), value: value)
-        }
+        .dynamicTypeSize(...DynamicTypeSize.accessibility5)
+        .animation(Motion.standard, value: selection)
     }
 }
