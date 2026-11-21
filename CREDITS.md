@@ -15,7 +15,7 @@ and bundled in `quran_offline.json` for offline reading.
 > text can be used in any website or application, provided that its source (Tanzil Project) is clearly indicated, and a
 > link is made to [tanzil.net](https://tanzil.net) to enable users to keep track of changes.
 
-The app shows the text as published and credits Tanzil under Settings › About.
+The app shows the text as published and credits and links Tanzil under Settings › Sources.
 
 ## Translations and transliteration
 Fetched from [alquran.cloud](https://alquran.cloud), which sources them from [Tanzil](https://tanzil.net/trans/).
@@ -40,9 +40,10 @@ From the [Quran.com](https://quran.com) API (`api.quran.com`, `api.qurancdn.com`
 [Quran Foundation](https://quran.foundation). Tafsir is *Tafsir Ibn Kathir (Abridged)*, English.
 
 ## Recitations
-Audio is streamed or downloaded on the device from [EveryAyah](https://everyayah.com) and Quran.com
-(`audio.qurancdn.com`). Recitations by Mishary Rashid Alafasy, Abdul Basit Abdus Samad, Abdurrahman As-Sudais,
-Saad Al-Ghamdi and Mahmoud Khalil Al-Husary.
+Audio is downloaded on the device from Quran.com (`verses.quran.com`, `audio.qurancdn.com`) and
+[EveryAyah](https://everyayah.com). Recitations by Mishary Rashid Alafasy, Abdul Basit Abdus Samad (Murattal),
+Abdurrahman As-Sudais, Mahmoud Khalil Al-Husary, Mohamed Siddiq Al-Minshawi (Murattal), Saud Ash-Shuraym and
+Abu Bakr Ash-Shatri.
 
 ## Prayer times and Hijri dates
 From the [AlAdhan](https://aladhan.com) prayer times API.

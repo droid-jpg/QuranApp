@@ -135,13 +135,28 @@ struct SettingsView: View {
 
                 // ── About ─────────────────────────────────────────────────
                 EditorialSection(title: "About", icon: "info.circle.fill") {
-                    EditorialValueRow(title: "Arabic text", value: "Tanzil Project · tanzil.net")
+                    EditorialValueRow(title: "Version", value: AppInfo.version)
                     Hairline().padding(.vertical, 13)
-                    EditorialValueRow(title: "Translations", value: "alquran.cloud")
+                    EditorialLinkRow(title: "Privacy policy", value: "Read", url: AppInfo.privacyPolicy)
                     Hairline().padding(.vertical, 13)
-                    EditorialValueRow(title: "Audio and word timings", value: "quran.com")
+                    EditorialLinkRow(title: "Help and feedback", value: "Contact", url: AppInfo.support)
+                }
+
+                // ── Sources ───────────────────────────────────────────────
+                EditorialSection(title: "Sources", icon: "books.vertical.fill") {
+                    // Tanzil's licence asks for a link to tanzil.net wherever its text is used.
+                    EditorialLinkRow(title: "Arabic text", value: "Tanzil Project",
+                                     url: URL(string: "https://tanzil.net")!)
                     Hairline().padding(.vertical, 13)
-                    EditorialValueRow(title: "Prayer times", value: "aladhan.com")
+                    EditorialLinkRow(title: "Translations", value: "alquran.cloud",
+                                     url: URL(string: "https://alquran.cloud")!)
+                    Hairline().padding(.vertical, 13)
+                    EditorialLinkRow(title: "Audio, words, tafsir", value: "quran.com",
+                                     url: URL(string: "https://quran.com")!)
+                    Hairline().padding(.vertical, 13)
+                    EditorialLinkRow(title: "Prayer times", value: "aladhan.com",
+                                     url: URL(string: "https://aladhan.com")!)
+                    Footnote("Each translation remains the copyright of its translator or publisher.")
                 }
             }
             .padding(.horizontal, 24)
@@ -284,9 +299,24 @@ extension View {
             }
             Button("Not now", role: .cancel) {}
         } message: {
-            Text("Allow notifications for Quran App in Settings to turn this on.")
+            Text("Allow notifications for Quran in Settings to turn this on.")
         }
     }
+}
+
+// MARK: - App info
+
+/// The version shown in About, and the pages About links to.
+enum AppInfo {
+    static var version: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = info?["CFBundleVersion"] as? String ?? "1"
+        return "\(short) (\(build))"
+    }
+
+    static let privacyPolicy = URL(string: "https://github.com/droid-jpg/QuranApp/blob/main/PRIVACY.md")!
+    static let support = URL(string: "https://github.com/droid-jpg/QuranApp/issues")!
 }
 
 // MARK: - Footnote

@@ -10,7 +10,7 @@ private let meccaLon = 39.8262
 @MainActor
 class QiblaService: NSObject, ObservableObject {
     @Published var qiblaHeading: Double = 0      // bearing from North to Qibla (degrees)
-    @Published var deviceHeading: Double = 0     // raw magnetic heading of the device
+    @Published var deviceHeading: Double = 0     // device heading from true north (magnetic until located)
     /// Continuous (unwrapped), low-pass-smoothed heading used to drive the on-screen
     /// compass rose. Unwrapping keeps it monotonic across the 0°/360° seam so rotations
     /// never animate the long way round; smoothing damps magnetometer jitter.
@@ -82,16 +82,20 @@ extension QiblaService: CLLocationManagerDelegate {
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
         guard newHeading.headingAccuracy >= 0 else { return }
+        // The Qibla bearing is measured from true north, so the heading must be too.
+        // True heading needs a location fix; until there is one, magnetic is the best
+        // available (off by the local declination).
+        let heading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
         Task { @MainActor [weak self] in
             guard let self else { return }
-            self.deviceHeading = newHeading.magneticHeading
+            self.deviceHeading = heading
             if !self.headingInitialized {
-                self.displayHeading = newHeading.magneticHeading
+                self.displayHeading = heading
                 self.headingInitialized = true
             } else {
                 // Low-pass the unwrapped delta: damps magnetometer jitter while keeping
                 // the value continuous across the 0°/360° seam.
-                self.displayHeading += self.normalizeDelta(newHeading.magneticHeading - self.displayHeading) * self.headingSmoothing
+                self.displayHeading += self.normalizeDelta(heading - self.displayHeading) * self.headingSmoothing
             }
             self.hasHeading = true
             self.updateAngle()

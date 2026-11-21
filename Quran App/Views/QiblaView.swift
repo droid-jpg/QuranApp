@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+import UIKit
 
 /// The compass. A dial is the one thing on this screen that has to be round, so
 /// it stays — but the ring is a hairline, the needle drops its gold gradient for
@@ -42,8 +43,17 @@ struct QiblaView: View {
             InfoBanner(icon: "location.circle", color: .brand,
                        message: "Allow location access to find your Qibla direction.")
         case .denied:
-            InfoBanner(icon: "location.slash", color: .red,
-                       message: "Location access denied. Enable it in Settings → Privacy → Location.")
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                InfoBanner(icon: "location.slash", color: Palette.danger,
+                           message: "The Qibla direction needs your location.")
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+                .font(TypeScale.body)
+                .frame(minHeight: MinSize.hitTarget)
+            }
         case .ready:
             InfoBanner(icon: "location.fill", color: .brand,
                        message: qibla.hasHeading

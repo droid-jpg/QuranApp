@@ -62,7 +62,8 @@ to have both save a screenshot of each step; the screenshots above came from the
   reciter.
 - Prayer times: [aladhan.com](https://aladhan.com). The location sent is rounded to about a kilometre.
 
-Full credits and license notices are in [CREDITS.md](CREDITS.md).
+Full credits and license notices are in [CREDITS.md](CREDITS.md). The app's privacy policy is in
+[PRIVACY.md](PRIVACY.md), and [docs/APP_STORE.md](docs/APP_STORE.md) holds the App Store listing and submission notes.
 
 ## License
 The code is released under the [MIT License](LICENSE). The Quran text, translations, tafsir and audio are not covered

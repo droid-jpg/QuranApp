@@ -155,6 +155,41 @@ struct EditorialValueRow: View {
     }
 }
 
+/// "label ……… value ↗" row that opens a web page, for the About block.
+struct EditorialLinkRow: View {
+    let title: String
+    let value: String
+    let url: URL
+
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            openURL(url)
+        } label: {
+            HStack(spacing: 10) {
+                Text(title)
+                    .font(.appSerif(17))
+                    .foregroundStyle(Palette.textPrimary)
+                Spacer(minLength: 8)
+                Text(value)
+                    .font(.appSerif(16))
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+                Image(systemName: "arrow.up.right")
+                    .font(.label(12, weight: .bold))
+                    .foregroundStyle(Palette.textTertiary)
+            }
+            .frame(minHeight: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(.isLink)
+        .accessibilityHint("Opens \(value) in Safari")
+    }
+}
+
 // MARK: - Segmented
 
 /// The outlined segmented control. Segments share one hairline between them, and
