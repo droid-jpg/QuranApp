@@ -43,8 +43,18 @@ struct SurahRow: View {
                             }
                         }
                         HStack(spacing: Spacing.xxs) {
-                            Text(subtitle ?? "\(surah.englishNameTranslation) · \(surah.numberOfAyahs) ayahs")
-                                .lineLimit(1)
+                            if let subtitle {
+                                Text(subtitle)
+                                    .lineLimit(1)
+                            } else {
+                                // A long name is shortened, never the ayah count after it.
+                                Text(surah.englishNameTranslation)
+                                    .lineLimit(1)
+                                Text("· \(surah.numberOfAyahs) ayahs")
+                                    .lineLimit(1)
+                                    .fixedSize()
+                                    .layoutPriority(1)
+                            }
                             if downloads.complete.contains(surah.number) {
                                 Image(systemName: "arrow.down.circle.fill")
                                     .font(.caption)
