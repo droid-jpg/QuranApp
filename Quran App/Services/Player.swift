@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import MediaPlayer
 import Observation
 
@@ -8,6 +9,10 @@ import Observation
 /// buffering state: an ayah is either on disk or being fetched. Everything else is a
 /// decision made when an ayah ends (`step`): the next ayah, the start of the repeat
 /// range, the next surah, or stop.
+///
+/// When the next ayah is known and on disk it is queued behind the current one, so it
+/// starts the moment the current one ends instead of being opened after it. Long
+/// silences at either end of a file are skipped (`AudioTrim`).
 ///
 /// Views read the properties they draw. `@Observable` tracks each one separately, so
 /// the 20 Hz `progress` and `wordPosition` only redraw the views that show them.
@@ -56,6 +61,7 @@ final class Player {
     func setPauseAfterAyah(_ value: PauseAfterAyah) {
         pauseAfterAyah = value
         UserDefaults.standard.set(value.rawValue, forKey: Keys.pause)
+        requeue()
     }
 
     struct WordLoop: Equatable {
@@ -82,7 +88,22 @@ final class Player {
 
     // MARK: - Private
 
-    @ObservationIgnored private let player = AVPlayer()
+    @ObservationIgnored private let player = AVQueuePlayer()
+    /// The loaded ayah's item. The queue moves on by itself, so this, not
+    /// `player.currentItem`, says whose end a notification is about.
+    @ObservationIgnored private var current: AVPlayerItem?
+    /// Where the loaded ayah's recitation starts, after its skipped silence.
+    @ObservationIgnored private var currentStart = 0.0
+    private struct Queued {
+        let ayah: Int
+        let item: AVPlayerItem
+        var start = 0.0
+    }
+    /// The next ayah, queued behind the current one.
+    @ObservationIgnored private var queued: Queued?
+    /// The current ayah has ended and the queued one is due; set until the queue has moved to it.
+    @ObservationIgnored private var advancing: Queued?
+    @ObservationIgnored private var currentItemWatch: AnyCancellable?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var spans: [Int: [WordSpan]] = [:]
     @ObservationIgnored private var spansKey = ""
@@ -124,6 +145,7 @@ final class Player {
             repeatRange = last.repeatRange
         }
         player.automaticallyWaitsToMinimizeStalling = false
+        player.actionAtItemEnd = .pause
         observe()
         setUpRemoteCommands()
     }
@@ -173,6 +195,7 @@ final class Player {
             activateSession()
             player.playImmediately(atRate: rate)
             updateNowPlaying()
+            requeue()
         }
     }
 
@@ -194,11 +217,14 @@ final class Player {
         guard surah != nil, ayah > 0 else { return }
         wordLoop = nil
         // Like a music player: back to the start of this ayah first, then the one before.
-        if player.currentTime().seconds > 2 || ayah == 1 {
+        if player.currentItem !== current {
+            // Caught between an ayah's end and the queue's move to the next: start it again.
+            load(ayah)
+        } else if player.currentTime().seconds > currentStart + 2 || ayah == 1 {
             cancelGap()
             pendingStep = nil
             progress = 0
-            player.seek(to: .zero)
+            player.seek(to: CMTime(seconds: currentStart, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero)
             if isPlaying, itemLoaded { player.playImmediately(atRate: rate) }
             updateNowPlaying()
         } else {
@@ -245,11 +271,13 @@ final class Player {
         repeatRange?.times = times
         passesDone = 0
         saveSession()
+        requeue()
     }
 
     func clearRepeat() {
         clearRepeatState()
         saveSession()
+        requeue()
     }
 
     private func clearRepeatState() {
@@ -290,6 +318,7 @@ final class Player {
         guard let surah else { return }
         cancelGap()
         pendingStep = nil
+        clearQueue()
         generation += 1
         let token = generation
         let reciter = Reciter.selected
@@ -333,22 +362,113 @@ final class Player {
             }
         }
 
-        AudioStore.shared.prefetch(reciter: reciter, surah: surah.number, ayahs: upcoming(after: number, in: surah))
+        prepareAhead(token: token)
         loadSpans(reciter: reciter, surah: surah.number, token: token)
     }
 
     private func start(_ url: URL, at seconds: Double) {
         silence?.pause()
-        player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        clearQueue()
+        let trim = AudioTrim.bounds(of: url)
+        let item = AVPlayerItem(url: url)
+        if let end = trim.end { item.forwardPlaybackEndTime = CMTime(seconds: end, preferredTimescale: 1000) }
+        player.replaceCurrentItem(with: item)
+        current = item
+        currentStart = trim.start
         itemLoaded = true
-        if seconds > 0 {
-            player.seek(to: CMTime(seconds: seconds, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero)
+        let from = seconds > 0 ? seconds : trim.start
+        if from > 0 {
+            player.seek(to: CMTime(seconds: from, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero)
         }
         if isPlaying {
             activateSession()
             player.playImmediately(atRate: rate)
         }
         updateNowPlaying()
+        queueNext()
+    }
+
+    /// Fetches the ayahs that come next, and queues the first of them once it is here.
+    private func prepareAhead(token: Int) {
+        guard let surah, ayah > 0 else { return }
+        let reciter = Reciter.selected
+        let ahead = upcoming(after: ayah, in: surah)
+        AudioStore.shared.prefetch(reciter: reciter, surah: surah.number, ayahs: ahead)
+        guard let first = ahead.first,
+              !AudioStore.isLocal(reciter: reciter, surah: surah.number, ayah: first) else { return }
+        Task {
+            _ = try? await AudioStore.shared.file(reciter: reciter, surah: surah.number, ayah: first)
+            guard token == generation, queued == nil else { return }
+            requeue()
+        }
+    }
+
+    // MARK: - The queue
+
+    /// Puts the ayah that will follow behind the current one, when nothing has to happen
+    /// between them: no pause after the ayah, no word loop, the same surah, and the file
+    /// on disk. Otherwise the queue stays empty and `ayahEnded` loads what comes next.
+    private func queueNext() {
+        clearQueue()
+        guard let surah, let current, player.currentItem === current, wordLoop == nil,
+              pauseAfterAyah == .off,
+              case .ayah(let number) = nextStep(after: ayah, in: surah).step else { return }
+        let reciter = Reciter.selected
+        guard AudioStore.isLocal(reciter: reciter, surah: surah.number, ayah: number) else { return }
+        let url = AudioStore.fileURL(reciter: reciter, surah: surah.number, ayah: number)
+        let item = AVPlayerItem(url: url)
+        guard player.canInsert(item, after: current) else { return }
+        player.insert(item, after: current)
+        player.actionAtItemEnd = .advance
+        queued = Queued(ayah: number, item: item)
+
+        // There is a whole ayah's time to measure the next one's silences.
+        Task {
+            let trim = await Task.detached(priority: .userInitiated) { AudioTrim.bounds(of: url) }.value
+            guard queued?.item === item else { return }
+            queued?.start = trim.start
+            if let end = trim.end { item.forwardPlaybackEndTime = CMTime(seconds: end, preferredTimescale: 1000) }
+        }
+    }
+
+    /// Queues again after something that changes what follows the current ayah.
+    private func requeue() {
+        guard itemLoaded, pendingStep == nil else { return }
+        queueNext()
+    }
+
+    private func clearQueue() {
+        if let queued, player.items().contains(queued.item), queued.item !== player.currentItem {
+            player.remove(queued.item)
+        }
+        queued = nil
+        advancing = nil
+        player.actionAtItemEnd = .pause
+    }
+
+    /// Finishes moving to the queued ayah, once its item is the player's current one.
+    /// The ayah's end and the queue's move can be reported in either order.
+    private func completeAdvance() {
+        guard let next = advancing, player.currentItem === next.item else { return }
+        advancing = nil
+        queued = nil
+        player.actionAtItemEnd = .pause
+        generation += 1
+        current = next.item
+        currentStart = next.start
+        if next.start > 0 {
+            player.seek(to: CMTime(seconds: next.start, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+        ayah = next.ayah
+        failed = false
+        progress = 0
+        wordPosition = nil
+        timedWordCount = spans[ayah]?.map(\.word).max() ?? 0
+        durationReported = false
+        saveSession()
+        updateNowPlaying()
+        prepareAhead(token: generation)
+        queueNext()
     }
 
     /// The next three ayahs that will be needed, following the repeat range around.
@@ -390,9 +510,16 @@ final class Player {
             loop.once ? stopWords() : seekAndPlay(loop.start)
             return
         }
-        let step = step(after: ayah, in: surah)
-        let duration = player.currentItem?.duration.seconds ?? 0
-        let gap = pauseAfterAyah.seconds(ayahDuration: duration.isFinite ? duration / Double(rate) : 0)
+        let (step, passes) = nextStep(after: ayah, in: surah)
+        passesDone = passes
+        if case .ayah(let number) = step, let next = queued, next.ayah == number,
+           player.items().contains(next.item) {
+            advancing = next
+            completeAdvance()
+            return
+        }
+        let duration = playedLength(of: current)
+        let gap = pauseAfterAyah.seconds(ayahDuration: duration / Double(rate))
         guard gap > 0, case .ayah = step else {
             perform(step)
             return
@@ -406,19 +533,26 @@ final class Player {
         }
     }
 
-    private func step(after number: Int, in surah: Surah) -> Step {
+    /// What follows an ayah, and how many repeat passes will then be done. Changes
+    /// nothing, so the queue can ask ahead of time.
+    private func nextStep(after number: Int, in surah: Surah) -> (step: Step, passes: Int) {
         if let range = repeatRange {
-            if number < range.to { return .ayah(number + 1) }
+            if number < range.to { return (.ayah(number + 1), passesDone) }
             let done = passesDone + 1
-            if range.times == 0 || done < range.times {
-                passesDone = done
-                return .ayah(range.from)
-            }
-            return .finishRepeat(range.from)
+            if range.times == 0 || done < range.times { return (.ayah(range.from), done) }
+            return (.finishRepeat(range.from), passesDone)
         }
-        if number < surah.numberOfAyahs { return .ayah(number + 1) }
-        if let following = QuranText.shared.surah(surah.number + 1) { return .surah(following) }
-        return .stop
+        if number < surah.numberOfAyahs { return (.ayah(number + 1), passesDone) }
+        if let following = QuranText.shared.surah(surah.number + 1) { return (.surah(following), passesDone) }
+        return (.stop, passesDone)
+    }
+
+    /// Seconds from the item's start point to its end point.
+    private func playedLength(of item: AVPlayerItem?) -> Double {
+        guard let item else { return 0 }
+        let end = item.forwardPlaybackEndTime.isValid ? item.forwardPlaybackEndTime.seconds : item.duration.seconds
+        guard end.isFinite else { return 0 }
+        return max(0, end - (item === current ? currentStart : 0))
     }
 
     private func runPendingStep() {
@@ -484,10 +618,15 @@ final class Player {
         NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] note in
             let item = note.object as? AVPlayerItem
             MainActor.assumeIsolated {
-                guard let self, item === self.player.currentItem else { return }
+                guard let self, let item, item === self.current else { return }
                 self.ayahEnded()
             }
         }
+        currentItemWatch = player.publisher(for: \.currentItem)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.completeAdvance() }
+            }
 
         // 20 Hz: the word being recited, the word loop's end, and the progress line.
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 20), queue: .main) { [weak self] time in
@@ -519,13 +658,14 @@ final class Player {
     }
 
     private func tick(_ seconds: Double) {
-        guard itemLoaded, seconds.isFinite else { return }
+        guard itemLoaded, seconds.isFinite, player.currentItem === current else { return }
         if let loop = wordLoop, seconds >= loop.end - 0.02 {
             loop.once ? stopWords() : seekAndPlay(loop.start)
             return
         }
-        if let duration = player.currentItem?.duration.seconds, duration.isFinite, duration > 0 {
-            let value = min(1, max(0, seconds / duration))
+        let length = playedLength(of: current)
+        if length > 0 {
+            let value = min(1, max(0, (seconds - currentStart) / length))
             if abs(value - progress) > 0.004 { progress = value }
             if !durationReported {
                 durationReported = true
@@ -567,7 +707,10 @@ final class Player {
         failed = false
         wordLoop = nil
         clearRepeatState()
-        player.replaceCurrentItem(with: nil)
+        clearQueue()
+        player.removeAllItems()
+        current = nil
+        currentStart = 0
         itemLoaded = false
         surah = nil
         ayah = 0

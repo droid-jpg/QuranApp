@@ -1,5 +1,6 @@
-import Foundation
+import AVFoundation
 import Observation
+import os
 
 /// Per-ayah audio files on disk. The player only ever plays local files: an ayah that
 /// isn't here yet is fetched first and then kept, so everything played once plays
@@ -79,6 +80,84 @@ actor AudioStore {
         for ayah in ayahs where !Self.isLocal(reciter: reciter, surah: surah, ayah: ayah) {
             Task(priority: .utility) { _ = try? await self.file(reciter: reciter, surah: surah, ayah: ayah) }
         }
+    }
+}
+
+/// How much near-silence to skip at either end of an ayah's file. Some reciters' files
+/// carry most of a second of silence before or after the recitation (Al-Minshawi, Abdul
+/// Basit, Al-Husary), which made a long gap between ayahs. A short breath is kept on
+/// both sides; files that start and end on the recitation are left as they are.
+nonisolated enum AudioTrim {
+    struct Bounds: Sendable {
+        /// Where to start playing, in seconds.
+        var start: Double = 0
+        /// Where to stop, or nil for the end of the file.
+        var end: Double?
+    }
+
+    private static let cache = OSAllocatedUnfairLock<[String: Bounds]>(initialState: [:])
+
+    /// Measured once per file, then remembered for the session. Reads at most 3.5 s of
+    /// audio, so it is quick, but call it off the main actor where that is easy.
+    static func bounds(of url: URL) -> Bounds {
+        if let known = cache.withLock({ $0[url.path] }) { return known }
+        let found = measure(url) ?? Bounds()
+        cache.withLock { $0[url.path] = found }
+        return found
+    }
+
+    private static let window = 0.02
+    /// The recitation has started once a 20 ms window is louder than −40 dBFS.
+    private static let onsetLevel: Float = 0.01
+    /// The tail ends at the last window louder than −50 dBFS, so reverb is kept.
+    private static let tailLevel: Float = 0.003_16
+    private static let leadBreath = 0.15
+    private static let tailBreath = 0.2
+
+    private static func measure(_ url: URL) -> Bounds? {
+        guard let file = try? AVAudioFile(forReading: url) else { return nil }
+        let rate = file.processingFormat.sampleRate
+        guard rate > 0, file.length > 0 else { return nil }
+        let duration = Double(file.length) / rate
+
+        var bounds = Bounds()
+        if let head = levels(file, from: 0, length: min(2, duration)),
+           let first = head.firstIndex(where: { $0 > onsetLevel }) {
+            let start = Double(first) * window - leadBreath
+            if start >= 0.1 { bounds.start = start }
+        }
+        let tailFrom = max(0, duration - 1.5)
+        if let tail = levels(file, from: tailFrom, length: duration - tailFrom),
+           let last = tail.lastIndex(where: { $0 > tailLevel }) {
+            let end = tailFrom + Double(last + 1) * window + tailBreath
+            if duration - end >= 0.1 { bounds.end = end }
+        }
+        // Never leave less than half a second to play.
+        if let end = bounds.end, end - bounds.start < 0.5 { return nil }
+        return bounds
+    }
+
+    /// The RMS level of each 20 ms window of the first channel.
+    private static func levels(_ file: AVAudioFile, from seconds: Double, length: Double) -> [Float]? {
+        let rate = file.processingFormat.sampleRate
+        let count = AVAudioFrameCount(length * rate)
+        guard count > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: count) else { return nil }
+        file.framePosition = AVAudioFramePosition(seconds * rate)
+        guard (try? file.read(into: buffer, frameCount: count)) != nil,
+              let samples = buffer.floatChannelData?[0] else { return nil }
+        let frames = Int(buffer.frameLength)
+        let size = max(1, Int(window * rate))
+        var result: [Float] = []
+        result.reserveCapacity(frames / size)
+        var i = 0
+        while i + size <= frames {
+            var sum: Float = 0
+            for j in i..<(i + size) { sum += samples[j] * samples[j] }
+            result.append((sum / Float(size)).squareRoot())
+            i += size
+        }
+        return result
     }
 }
 
