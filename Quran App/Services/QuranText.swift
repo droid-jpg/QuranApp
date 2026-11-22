@@ -156,7 +156,7 @@ final class QuranText: @unchecked Sendable {
 
 /// Where the app keeps what it downloads. Application Support, so the system never
 /// purges it, and excluded from backup because all of it can be fetched again.
-enum AppFiles {
+nonisolated enum AppFiles {
     static func directory(_ name: String) -> URL {
         var url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(name, isDirectory: true)
